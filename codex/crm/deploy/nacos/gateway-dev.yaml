@@ -1,7 +1,10 @@
 server:
   port: 8780
+  shutdown: graceful
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   main:
     web-application-type: reactive
   cloud:
@@ -39,4 +42,4 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,gateway
+        include: health,info,gateway,serviceregistry

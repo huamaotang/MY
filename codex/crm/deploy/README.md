@@ -8,7 +8,7 @@ npm install
 npm run build
 ```
 
-前端默认使用 `http://127.0.0.1:8780/api` 作为接口地址，不依赖 `8090/api` 反向代理。如需部署到其他网关地址，构建前设置：
+前端默认使用同源 `/api` 作为接口地址，通过 Vite 或 Nginx 反向代理转发到网关。如需在构建产物中固定其他网关地址，构建前设置：
 
 ```bash
 VITE_API_BASE=http://你的网关地址/api npm run build
@@ -37,6 +37,35 @@ java -jar admin/target/admin-0.1.0.jar
 
 ```text
 http://127.0.0.1:8780/api
+```
+
+## 平滑重启微服务
+
+Nacos 配置已启用 Spring Boot graceful shutdown，并暴露 `serviceregistry` Actuator 端点。重启脚本会先把实例标记为 `DOWN`，等待摘流传播，再发送 `SIGTERM`，由 Spring Boot 等待存量请求完成后退出。
+
+先打包：
+
+```bash
+cd backend
+mvn -DskipTests package
+cd ..
+```
+
+重启单个实例：
+
+```bash
+deploy/graceful-restart.sh system backend/system/target/system-0.1.0.jar 8782
+deploy/graceful-restart.sh customer backend/customer/target/customer-0.1.0.jar 8783
+deploy/graceful-restart.sh gateway backend/gateway/target/gateway-0.1.0.jar 8780
+
+# 可选：admin 服务
+ACTUATOR_BASE=http://127.0.0.1:8781/api/actuator deploy/graceful-restart.sh admin backend/admin/target/admin-0.1.0.jar 8781
+```
+
+多个实例滚动重启时，对每个实例分别执行脚本，并确保同一个服务至少保留一个健康实例承接流量。可通过环境变量调整摘流和停机等待时间：
+
+```bash
+DRAIN_SECONDS=15 STOP_TIMEOUT=60 deploy/graceful-restart.sh system backend/system/target/system-0.1.0.jar 8782
 ```
 
 ## 安装 Nginx 配置

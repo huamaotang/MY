@@ -108,3 +108,40 @@ ${spring.application.name}-${spring.profiles.active}.yaml
 ```
 
 后者会覆盖前者，适合区分 dev/test/prod。
+
+## 平滑重启相关配置
+
+各服务的 Nacos YAML 已加入：
+
+```yaml
+server:
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,serviceregistry
+```
+
+`gateway-dev.yaml` 额外保留 `gateway` Actuator 端点。更新这些 YAML 后，需要重新发布到 Nacos：
+
+```bash
+for data_id in gateway-dev.yaml admin-dev.yaml system-dev.yaml customer-dev.yaml; do
+  curl -X POST 'http://127.0.0.1:8848/nacos/v1/cs/configs' \
+    --data-urlencode "dataId=${data_id}" \
+    --data-urlencode 'group=DEFAULT_GROUP' \
+    --data-urlencode 'type=yaml' \
+    --data-urlencode "content@${data_id}"
+done
+```
+
+发布后，用仓库根目录的脚本执行实例级平滑重启：
+
+```bash
+deploy/graceful-restart.sh system backend/system/target/system-0.1.0.jar 8782
+```

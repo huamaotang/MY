@@ -1,9 +1,12 @@
 server:
   port: 8781
+  shutdown: graceful
   servlet:
     context-path: /api
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
   jackson:
     time-zone: Asia/Shanghai
     date-format: yyyy-MM-dd HH:mm:ss
@@ -29,4 +32,4 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info,serviceregistry
