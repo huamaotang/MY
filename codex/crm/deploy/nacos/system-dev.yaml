@@ -1,0 +1,30 @@
+server:
+  port: 8782
+
+spring:
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: "${MYSQL_URL:jdbc:mysql://localhost:3306/crm?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai}"
+    username: "${MYSQL_USER:root}"
+    password: "${MYSQL_PASSWORD:qwer8989}"
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+crm:
+  jwt:
+    secret: "${CRM_JWT_SECRET:change-this-nacos-development-secret}"
+    expire-seconds: "${CRM_JWT_EXPIRE_SECONDS:86400}"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info

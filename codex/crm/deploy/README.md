@@ -8,6 +8,12 @@ npm install
 npm run build
 ```
 
+前端默认使用 `http://127.0.0.1:8780/api` 作为接口地址，不依赖 `8090/api` 反向代理。如需部署到其他网关地址，构建前设置：
+
+```bash
+VITE_API_BASE=http://你的网关地址/api npm run build
+```
+
 将 `frontend/dist` 上传到服务器：
 
 ```text
@@ -19,13 +25,18 @@ npm run build
 ```bash
 cd backend
 mvn -DskipTests package
-java -jar target/crm-backend-0.1.0.jar
+java -jar system/target/system-0.1.0.jar
+java -jar customer/target/customer-0.1.0.jar
+java -jar gateway/target/gateway-0.1.0.jar
+
+# 可选：原单体迁移后的 admin 服务
+java -jar admin/target/admin-0.1.0.jar
 ```
 
-后端默认监听：
+网关默认监听：
 
 ```text
-http://127.0.0.1:8080/api
+http://127.0.0.1:8780/api
 ```
 
 ## 安装 Nginx 配置
@@ -58,7 +69,7 @@ sudo nginx -s reload
 http://127.0.0.1:8090/
 ```
 
-默认示例站点端口已从 `8080` 调整为 `8089`，避免和后端服务 `8080` 冲突。原配置已备份到：
+默认示例站点端口已从 `8080` 调整为 `8089`，避免和网关服务 `8780` 冲突。原配置已备份到：
 
 ```text
 /opt/homebrew/etc/nginx/nginx.conf.bak.crm
@@ -74,17 +85,17 @@ nginx -s reload
 如果后端部署在另一台机器，把配置里的这一行：
 
 ```nginx
-proxy_pass http://127.0.0.1:8080;
+proxy_pass http://127.0.0.1:8780;
 ```
 
 改成实际后端地址，例如：
 
 ```nginx
-proxy_pass http://10.0.0.12:8080;
+proxy_pass http://10.0.0.12:8780;
 ```
 
-如果使用 Docker Compose，并且后端服务名是 `backend`，则改成：
+如果使用 Docker Compose，并且网关服务名是 `gateway`，则改成：
 
 ```nginx
-proxy_pass http://backend:8080;
+proxy_pass http://gateway:8780;
 ```

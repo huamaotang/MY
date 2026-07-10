@@ -4,7 +4,7 @@
 
 ## 技术栈
 
-- 后端：Java 8、Spring Boot 2.7.x、Spring Security、MyBatis-Plus、MySQL、JWT
+- 后端：Java 8、Spring Boot 2.7.x、Spring Cloud Gateway、Spring Cloud Alibaba Nacos、Spring Security、MyBatis-Plus、MySQL、JWT
 - 前端：React、TypeScript、Vite、Ant Design
 - 权限：RBAC，支持菜单权限和按钮权限编码
 - 部署：后端独立 Jar，前端静态资源可由 Nginx 部署
@@ -12,10 +12,15 @@
 ## 目录
 
 ```text
-backend/     后端服务
-frontend/    前端管理台
-sql/         MySQL 建表和初始化数据
-deploy/      前端 Nginx 示例配置
+backend/                       后端父工程
+backend/core/                  后端公共库
+backend/gateway/               API 网关服务
+backend/admin/                 原单体后端迁移后的 admin 服务
+backend/system/                系统服务：认证、用户、角色、菜单
+backend/customer/              客户服务：客户、联系人、跟进记录
+frontend/                      前端管理台
+sql/                           MySQL 建表和初始化数据
+deploy/                        部署配置
 ```
 
 ## 本地启动
@@ -28,20 +33,45 @@ USE crm;
 SOURCE sql/schema.sql;
 ```
 
-2. 启动后端：
+2. 启动 Nacos 并导入配置，详见 [deploy/nacos/README.md](/Users/thm/MY/codex/crm/deploy/nacos/README.md)。
+
+3. 启动后端微服务：
 
 ```bash
 cd backend
-mvn spring-boot:run
+# 分别在三个终端执行
+mvn -pl system -am spring-boot:run
+mvn -pl customer -am spring-boot:run
+mvn -pl gateway -am spring-boot:run
+
+# 如需启动原单体迁移后的 admin 服务，单独执行
+mvn -pl admin -am spring-boot:run
 ```
 
-3. 启动前端：
+默认服务端口：
+
+```text
+gateway:      http://127.0.0.1:8780
+admin:        http://127.0.0.1:8781/api
+system:       http://127.0.0.1:8782
+customer:     http://127.0.0.1:8783
+```
+
+4. 启动前端：
 
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
+
+前端默认直接请求 gateway：
+
+```text
+VITE_API_BASE=http://127.0.0.1:8780/api
+```
+
+如需改成其他网关地址，复制 [frontend/.env.example](/Users/thm/MY/codex/crm/frontend/.env.example) 为 `.env.local` 后修改。
 
 默认账号：
 
@@ -50,8 +80,10 @@ npm run dev
 
 ## 配置
 
-后端数据库配置在 [backend/src/main/resources/application.yml](/Users/thm/MY/codex/crm/backend/src/main/resources/application.yml)。
+后端数据库和 JWT 配置由 Nacos 管理，示例配置在 [deploy/nacos](/Users/thm/MY/codex/crm/deploy/nacos)。
 
 Nginx 配置和部署说明在 [deploy/README.md](/Users/thm/MY/codex/crm/deploy/README.md)。
+
+Nacos 配置说明在 [deploy/nacos/README.md](/Users/thm/MY/codex/crm/deploy/nacos/README.md)。
 
 本机当前默认 Java 版本高于 Java 8，但 Maven 工程已配置 `source/target=1.8`。如果生产或测试环境必须用 Java 8，请切换 `JAVA_HOME` 后再运行。

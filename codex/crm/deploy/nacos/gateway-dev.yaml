@@ -1,0 +1,42 @@
+server:
+  port: 8780
+
+spring:
+  main:
+    web-application-type: reactive
+  cloud:
+    gateway:
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+      globalcors:
+        cors-configurations:
+          '[/**]':
+            allowed-origin-patterns: "*"
+            allowed-methods:
+              - GET
+              - POST
+              - PUT
+              - DELETE
+              - OPTIONS
+            allowed-headers: "*"
+            allow-credentials: true
+            max-age: 3600
+      routes:
+        - id: system
+          uri: lb://system
+          predicates:
+            - Path=/api/auth/**,/api/users/**,/api/roles/**,/api/menus/**
+          filters:
+            - StripPrefix=1
+        - id: customer
+          uri: lb://customer
+          predicates:
+            - Path=/api/customers/**,/api/contacts/**,/api/follow-records/**
+          filters:
+            - StripPrefix=1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
