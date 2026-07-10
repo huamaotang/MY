@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.crm.mapper.CrmFollowRecordMapper">
+    <resultMap id="BaseResultMap" type="com.example.crm.entity.CrmFollowRecord">
+        <id column="id" property="id"/>
+        <result column="customer_id" property="customerId"/>
+        <result column="contact_id" property="contactId"/>
+        <result column="follow_type" property="followType"/>
+        <result column="content" property="content"/>
+        <result column="next_follow_at" property="nextFollowAt"/>
+        <result column="owner_user_id" property="ownerUserId"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+</mapper>

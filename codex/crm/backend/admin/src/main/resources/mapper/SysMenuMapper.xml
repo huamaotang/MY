@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.crm.mapper.SysMenuMapper">
+    <resultMap id="BaseResultMap" type="com.example.crm.entity.SysMenu">
+        <id column="id" property="id"/>
+        <result column="parent_id" property="parentId"/>
+        <result column="menu_name" property="menuName"/>
+        <result column="menu_type" property="menuType"/>
+        <result column="path" property="path"/>
+        <result column="component" property="component"/>
+        <result column="permission_code" property="permissionCode"/>
+        <result column="icon" property="icon"/>
+        <result column="sort_order" property="sortOrder"/>
+        <result column="visible" property="visible"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="BaseColumnList">
+        id, parent_id, menu_name, menu_type, path, component, permission_code, icon, sort_order, visible, created_at, updated_at
+    </sql>
+
+    <select id="selectMenusByUsername" resultMap="BaseResultMap">
+        select distinct m.*
+        from sys_menu m
+        inner join sys_role_menu rm on rm.menu_id = m.id
+        inner join sys_user_role ur on ur.role_id = rm.role_id
+        inner join sys_user u on u.id = ur.user_id
+        where u.username = #{username}
+          and m.visible = 1
+        order by m.sort_order asc, m.id asc
+    </select>
+
+    <delete id="deleteRoleMenuByMenuId">
+        delete from sys_role_menu
+        where menu_id = #{menuId}
+    </delete>
+</mapper>

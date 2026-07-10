@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.crm.mapper.CrmCustomerMapper">
+    <resultMap id="BaseResultMap" type="com.example.crm.entity.CrmCustomer">
+        <id column="id" property="id"/>
+        <result column="customer_name" property="customerName"/>
+        <result column="customer_type" property="customerType"/>
+        <result column="industry" property="industry"/>
+        <result column="source" property="source"/>
+        <result column="level" property="level"/>
+        <result column="status" property="status"/>
+        <result column="owner_user_id" property="ownerUserId"/>
+        <result column="phone" property="phone"/>
+        <result column="email" property="email"/>
+        <result column="province" property="province"/>
+        <result column="city" property="city"/>
+        <result column="address" property="address"/>
+        <result column="remark" property="remark"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+</mapper>

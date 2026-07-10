@@ -1,9 +1,8 @@
 package com.example.crm.controller;
 
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.example.crm.common.ApiResponse;
 import com.example.crm.entity.CrmFollowRecord;
-import com.example.crm.mapper.CrmFollowRecordMapper;
+import com.example.crm.service.IFollowRecordService;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -17,25 +16,22 @@ import java.util.List;
 @RestController
 @RequestMapping("/follow-records")
 public class FollowRecordController {
-    private final CrmFollowRecordMapper followRecordMapper;
+    private final IFollowRecordService followRecordService;
 
-    public FollowRecordController(CrmFollowRecordMapper followRecordMapper) {
-        this.followRecordMapper = followRecordMapper;
+    public FollowRecordController(IFollowRecordService followRecordService) {
+        this.followRecordService = followRecordService;
     }
 
     @GetMapping
     @PreAuthorize("hasAuthority('crm:follow:list')")
     public ApiResponse<List<CrmFollowRecord>> list(@RequestParam(required = false) Long customerId) {
-        LambdaQueryWrapper<CrmFollowRecord> query = new LambdaQueryWrapper<CrmFollowRecord>()
-                .eq(customerId != null, CrmFollowRecord::getCustomerId, customerId)
-                .orderByDesc(CrmFollowRecord::getCreatedAt);
-        return ApiResponse.ok(followRecordMapper.selectList(query));
+        return ApiResponse.ok(followRecordService.list(customerId));
     }
 
     @PostMapping
     @PreAuthorize("hasAuthority('crm:customer:update')")
     public ApiResponse<Void> create(@RequestBody CrmFollowRecord record) {
-        followRecordMapper.insert(record);
+        followRecordService.create(record);
         return ApiResponse.ok();
     }
 }
