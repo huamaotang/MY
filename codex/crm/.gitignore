@@ -7,3 +7,4 @@ dist/
 *.log
 *.iml
 .local/
+.tmp-xcode-derived-data/

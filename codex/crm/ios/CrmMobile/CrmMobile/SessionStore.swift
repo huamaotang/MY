@@ -11,7 +11,9 @@ final class SessionStore: ObservableObject {
     private let keychain = KeychainStore(service: Constants.keychainService)
 
     init() {
-        self.apiClient = ApiClient(baseURL: baseURL)
+        let initialBaseURL = UserDefaults.standard.string(forKey: Constants.baseURLKey) ?? Constants.defaultBaseURL
+        self.apiClient = ApiClient(baseURL: initialBaseURL)
+        self.baseURL = initialBaseURL
     }
 
     func restore() {
