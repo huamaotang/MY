@@ -35,6 +35,22 @@ public class JwtTokenProvider {
         return readString(payload, "sub");
     }
 
+    public Long getUserId(String token) {
+        if (!validate(token)) {
+            return null;
+        }
+        String payload = new String(Base64.getUrlDecoder().decode(token.split("\\.")[1]), StandardCharsets.UTF_8);
+        String value = readNumber(payload, "uid");
+        if (value == null || value.isEmpty()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
     public boolean validate(String token) {
         try {
             String[] parts = token.split("\\.");

@@ -28,6 +28,8 @@ crm:
   jwt:
     secret: "${CRM_JWT_SECRET:change-this-nacos-development-secret}"
     expire-seconds: "${CRM_JWT_EXPIRE_SECONDS:86400}"
+  access-log:
+    enabled: true
 
 management:
   endpoints:

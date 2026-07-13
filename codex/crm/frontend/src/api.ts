@@ -10,6 +10,7 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
   const token = localStorage.getItem('crm_token');
   const headers = new Headers(options.headers);
   headers.set('Content-Type', 'application/json');
+  headers.set('X-Client-Source', 'web');
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }

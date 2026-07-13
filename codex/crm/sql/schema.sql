@@ -3,6 +3,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS sys_role_menu;
 DROP TABLE IF EXISTS sys_user_role;
+DROP TABLE IF EXISTS sys_api_log;
 DROP TABLE IF EXISTS sys_login_log;
 DROP TABLE IF EXISTS sys_dict_data;
 DROP TABLE IF EXISTS sys_dict_type;
@@ -92,6 +93,29 @@ CREATE TABLE sys_login_log (
   message VARCHAR(200) NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='登录日志';
+
+CREATE TABLE sys_api_log (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  trace_id VARCHAR(64) NOT NULL,
+  service_name VARCHAR(80) NULL,
+  request_method VARCHAR(10) NOT NULL,
+  request_uri VARCHAR(300) NOT NULL,
+  query_string VARCHAR(1000) NULL,
+  source VARCHAR(40) NOT NULL DEFAULT 'unknown' COMMENT 'web/ios/android 等调用来源',
+  user_id BIGINT NULL,
+  username VARCHAR(50) NULL,
+  ip VARCHAR(64) NULL,
+  user_agent VARCHAR(500) NULL,
+  http_status INT NOT NULL,
+  success TINYINT NOT NULL,
+  error_message VARCHAR(500) NULL,
+  duration_ms BIGINT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  KEY idx_sys_api_log_created (created_at),
+  KEY idx_sys_api_log_user (username),
+  KEY idx_sys_api_log_source (source),
+  KEY idx_sys_api_log_uri (request_uri)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='接口访问日志';
 
 CREATE TABLE sys_dict_type (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
