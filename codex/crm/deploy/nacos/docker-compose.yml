@@ -19,6 +19,17 @@ services:
       - nacos-logs:/home/nacos/logs
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    platform: linux/arm64
+    container_name: crm-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
 volumes:
   nacos-data:
   nacos-logs:
+  redis-data:

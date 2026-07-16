@@ -109,14 +109,16 @@ mvn -pl gateway -am spring-boot:run
 - 通过 Nacos Discovery 按服务名发现下游服务。
 - 按路径把请求转发到 `system` 或 `customer`。
 - 处理跨域和响应头去重。
+- 基于 Redis 对入口请求做全局限流。
 
 关键代码和配置：
 
 | 文件 | 说明 |
 | --- | --- |
 | `CrmGatewayApplication.java` | 网关启动类，启用服务发现 |
+| `RateLimiterConfig.java` | 解析客户端 IP，作为网关限流 key |
 | `bootstrap.yml` | 连接 Nacos Config 和 Discovery |
-| `deploy/nacos/gateway-dev.yaml` | 网关端口、路由、跨域、Actuator 配置 |
+| `deploy/nacos/gateway-dev.yaml` | 网关端口、路由、跨域、限流、Actuator 配置 |
 
 当前路由：
 
@@ -135,6 +137,7 @@ mvn -pl gateway -am spring-boot:run
 - 新增后端接口后，如果需要通过前端或 iOS 访问，必须同步更新 `gateway-dev.yaml` 的路由谓词。
 - 网关使用 `StripPrefix=1` 去掉 `/api`，因此下游 Controller 不需要写 `/api` 前缀。
 - `gateway` 是 reactive 应用，不应直接复用 MVC 过滤器或 Servlet 组件。
+- 限流默认按客户端 IP 生效，默认每秒补充 20 个令牌、桶容量 40；可用 `GATEWAY_RATE_LIMIT_REPLENISH_RATE` 和 `GATEWAY_RATE_LIMIT_BURST_CAPACITY` 覆盖。
 - 更新 Nacos 配置后，需要重新发布 Data ID；路由类配置建议重启网关验证。
 
 ## 5. 系统服务 `backend/system`

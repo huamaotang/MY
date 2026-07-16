@@ -4,7 +4,7 @@
 
 ## 技术栈
 
-- 后端：Java 8、Spring Boot 2.7.x、Spring Cloud Gateway、Spring Cloud Alibaba Nacos、Spring Security、MyBatis-Plus、MySQL、JWT
+- 后端：Java 8、Spring Boot 2.7.x、Spring Cloud Gateway、Spring Cloud Alibaba Nacos、Spring Security、MyBatis-Plus、MySQL、Redis、JWT
 - 前端：React、TypeScript、Vite、Ant Design
 - 权限：RBAC，支持菜单权限和按钮权限编码
 - 部署：后端独立 Jar，前端静态资源可由 Nginx 部署
@@ -19,6 +19,8 @@ backend/admin/                 原单体后端迁移后的 admin 服务
 backend/system/                系统服务：认证、用户、角色、菜单
 backend/customer/              客户服务：客户、联系人、跟进记录
 frontend/                      前端管理台
+ios/                           iPhone 原生移动端
+android/                       Android 原生移动端
 sql/                           MySQL 建表和初始化数据
 deploy/                        部署配置
 ```
@@ -26,6 +28,7 @@ deploy/                        部署配置
 ## 维护文档
 
 - [各模块详细说明](docs/MODULES.md)：按模块整理职责、接口、配置、数据表和维护注意点。
+- [开发手册总览](docs/manuals/README.md)：按后端、前端、iOS、Android、部署拆分的保姆级开发手册。
 
 ## 本地启动
 
@@ -37,7 +40,7 @@ USE crm;
 SOURCE sql/schema.sql;
 ```
 
-2. 启动 Nacos 并导入配置，详见 [deploy/nacos/README.md](/Users/thm/MY/codex/crm/deploy/nacos/README.md)。
+2. 启动 Nacos 和 Redis 并导入配置，详见 [deploy/nacos/README.md](/Users/thm/MY/codex/crm/deploy/nacos/README.md)。
 
 3. 启动后端微服务：
 

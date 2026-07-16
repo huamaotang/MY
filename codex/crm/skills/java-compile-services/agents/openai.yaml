@@ -1,0 +1,4 @@
+interface:
+  display_name: "Java Compile Services"
+  short_description: "Compile all Java backend services"
+  default_prompt: "Use $java-compile-services to compile all Java backend services in this repository."

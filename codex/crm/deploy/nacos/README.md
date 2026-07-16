@@ -38,7 +38,7 @@ Format: YAML
 
 本地服务模块不再维护 `application.yml`。如果要调整端口、路由或数据库配置，请改 Nacos 对应 Data ID 后重启服务，或对支持刷新的配置使用 Nacos 发布刷新。
 
-数据库和 JWT 配置支持通过环境变量覆盖：
+数据库、JWT 和网关限流配置支持通过环境变量覆盖：
 
 ```bash
 export MYSQL_URL='jdbc:mysql://localhost:3306/crm?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai'
@@ -46,11 +46,17 @@ export MYSQL_USER=root
 export MYSQL_PASSWORD=你的数据库密码
 export CRM_JWT_SECRET=请换成足够长的随机字符串
 export CRM_JWT_EXPIRE_SECONDS=86400
+export REDIS_HOST=127.0.0.1
+export REDIS_PORT=6379
+export REDIS_PASSWORD=qwer8989
+export GATEWAY_RATE_LIMIT_REPLENISH_RATE=20
+export GATEWAY_RATE_LIMIT_BURST_CAPACITY=40
 ```
 
-## 本地 Docker 启动 Nacos
+## 本地 Docker 启动 Nacos 和 Redis
 
 当前使用 `nacos/nacos-server:v2.4.3`，Maven 父工程中也显式覆盖 `nacos-client` 到 `2.4.3`，避免 2.2.x 客户端读取 2.4.x 服务端配置为空。
+网关限流使用 Redis，Compose 会同时启动 `crm-redis`。
 
 ```bash
 cd deploy/nacos
@@ -79,7 +85,7 @@ done
 
 ## 启动
 
-先启动 Nacos，再分别启动服务：
+先启动 Nacos 和 Redis，再分别启动服务：
 
 ```bash
 cd backend

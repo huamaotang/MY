@@ -5,12 +5,23 @@ server:
 spring:
   lifecycle:
     timeout-per-shutdown-phase: 30s
+  redis:
+    host: ${REDIS_HOST:127.0.0.1}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:qwer8989}
+    timeout: 2s
   main:
     web-application-type: reactive
   cloud:
     gateway:
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Credentials Access-Control-Allow-Origin
+        - name: RequestRateLimiter
+          args:
+            key-resolver: "#{@ipKeyResolver}"
+            redis-rate-limiter.replenishRate: ${GATEWAY_RATE_LIMIT_REPLENISH_RATE:20}
+            redis-rate-limiter.burstCapacity: ${GATEWAY_RATE_LIMIT_BURST_CAPACITY:40}
+            redis-rate-limiter.requestedTokens: 1
       globalcors:
         cors-configurations:
           '[/**]':
