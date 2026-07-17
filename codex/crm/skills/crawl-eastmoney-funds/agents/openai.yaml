@@ -1,0 +1,6 @@
+interface:
+  display_name: "EastMoney Fund Crawler"
+  short_description: "抓取天天基金净值、档案、特色数据和持仓"
+  default_prompt: "Use $crawl-eastmoney-funds to crawl EastMoney fund profile, NAV, feature data, and holdings."
+policy:
+  allow_implicit_invocation: true

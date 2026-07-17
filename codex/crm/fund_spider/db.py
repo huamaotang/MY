@@ -1,0 +1,540 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+import logging
+import os
+import re
+from typing import Any, Iterable, Sequence
+
+import pymysql
+from pymysql.connections import Connection
+
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class DatabaseConfig:
+    host: str
+    port: int
+    user: str
+    password: str
+    database: str
+
+
+def database_config_from_env() -> DatabaseConfig:
+    return DatabaseConfig(
+        host=os.getenv("DB_HOST", "127.0.0.1"),
+        port=int(os.getenv("DB_PORT", "3306")),
+        user=os.getenv("DB_USER", "root"),
+        password=os.getenv("DB_PASSWORD", "qwer8989"),
+        database=os.getenv("DB_NAME", "fund"),
+    )
+
+
+@dataclass(frozen=True)
+class FundNavHistory:
+    fund_code: str
+    nav_date: str
+    unit_nav: str | None
+    accumulated_nav: str | None
+    daily_growth_rate: str | None
+
+
+@dataclass(frozen=True)
+class FundProfile:
+    fund_code: str
+    inception_date: str | None
+    fund_manager: str | None
+    fund_type: str | None
+    management_company: str | None
+    net_asset_scale: str | None
+    scale_date: str | None
+
+
+@dataclass(frozen=True)
+class FundFeatureData:
+    fund_code: str
+    period_label: str
+    cutoff_date: str
+    standard_deviation: str | None
+    sharpe_ratio: str | None
+
+
+@dataclass(frozen=True)
+class FundStockHolding:
+    fund_code: str
+    report_period: str | None
+    report_date: str
+    rank_no: int | None
+    stock_code: str
+    stock_name: str | None
+    latest_price: str | None
+    change_rate: str | None
+    related_info_url: str | None
+    net_value_ratio: str | None
+    holding_shares_10k: str | None
+    holding_market_value_10k: str | None
+
+
+@dataclass(frozen=True)
+class CrawlCursor:
+    job_name: str
+    cursor_date: str
+    last_fund_code: str | None
+    completed: bool
+
+
+def connect(config: DatabaseConfig) -> Connection:
+    return pymysql.connect(
+        host=config.host,
+        port=config.port,
+        user=config.user,
+        password=config.password,
+        database=config.database,
+        charset="utf8mb4",
+        autocommit=False,
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+
+
+def ensure_schema(config: DatabaseConfig) -> None:
+    database = _quote_identifier(config.database)
+    connection = pymysql.connect(
+        host=config.host,
+        port=config.port,
+        user=config.user,
+        password=config.password,
+        charset="utf8mb4",
+        autocommit=False,
+        cursorclass=pymysql.cursors.DictCursor,
+    )
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                f"CREATE DATABASE IF NOT EXISTS {database} "
+                "DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+            )
+            cursor.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {database}.cfg_fund (
+                  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+                  fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
+                  fund_name VARCHAR(255) NOT NULL COMMENT '基金名称',
+                  inception_date DATE NULL COMMENT '成立日期',
+                  fund_manager VARCHAR(255) NULL COMMENT '基金经理',
+                  fund_type VARCHAR(100) NULL COMMENT '类型',
+                  management_company VARCHAR(255) NULL COMMENT '管理人',
+                  net_asset_scale VARCHAR(100) NULL COMMENT '净资产规模',
+                  scale_date DATE NULL COMMENT '规模截止至日',
+                  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+                  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+                  PRIMARY KEY (id),
+                  UNIQUE KEY uk_cfg_fund_code (fund_code)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金配置表'
+                """
+            )
+            _ensure_cfg_fund_columns(cursor, config.database)
+            cursor.execute(_fund_nav_history_ddl(database))
+            cursor.execute(_fund_stock_holding_ddl(database))
+            cursor.execute(_fund_feature_data_ddl(database))
+            cursor.execute(_fund_crawl_cursor_ddl(database))
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def upsert_funds(connection: Connection, funds: Iterable[tuple[str, str]]) -> int:
+    rows = list(funds)
+    if not rows:
+        return 0
+
+    sql = """
+        INSERT INTO cfg_fund (fund_code, fund_name)
+        VALUES (%s, %s)
+        ON DUPLICATE KEY UPDATE
+          fund_name = VALUES(fund_name),
+          updated_at = CURRENT_TIMESTAMP
+    """
+    log_write_sql("upsert_funds", sql, rows)
+    with connection.cursor() as cursor:
+        cursor.executemany(sql, rows)
+    connection.commit()
+    return len(rows)
+
+
+def list_fund_codes(
+    connection: Connection,
+    limit: int | None = None,
+    offset: int = 0,
+    after_fund_code: str | None = None,
+) -> list[str]:
+    sql = "SELECT fund_code FROM cfg_fund"
+    params: list[int | str] = []
+    if after_fund_code:
+        sql += " WHERE fund_code > %s"
+        params.append(after_fund_code)
+    sql += " ORDER BY fund_code"
+    if limit is not None:
+        sql += " LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+    with connection.cursor() as cursor:
+        cursor.execute(sql, tuple(params))
+        rows = cursor.fetchall()
+    return [str(row["fund_code"]) for row in rows]
+
+
+def update_fund_profile(connection: Connection, profile: FundProfile) -> int:
+    sql = """
+        UPDATE cfg_fund
+        SET
+          inception_date = %s,
+          fund_manager = %s,
+          fund_type = %s,
+          management_company = %s,
+          net_asset_scale = %s,
+          scale_date = %s,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE fund_code = %s
+    """
+    values = (
+        profile.inception_date,
+        profile.fund_manager,
+        profile.fund_type,
+        profile.management_company,
+        profile.net_asset_scale,
+        profile.scale_date,
+        profile.fund_code,
+    )
+    log_write_sql("update_fund_profile", sql, values)
+    with connection.cursor() as cursor:
+        affected = cursor.execute(sql, values)
+    connection.commit()
+    return affected
+
+
+def upsert_nav_history(connection: Connection, rows: Iterable[FundNavHistory]) -> int:
+    values = [
+        (
+            row.fund_code,
+            row.nav_date,
+            row.unit_nav,
+            row.accumulated_nav,
+            row.daily_growth_rate,
+        )
+        for row in rows
+    ]
+    if not values:
+        return 0
+
+    sql = """
+        INSERT INTO fund_nav_history (
+          fund_code,
+          nav_date,
+          unit_nav,
+          accumulated_nav,
+          daily_growth_rate
+        )
+        VALUES (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          unit_nav = VALUES(unit_nav),
+          accumulated_nav = VALUES(accumulated_nav),
+          daily_growth_rate = VALUES(daily_growth_rate),
+          updated_at = CURRENT_TIMESTAMP
+    """
+    log_write_sql("upsert_nav_history", sql, values)
+    with connection.cursor() as cursor:
+        cursor.executemany(sql, values)
+    connection.commit()
+    return len(values)
+
+
+def upsert_feature_data(connection: Connection, rows: Iterable[FundFeatureData]) -> int:
+    values = [
+        (
+            row.fund_code,
+            row.period_label,
+            row.cutoff_date,
+            row.standard_deviation,
+            row.sharpe_ratio,
+        )
+        for row in rows
+    ]
+    if not values:
+        return 0
+
+    sql = """
+        INSERT INTO fund_feature_data (
+          fund_code,
+          period_label,
+          cutoff_date,
+          standard_deviation,
+          sharpe_ratio
+        )
+        VALUES (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          standard_deviation = VALUES(standard_deviation),
+          sharpe_ratio = VALUES(sharpe_ratio),
+          updated_at = CURRENT_TIMESTAMP
+    """
+    log_write_sql("upsert_feature_data", sql, values)
+    with connection.cursor() as cursor:
+        cursor.executemany(sql, values)
+    connection.commit()
+    return len(values)
+
+
+def upsert_stock_holdings(connection: Connection, rows: Iterable[FundStockHolding]) -> int:
+    values = [
+        (
+            row.fund_code,
+            row.report_period,
+            row.report_date,
+            row.rank_no,
+            row.stock_code,
+            row.stock_name,
+            row.latest_price,
+            row.change_rate,
+            row.related_info_url,
+            row.net_value_ratio,
+            row.holding_shares_10k,
+            row.holding_market_value_10k,
+        )
+        for row in rows
+    ]
+    if not values:
+        return 0
+
+    sql = """
+        INSERT INTO fund_stock_holding (
+          fund_code,
+          report_period,
+          report_date,
+          rank_no,
+          stock_code,
+          stock_name,
+          latest_price,
+          change_rate,
+          related_info_url,
+          net_value_ratio,
+          holding_shares_10k,
+          holding_market_value_10k
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          report_period = VALUES(report_period),
+          rank_no = VALUES(rank_no),
+          stock_name = VALUES(stock_name),
+          latest_price = VALUES(latest_price),
+          change_rate = VALUES(change_rate),
+          related_info_url = VALUES(related_info_url),
+          net_value_ratio = VALUES(net_value_ratio),
+          holding_shares_10k = VALUES(holding_shares_10k),
+          holding_market_value_10k = VALUES(holding_market_value_10k),
+          updated_at = CURRENT_TIMESTAMP
+    """
+    log_write_sql("upsert_stock_holdings", sql, values)
+    with connection.cursor() as cursor:
+        cursor.executemany(sql, values)
+    connection.commit()
+    return len(values)
+
+
+def get_crawl_cursor(connection: Connection, job_name: str, cursor_date: str) -> CrawlCursor | None:
+    sql = """
+        SELECT job_name, cursor_date, last_fund_code, completed
+        FROM fund_crawl_cursor
+        WHERE job_name = %s AND cursor_date = %s
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(sql, (job_name, cursor_date))
+        row = cursor.fetchone()
+    if not row:
+        return None
+    return CrawlCursor(
+        job_name=str(row["job_name"]),
+        cursor_date=str(row["cursor_date"]),
+        last_fund_code=row["last_fund_code"],
+        completed=bool(row["completed"]),
+    )
+
+
+def upsert_crawl_cursor(
+    connection: Connection,
+    job_name: str,
+    cursor_date: str,
+    last_fund_code: str | None,
+    completed: bool,
+) -> None:
+    sql = """
+        INSERT INTO fund_crawl_cursor (
+          job_name,
+          cursor_date,
+          last_fund_code,
+          completed
+        )
+        VALUES (%s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          last_fund_code = VALUES(last_fund_code),
+          completed = VALUES(completed),
+          updated_at = CURRENT_TIMESTAMP
+    """
+    values = (job_name, cursor_date, last_fund_code, int(completed))
+    log_write_sql("upsert_crawl_cursor", sql, values)
+    with connection.cursor() as cursor:
+        cursor.execute(sql, values)
+    connection.commit()
+
+
+def log_write_sql(operation: str, sql: str, params: Sequence[Any] | Sequence[Sequence[Any]]) -> None:
+    if not _env_bool("LOG_SQL", False):
+        return
+
+    row_count = _sql_param_count(params)
+    logger.info("sql operation=%s rows=%s statement=%s", operation, row_count, _compact_sql(sql))
+
+    if _env_bool("LOG_SQL_PARAMS", False):
+        max_params = int(os.getenv("LOG_SQL_MAX_PARAMS", "3"))
+        logger.info("sql operation=%s params_sample=%r", operation, _sample_sql_params(params, max_params))
+
+
+def _compact_sql(sql: str) -> str:
+    return re.sub(r"\s+", " ", sql).strip()
+
+
+def _sql_param_count(params: Sequence[Any] | Sequence[Sequence[Any]]) -> int:
+    if not params:
+        return 0
+    first = params[0]
+    if isinstance(first, (tuple, list)):
+        return len(params)
+    return 1
+
+
+def _sample_sql_params(
+    params: Sequence[Any] | Sequence[Sequence[Any]],
+    max_params: int,
+) -> Sequence[Any] | Sequence[Sequence[Any]]:
+    if not params:
+        return []
+    first = params[0]
+    if isinstance(first, (tuple, list)):
+        return params[:max_params]
+    return params
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
+def _quote_identifier(value: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_]+", value):
+        raise ValueError(f"invalid database identifier: {value}")
+    return f"`{value}`"
+
+
+def _ensure_cfg_fund_columns(cursor, database: str) -> None:
+    columns = {
+        "inception_date": "DATE NULL COMMENT '成立日期'",
+        "fund_manager": "VARCHAR(255) NULL COMMENT '基金经理'",
+        "fund_type": "VARCHAR(100) NULL COMMENT '类型'",
+        "management_company": "VARCHAR(255) NULL COMMENT '管理人'",
+        "net_asset_scale": "VARCHAR(100) NULL COMMENT '净资产规模'",
+        "scale_date": "DATE NULL COMMENT '规模截止至日'",
+    }
+    for column, definition in columns.items():
+        cursor.execute(
+            """
+            SELECT COUNT(*) AS cnt
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = %s
+              AND TABLE_NAME = 'cfg_fund'
+              AND COLUMN_NAME = %s
+            """,
+            (database, column),
+        )
+        exists = cursor.fetchone()["cnt"] > 0
+        if not exists:
+            cursor.execute(f"ALTER TABLE {_quote_identifier(database)}.cfg_fund ADD COLUMN {column} {definition}")
+
+
+def _fund_nav_history_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_nav_history (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+          fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
+          nav_date VARCHAR(8) NOT NULL COMMENT '净值日期',
+          unit_nav DECIMAL(18,6) NULL COMMENT '单位净值',
+          accumulated_nav DECIMAL(18,6) NULL COMMENT '累计净值',
+          daily_growth_rate DECIMAL(10,4) NULL COMMENT '日增长率',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_fund_nav_code_date (fund_code, nav_date),
+          KEY idx_fund_nav_date (nav_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金历史净值表'
+    """
+
+
+def _fund_stock_holding_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_stock_holding (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+          fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
+          report_period VARCHAR(50) NULL COMMENT '报告期',
+          report_date VARCHAR(8) NOT NULL COMMENT '报告期截止日期',
+          rank_no INT NULL COMMENT '序号',
+          stock_code VARCHAR(20) NOT NULL COMMENT '股票代码',
+          stock_name VARCHAR(100) NULL COMMENT '股票名称',
+          latest_price DECIMAL(18,4) NULL COMMENT '最新价',
+          change_rate DECIMAL(10,4) NULL COMMENT '涨跌幅',
+          related_info_url VARCHAR(255) NULL COMMENT '相关资讯',
+          net_value_ratio DECIMAL(10,4) NULL COMMENT '占净值比例',
+          holding_shares_10k DECIMAL(20,4) NULL COMMENT '持股数（万股）',
+          holding_market_value_10k DECIMAL(20,4) NULL COMMENT '持仓市值（万元）',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_fund_stock_holding (fund_code, report_date, stock_code),
+          KEY idx_fund_stock_report_date (report_date),
+          KEY idx_fund_stock_code (stock_code)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金持仓表'
+    """
+
+
+def _fund_feature_data_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_feature_data (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+          fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
+          period_label VARCHAR(20) NOT NULL COMMENT '统计周期',
+          cutoff_date VARCHAR(8) NOT NULL COMMENT '截止日期',
+          standard_deviation DECIMAL(10,4) NULL COMMENT '标准差',
+          sharpe_ratio DECIMAL(10,4) NULL COMMENT '夏普比率',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_fund_feature_period (fund_code, cutoff_date, period_label),
+          KEY idx_fund_feature_cutoff_date (cutoff_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金特色数据表'
+    """
+
+
+def _fund_crawl_cursor_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_crawl_cursor (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+          job_name VARCHAR(50) NOT NULL COMMENT '任务名称',
+          cursor_date VARCHAR(8) NOT NULL COMMENT '游标日期',
+          last_fund_code VARCHAR(20) NULL COMMENT '最后成功基金代码',
+          completed TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否完成',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_fund_crawl_cursor_job_date (job_name, cursor_date),
+          KEY idx_fund_crawl_cursor_date (cursor_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金抓取游标表'
+    """
