@@ -167,13 +167,20 @@ def list_fund_codes(
     connection: Connection,
     limit: int | None = None,
     offset: int = 0,
+    start_fund_code: str | None = None,
     after_fund_code: str | None = None,
 ) -> list[str]:
     sql = "SELECT fund_code FROM cfg_fund"
     params: list[int | str] = []
+    conditions: list[str] = []
+    if start_fund_code:
+        conditions.append("fund_code >= %s")
+        params.append(start_fund_code)
     if after_fund_code:
-        sql += " WHERE fund_code > %s"
+        conditions.append("fund_code > %s")
         params.append(after_fund_code)
+    if conditions:
+        sql += " WHERE " + " AND ".join(conditions)
     sql += " ORDER BY fund_code"
     if limit is not None:
         sql += " LIMIT %s OFFSET %s"

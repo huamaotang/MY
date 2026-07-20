@@ -24,7 +24,7 @@ import java.util.Locale;
 import java.util.UUID;
 
 @Component
-@ConditionalOnProperty(prefix = "crm.access-log", name = "enabled", havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(prefix = "crm.access-log", name = "enabled", havingValue = "true")
 @Order(Ordered.LOWEST_PRECEDENCE - 10)
 @Slf4j
 public class AccessLogFilter extends OncePerRequestFilter {

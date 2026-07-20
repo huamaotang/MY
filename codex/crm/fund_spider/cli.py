@@ -42,6 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     batch_parent = argparse.ArgumentParser(add_help=False)
     batch_parent.add_argument("--fund-code", dest="FUND_CODE")
+    batch_parent.add_argument("--fund-start-code", dest="FUND_START_CODE")
     batch_parent.add_argument("--fund-limit", dest="FUND_LIMIT")
     batch_parent.add_argument("--fund-offset", dest="FUND_OFFSET")
 

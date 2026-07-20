@@ -18,6 +18,7 @@ backend/gateway/               API 网关服务
 backend/admin/                 原单体后端迁移后的 admin 服务
 backend/system/                系统服务：认证、用户、角色、菜单
 backend/customer/              客户服务：客户、联系人、跟进记录
+backend/fund/                  基金产品服务：基金基础信息、净值、持仓、特色数据
 frontend/                      前端管理台
 ios/                           iPhone 原生移动端
 android/                       Android 原生移动端
@@ -50,6 +51,7 @@ cd backend
 mvn -pl system -am spring-boot:run
 mvn -pl customer -am spring-boot:run
 mvn -pl gateway -am spring-boot:run
+mvn -pl fund -am spring-boot:run
 
 # 如需启动原单体迁移后的 admin 服务，单独执行
 mvn -pl admin -am spring-boot:run
@@ -62,6 +64,7 @@ gateway:      http://127.0.0.1:8780
 admin:        http://127.0.0.1:8781/api
 system:       http://127.0.0.1:8782
 customer:     http://127.0.0.1:8783
+fund:         http://127.0.0.1:8784
 ```
 
 4. 启动前端：

@@ -32,7 +32,7 @@ public class LoginActivity extends Activity {
         super.onCreate(savedInstanceState);
         session = new SessionStore(this);
         if (session.isAuthenticated()) {
-            openCustomerList();
+            openMainTabs();
             return;
         }
         buildContent();
@@ -123,7 +123,7 @@ public class LoginActivity extends Activity {
                 session.apiClient().setBaseUrl(baseUrl);
                 LoginResult result = session.apiClient().login(username, password);
                 session.saveLogin(baseUrl, result);
-                runOnUiThread(this::openCustomerList);
+                runOnUiThread(this::openMainTabs);
             } catch (Exception ex) {
                 runOnUiThread(() -> {
                     setLoading(false);
@@ -144,8 +144,8 @@ public class LoginActivity extends Activity {
         progressBar.setVisibility(loading ? ProgressBar.VISIBLE : ProgressBar.GONE);
     }
 
-    private void openCustomerList() {
-        startActivity(new Intent(this, CustomerListActivity.class));
+    private void openMainTabs() {
+        startActivity(new Intent(this, MainTabActivity.class));
         finish();
     }
 

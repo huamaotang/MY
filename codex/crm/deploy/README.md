@@ -28,6 +28,7 @@ mvn -DskipTests package
 java -jar system/target/system-0.1.0.jar
 java -jar customer/target/customer-0.1.0.jar
 java -jar gateway/target/gateway-0.1.0.jar
+java -jar fund/target/fund-0.1.0.jar
 
 # 可选：原单体迁移后的 admin 服务
 java -jar admin/target/admin-0.1.0.jar
@@ -57,6 +58,7 @@ cd ..
 deploy/graceful-restart.sh system backend/system/target/system-0.1.0.jar 8782
 deploy/graceful-restart.sh customer backend/customer/target/customer-0.1.0.jar 8783
 deploy/graceful-restart.sh gateway backend/gateway/target/gateway-0.1.0.jar 8780
+deploy/graceful-restart.sh fund backend/fund/target/fund-0.1.0.jar 8784
 
 # 可选：admin 服务
 ACTUATOR_BASE=http://127.0.0.1:8781/api/actuator deploy/graceful-restart.sh admin backend/admin/target/admin-0.1.0.jar 8781

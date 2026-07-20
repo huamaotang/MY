@@ -36,6 +36,29 @@ final class ApiClient {
         try await request(path: "/customers/\(id)")
     }
 
+    func listFunds(current: Int, size: Int, keyword: String?) async throws -> PageResult<Fund> {
+        var queryItems = [
+            URLQueryItem(name: "current", value: String(current)),
+            URLQueryItem(name: "size", value: String(size))
+        ]
+        if let keyword, !keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            queryItems.append(URLQueryItem(name: "keyword", value: keyword))
+        }
+        return try await request(path: "/funds", queryItems: queryItems)
+    }
+
+    func fundDetail(fundCode: String) async throws -> FundDetail {
+        try await request(path: "/funds/\(fundCode)")
+    }
+
+    func listFundNavs(fundCode: String, current: Int, size: Int) async throws -> PageResult<FundNav> {
+        let queryItems = [
+            URLQueryItem(name: "current", value: String(current)),
+            URLQueryItem(name: "size", value: String(size))
+        ]
+        return try await request(path: "/funds/\(fundCode)/navs", queryItems: queryItems)
+    }
+
     private func request<T: Decodable>(
         path: String,
         method: String = "GET",

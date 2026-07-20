@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class BatchSelector:
     fund_code: str = ""
+    fund_start_code: str = ""
     fund_limit: int | None = None
     fund_offset: int = 0
 
@@ -397,9 +398,10 @@ def crawl_daily_update(
 
     fund_codes = load_selected_fund_codes(db_config, options.selector, after_fund_code=after_fund_code)
     logger.info(
-        "daily update loaded %s fund codes, selector fund_code=%s limit=%s offset=%s after_fund_code=%s",
+        "daily update loaded %s fund codes, selector fund_code=%s start_code=%s limit=%s offset=%s after_fund_code=%s",
         len(fund_codes),
         options.selector.fund_code or "-",
+        options.selector.fund_start_code or "-",
         options.selector.fund_limit,
         options.selector.fund_offset,
         after_fund_code or "-",
@@ -623,6 +625,7 @@ def load_selected_fund_codes(
             connection,
             limit=selector.fund_limit,
             offset=selector.fund_offset,
+            start_fund_code=selector.fund_start_code,
             after_fund_code=after_fund_code,
         )
     finally:
@@ -632,6 +635,7 @@ def load_selected_fund_codes(
 def selector_from_env(single_code_env: str = "FUND_CODE") -> BatchSelector:
     return BatchSelector(
         fund_code=os.getenv(single_code_env, os.getenv("FUND_CODE", "")).strip(),
+        fund_start_code=os.getenv("FUND_START_CODE", "").strip(),
         fund_limit=parse_optional_int(os.getenv("FUND_LIMIT"), "FUND_LIMIT"),
         fund_offset=int(os.getenv("FUND_OFFSET", "0")),
     )

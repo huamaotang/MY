@@ -49,6 +49,60 @@ export type Customer = {
   updatedAt?: string;
 };
 
+export type Fund = {
+  id?: number;
+  fundCode: string;
+  fundName: string;
+  inceptionDate?: string;
+  fundManager?: string;
+  fundType?: string;
+  managementCompany?: string;
+  netAssetScale?: string;
+  scaleDate?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type FundNav = {
+  id?: number;
+  fundCode: string;
+  navDate: string;
+  unitNav?: number;
+  accumulatedNav?: number;
+  dailyGrowthRate?: number;
+};
+
+export type FundHolding = {
+  id?: number;
+  fundCode: string;
+  reportPeriod?: string;
+  reportDate: string;
+  rankNo?: number;
+  stockCode: string;
+  stockName?: string;
+  latestPrice?: number;
+  changeRate?: number;
+  netValueRatio?: number;
+  holdingShares10k?: number;
+  holdingMarketValue10k?: number;
+};
+
+export type FundFeature = {
+  id?: number;
+  fundCode: string;
+  periodLabel: string;
+  cutoffDate: string;
+  standardDeviation?: number;
+  sharpeRatio?: number;
+};
+
+export type FundDetail = {
+  fund: Fund;
+  latestNav?: FundNav;
+  latestHoldings: FundHolding[];
+  features: FundFeature[];
+};
+
 export type Role = {
   id?: number;
   roleName: string;
@@ -124,6 +178,55 @@ export function saveCustomer(customer: Customer) {
 
 export function deleteCustomer(id: number) {
   return request<void>(`/customers/${id}`, { method: 'DELETE' });
+}
+
+export function listFunds(params: { current: number; size: number; keyword?: string; fundType?: string }) {
+  const search = new URLSearchParams();
+  search.set('current', String(params.current));
+  search.set('size', String(params.size));
+  if (params.keyword) {
+    search.set('keyword', params.keyword);
+  }
+  if (params.fundType) {
+    search.set('fundType', params.fundType);
+  }
+  return request<PageResult<Fund>>(`/funds?${search.toString()}`);
+}
+
+export function getFundDetail(fundCode: string) {
+  return request<FundDetail>(`/funds/${encodeURIComponent(fundCode)}`);
+}
+
+export function listFundNavs(fundCode: string, params: { current: number; size: number }) {
+  const search = new URLSearchParams();
+  search.set('current', String(params.current));
+  search.set('size', String(params.size));
+  return request<PageResult<FundNav>>(`/funds/${encodeURIComponent(fundCode)}/navs?${search.toString()}`);
+}
+
+export function listFundHoldings(fundCode: string, params: { current: number; size: number; reportDate?: string }) {
+  const search = new URLSearchParams();
+  search.set('current', String(params.current));
+  search.set('size', String(params.size));
+  if (params.reportDate) {
+    search.set('reportDate', params.reportDate);
+  }
+  return request<PageResult<FundHolding>>(`/funds/${encodeURIComponent(fundCode)}/holdings?${search.toString()}`);
+}
+
+export function listFundFeatures(fundCode: string) {
+  return request<FundFeature[]>(`/funds/${encodeURIComponent(fundCode)}/features`);
+}
+
+export function saveFund(fund: Fund) {
+  if (fund.id) {
+    return request<void>(`/funds/${encodeURIComponent(fund.fundCode)}`, { method: 'PUT', body: JSON.stringify(fund) });
+  }
+  return request<void>('/funds', { method: 'POST', body: JSON.stringify(fund) });
+}
+
+export function deleteFund(fundCode: string) {
+  return request<void>(`/funds/${encodeURIComponent(fundCode)}`, { method: 'DELETE' });
 }
 
 export function listUsers(keyword?: string) {

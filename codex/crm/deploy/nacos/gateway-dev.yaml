@@ -48,6 +48,18 @@ spring:
             - Path=/api/customers/**,/api/contacts/**,/api/follow-records/**
           filters:
             - StripPrefix=1
+        - id: fund
+          uri: lb://fund
+          predicates:
+            - Path=/api/funds/**
+          filters:
+            - StripPrefix=1
+
+crm:
+  access-log:
+    enabled: true
+    admin-url: "${CRM_ACCESS_LOG_ADMIN_URL:http://127.0.0.1:8781/api}"
+    ingest-token: "${CRM_ACCESS_LOG_TOKEN:change-this-access-log-token}"
 
 management:
   endpoints:

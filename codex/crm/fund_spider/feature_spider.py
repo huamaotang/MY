@@ -41,7 +41,11 @@ class EastMoneyFeatureSpider:
     def fetch_feature_data(self, fund_code: str) -> list[FundFeatureData]:
         url = FEATURE_URL_TEMPLATE.format(fund_code=fund_code)
         text = self._get_text(url)
-        return parse_feature_data(fund_code, text)
+        try:
+            return parse_feature_data(fund_code, text)
+        except ValueError as exc:
+            logger.warning("fund %s feature data skipped: %s", fund_code, exc)
+            return []
 
     def _get_text(self, url: str) -> str:
         last_error: Exception | None = None

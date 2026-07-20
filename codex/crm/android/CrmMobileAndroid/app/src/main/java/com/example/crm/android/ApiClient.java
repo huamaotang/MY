@@ -98,6 +98,68 @@ public class ApiClient {
         }
     }
 
+    public PageResult<Fund> listFunds(int current, int size, String keyword) throws ApiException {
+        try {
+            StringBuilder path = new StringBuilder("/funds?current=")
+                    .append(current)
+                    .append("&size=")
+                    .append(size);
+            if (keyword != null && !keyword.trim().isEmpty()) {
+                path.append("&keyword=").append(URLEncoder.encode(keyword.trim(), "UTF-8"));
+            }
+            JSONObject data = request("GET", path.toString(), null);
+            PageResult<Fund> page = new PageResult<>();
+            page.total = data.optInt("total");
+            page.size = data.optInt("size");
+            page.current = data.optInt("current");
+            JSONArray records = data.optJSONArray("records");
+            if (records != null) {
+                for (int i = 0; i < records.length(); i++) {
+                    page.records.add(Fund.fromJson(records.getJSONObject(i)));
+                }
+            }
+            return page;
+        } catch (ApiException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new ApiException("加载产品失败", ex);
+        }
+    }
+
+    public FundDetail fundDetail(String fundCode) throws ApiException {
+        try {
+            return FundDetail.fromJson(request("GET", "/funds/" + URLEncoder.encode(fundCode, "UTF-8"), null));
+        } catch (ApiException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new ApiException("加载产品详情失败", ex);
+        }
+    }
+
+    public PageResult<FundNav> listFundNavs(String fundCode, int current, int size) throws ApiException {
+        try {
+            String path = "/funds/" + URLEncoder.encode(fundCode, "UTF-8")
+                    + "/navs?current=" + current
+                    + "&size=" + size;
+            JSONObject data = request("GET", path, null);
+            PageResult<FundNav> page = new PageResult<>();
+            page.total = data.optInt("total");
+            page.size = data.optInt("size");
+            page.current = data.optInt("current");
+            JSONArray records = data.optJSONArray("records");
+            if (records != null) {
+                for (int i = 0; i < records.length(); i++) {
+                    page.records.add(FundNav.fromJson(records.getJSONObject(i)));
+                }
+            }
+            return page;
+        } catch (ApiException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw new ApiException("加载净值走势失败", ex);
+        }
+    }
+
     private JSONObject request(String method, String path, JSONObject body) throws Exception {
         if (baseUrl == null || baseUrl.isEmpty()) {
             throw new ApiException("服务器地址无效");

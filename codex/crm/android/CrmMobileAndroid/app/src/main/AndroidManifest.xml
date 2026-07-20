@@ -10,6 +10,12 @@
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="true">
         <activity
+            android:name=".ProductDetailActivity"
+            android:exported="false" />
+        <activity
+            android:name=".MainTabActivity"
+            android:exported="false" />
+        <activity
             android:name=".CustomerDetailActivity"
             android:exported="false" />
         <activity

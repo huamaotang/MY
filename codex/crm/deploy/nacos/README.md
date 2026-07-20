@@ -30,6 +30,7 @@ Data ID: gateway-dev.yaml
 Data ID: admin-dev.yaml
 Data ID: system-dev.yaml
 Data ID: customer-dev.yaml
+Data ID: fund-dev.yaml
 Group: DEFAULT_GROUP
 Format: YAML
 ```
@@ -74,7 +75,7 @@ http://127.0.0.1:8848/nacos
 导入配置：
 
 ```bash
-for data_id in gateway-dev.yaml admin-dev.yaml system-dev.yaml customer-dev.yaml; do
+for data_id in gateway-dev.yaml admin-dev.yaml system-dev.yaml customer-dev.yaml fund-dev.yaml; do
   curl -X POST 'http://127.0.0.1:8848/nacos/v1/cs/configs' \
     --data-urlencode "dataId=${data_id}" \
     --data-urlencode 'group=DEFAULT_GROUP' \
@@ -93,6 +94,7 @@ cd backend
 mvn -pl system -am spring-boot:run
 mvn -pl customer -am spring-boot:run
 mvn -pl gateway -am spring-boot:run
+mvn -pl fund -am spring-boot:run
 
 # 可选：原单体迁移后的 admin 服务
 mvn -pl admin -am spring-boot:run
@@ -137,7 +139,7 @@ management:
 `gateway-dev.yaml` 额外保留 `gateway` Actuator 端点。更新这些 YAML 后，需要重新发布到 Nacos：
 
 ```bash
-for data_id in gateway-dev.yaml admin-dev.yaml system-dev.yaml customer-dev.yaml; do
+for data_id in gateway-dev.yaml admin-dev.yaml system-dev.yaml customer-dev.yaml fund-dev.yaml; do
   curl -X POST 'http://127.0.0.1:8848/nacos/v1/cs/configs' \
     --data-urlencode "dataId=${data_id}" \
     --data-urlencode 'group=DEFAULT_GROUP' \

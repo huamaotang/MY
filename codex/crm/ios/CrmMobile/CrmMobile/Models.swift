@@ -40,6 +40,56 @@ struct Customer: Decodable, Identifiable, Hashable {
     let updatedAt: String?
 }
 
+struct Fund: Decodable, Identifiable, Hashable {
+    var id: String { fundCode }
+
+    let fundCode: String
+    let fundName: String
+    let inceptionDate: String?
+    let fundManager: String?
+    let fundType: String?
+    let managementCompany: String?
+    let netAssetScale: String?
+    let scaleDate: String?
+    let createdAt: String?
+    let updatedAt: String?
+}
+
+struct FundNav: Decodable, Hashable {
+    let fundCode: String
+    let navDate: String
+    let unitNav: Decimal?
+    let accumulatedNav: Decimal?
+    let dailyGrowthRate: Decimal?
+}
+
+struct FundHolding: Decodable, Hashable {
+    let fundCode: String
+    let reportPeriod: String?
+    let reportDate: String
+    let rankNo: Int?
+    let stockCode: String
+    let stockName: String?
+    let netValueRatio: Decimal?
+    let holdingShares10k: Decimal?
+    let holdingMarketValue10k: Decimal?
+}
+
+struct FundFeature: Decodable, Hashable {
+    let fundCode: String
+    let periodLabel: String
+    let cutoffDate: String
+    let standardDeviation: Decimal?
+    let sharpeRatio: Decimal?
+}
+
+struct FundDetail: Decodable {
+    let fund: Fund
+    let latestNav: FundNav?
+    let latestHoldings: [FundHolding]
+    let features: [FundFeature]
+}
+
 enum ApiError: LocalizedError {
     case invalidBaseURL
     case invalidResponse
