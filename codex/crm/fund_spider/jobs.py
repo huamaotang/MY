@@ -16,6 +16,7 @@ from db import (
     upsert_crawl_cursor,
     upsert_feature_data,
     upsert_funds,
+    upsert_fund_ratings,
     upsert_nav_history,
     upsert_stock_holdings,
 )
@@ -23,6 +24,7 @@ from feature_spider import EastMoneyFeatureSpider
 from holding_spider import EastMoneyHoldingSpider
 from nav_spider import EastMoneyNavSpider
 from profile_spider import EastMoneyProfileSpider
+from rating_spider import EastMoneyRatingSpider
 from settings import normalize_query_date, parse_bool, parse_optional_int, request_config_from_env
 from spider import EastMoneyFundSpider, RequestConfig
 
@@ -73,6 +75,12 @@ class FeatureOptions:
 
 
 @dataclass(frozen=True)
+class RatingOptions:
+    selector: BatchSelector
+    page_size: int = 50
+
+
+@dataclass(frozen=True)
 class HoldingOptions:
     selector: BatchSelector
     top_line: int = 10
@@ -87,6 +95,7 @@ class DailyUpdateOptions:
     crawl_profile: bool = True
     crawl_nav: bool = True
     crawl_feature: bool = True
+    crawl_rating: bool = True
     crawl_holdings: bool = True
     fund_list_options: FundListOptions = field(default_factory=FundListOptions)
     nav_page_size: int = 20
@@ -95,6 +104,7 @@ class DailyUpdateOptions:
     nav_start_date: str = ""
     nav_end_date: str = ""
     holding_top_line: int = 10
+    rating_page_size: int = 50
     holding_year: str = ""
     holding_month: str = ""
     use_cursor: bool = True
@@ -290,6 +300,49 @@ def crawl_feature_data(
     return succeeded, failed, total_saved
 
 
+def crawl_ratings(
+    options: RatingOptions | None = None,
+    db_config: DatabaseConfig | None = None,
+    request_config: RequestConfig | None = None,
+) -> tuple[int, int, int]:
+    options = options or rating_options_from_env()
+    db_config = db_config or database_config_from_env()
+    request_config = request_config or request_config_from_env()
+
+    ensure_schema(db_config)
+    fund_codes = load_selected_fund_codes(db_config, options.selector)
+    logger.info("loaded %s fund codes for ratings", len(fund_codes))
+
+    spider = EastMoneyRatingSpider(request_config)
+    succeeded = 0
+    failed = 0
+    total_saved = 0
+    connection = connect(db_config)
+    try:
+        for index, fund_code in enumerate(fund_codes, start=1):
+            try:
+                rows = spider.fetch_ratings(fund_code, page_size=options.page_size)
+                saved = upsert_fund_ratings(connection, rows)
+                total_saved += saved
+                succeeded += 1
+                logger.info(
+                    "fund %s (%s/%s) rating rows parsed: %s, saved: %s",
+                    fund_code,
+                    index,
+                    len(fund_codes),
+                    len(rows),
+                    saved,
+                )
+            except Exception:
+                failed += 1
+                logger.exception("fund %s rating data failed", fund_code)
+    finally:
+        connection.close()
+
+    logger.info("rating crawl completed, succeeded: %s, failed: %s, saved rows: %s", succeeded, failed, total_saved)
+    return succeeded, failed, total_saved
+
+
 def crawl_holdings(
     options: HoldingOptions | None = None,
     db_config: DatabaseConfig | None = None,
@@ -407,20 +460,23 @@ def crawl_daily_update(
         after_fund_code or "-",
     )
     logger.info(
-        "daily update config profile=%s nav=%s feature=%s holdings=%s nav_start=%s nav_end=%s nav_max_pages=%s holding_top_line=%s",
+        "daily update config profile=%s nav=%s feature=%s rating=%s holdings=%s nav_start=%s nav_end=%s nav_max_pages=%s rating_page_size=%s holding_top_line=%s",
         options.crawl_profile,
         options.crawl_nav,
         options.crawl_feature,
+        options.crawl_rating,
         options.crawl_holdings,
         options.nav_start_date or "-",
         options.nav_end_date or "-",
         options.nav_max_pages,
+        options.rating_page_size,
         options.holding_top_line,
     )
 
     profile_spider = EastMoneyProfileSpider(request_config) if options.crawl_profile else None
     nav_spider = EastMoneyNavSpider(request_config) if options.crawl_nav else None
     feature_spider = EastMoneyFeatureSpider(request_config) if options.crawl_feature else None
+    rating_spider = EastMoneyRatingSpider(request_config) if options.crawl_rating else None
     holding_spider = EastMoneyHoldingSpider(request_config) if options.crawl_holdings else None
 
     succeeded = 0
@@ -429,6 +485,7 @@ def crawl_daily_update(
         "profile": 0,
         "nav": 0,
         "feature": 0,
+        "rating": 0,
         "holding": 0,
     }
 
@@ -438,6 +495,7 @@ def crawl_daily_update(
             "profile": 0,
             "nav": 0,
             "feature": 0,
+            "rating": 0,
             "holding": 0,
         }
         connection = connect(db_config)
@@ -511,6 +569,16 @@ def crawl_daily_update(
             else:
                 log_fund_step(fund_code, "feature", "skip")
 
+            if rating_spider is not None:
+                log_fund_step(fund_code, "rating", "start", page_size=options.rating_page_size)
+                rating_rows = rating_spider.fetch_ratings(fund_code, page_size=options.rating_page_size)
+                rating_saved = upsert_fund_ratings(connection, rating_rows)
+                fund_counts["rating"] = rating_saved
+                totals["rating"] += rating_saved
+                log_fund_step(fund_code, "rating", "success", parsed=len(rating_rows), saved=rating_saved)
+            else:
+                log_fund_step(fund_code, "rating", "skip")
+
             if holding_spider is not None:
                 log_fund_step(
                     fund_code,
@@ -543,17 +611,19 @@ def crawl_daily_update(
                     fund_code,
                 )
             logger.info(
-                "daily update fund=%s index=%s/%s status=success profile=%s nav_saved=%s feature_saved=%s holding_saved=%s totals_profile=%s totals_nav=%s totals_feature=%s totals_holding=%s",
+                "daily update fund=%s index=%s/%s status=success profile=%s nav_saved=%s feature_saved=%s rating_saved=%s holding_saved=%s totals_profile=%s totals_nav=%s totals_feature=%s totals_rating=%s totals_holding=%s",
                 fund_code,
                 index,
                 len(fund_codes),
                 fund_counts["profile"],
                 fund_counts["nav"],
                 fund_counts["feature"],
+                fund_counts["rating"],
                 fund_counts["holding"],
                 totals["profile"],
                 totals["nav"],
                 totals["feature"],
+                totals["rating"],
                 totals["holding"],
             )
         except Exception:
@@ -593,12 +663,13 @@ def crawl_daily_update(
             cursor_connection.close()
 
     logger.info(
-        "daily update completed, succeeded: %s, failed: %s, profiles: %s, nav rows: %s, feature rows: %s, holding rows: %s",
+        "daily update completed, succeeded: %s, failed: %s, profiles: %s, nav rows: %s, feature rows: %s, rating rows: %s, holding rows: %s",
         succeeded,
         failed,
         totals["profile"],
         totals["nav"],
         totals["feature"],
+        totals["rating"],
         totals["holding"],
     )
     return succeeded, failed
@@ -677,6 +748,13 @@ def feature_options_from_env() -> FeatureOptions:
     return FeatureOptions(selector=selector_from_env("FEATURE_FUND_CODE"))
 
 
+def rating_options_from_env() -> RatingOptions:
+    return RatingOptions(
+        selector=selector_from_env("RATING_FUND_CODE"),
+        page_size=int(os.getenv("RATING_PAGE_SIZE", "50")),
+    )
+
+
 def holding_options_from_env() -> HoldingOptions:
     return HoldingOptions(
         selector=selector_from_env("HOLDING_FUND_CODE"),
@@ -700,6 +778,7 @@ def daily_update_options_from_env() -> DailyUpdateOptions:
         crawl_profile=parse_bool(os.getenv("DAILY_CRAWL_PROFILE", "1")),
         crawl_nav=parse_bool(os.getenv("DAILY_CRAWL_NAV", "1")),
         crawl_feature=parse_bool(os.getenv("DAILY_CRAWL_FEATURE", "1")),
+        crawl_rating=parse_bool(os.getenv("DAILY_CRAWL_RATING", "1")),
         crawl_holdings=parse_bool(os.getenv("DAILY_CRAWL_HOLDINGS", "1")),
         fund_list_options=fund_list_options_from_env(),
         nav_page_size=int(os.getenv("NAV_PAGE_SIZE", "20")),
@@ -707,6 +786,7 @@ def daily_update_options_from_env() -> DailyUpdateOptions:
         nav_max_pages=nav_max_pages,
         nav_start_date=nav_start_date,
         nav_end_date=nav_end_date,
+        rating_page_size=int(os.getenv("RATING_PAGE_SIZE", "50")),
         holding_top_line=int(os.getenv("HOLDING_TOP_LINE", "10")),
         holding_year=os.getenv("HOLDING_YEAR", "").strip(),
         holding_month=os.getenv("HOLDING_MONTH", "").strip(),

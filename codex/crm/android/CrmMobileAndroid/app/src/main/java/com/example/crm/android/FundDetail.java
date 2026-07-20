@@ -12,6 +12,7 @@ public class FundDetail implements Serializable {
     public FundNav latestNav;
     public List<FundHolding> latestHoldings = new ArrayList<>();
     public List<FundFeature> features = new ArrayList<>();
+    public List<FundRating> ratings = new ArrayList<>();
 
     public static FundDetail fromJson(JSONObject json) {
         FundDetail detail = new FundDetail();
@@ -33,6 +34,12 @@ public class FundDetail implements Serializable {
         if (features != null) {
             for (int i = 0; i < features.length(); i++) {
                 detail.features.add(FundFeature.fromJson(features.optJSONObject(i)));
+            }
+        }
+        JSONArray ratings = json.optJSONArray("ratings");
+        if (ratings != null) {
+            for (int i = 0; i < ratings.length(); i++) {
+                detail.ratings.add(FundRating.fromJson(ratings.optJSONObject(i)));
             }
         }
         return detail;

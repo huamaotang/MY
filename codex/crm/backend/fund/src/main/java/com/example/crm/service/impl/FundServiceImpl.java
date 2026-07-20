@@ -7,10 +7,12 @@ import com.example.crm.dto.FundDetailResponse;
 import com.example.crm.entity.CfgFund;
 import com.example.crm.entity.FundFeatureData;
 import com.example.crm.entity.FundNavHistory;
+import com.example.crm.entity.FundRating;
 import com.example.crm.entity.FundStockHolding;
 import com.example.crm.mapper.CfgFundMapper;
 import com.example.crm.mapper.FundFeatureDataMapper;
 import com.example.crm.mapper.FundNavHistoryMapper;
+import com.example.crm.mapper.FundRatingMapper;
 import com.example.crm.mapper.FundStockHoldingMapper;
 import com.example.crm.service.IFundService;
 import org.springframework.stereotype.Service;
@@ -20,20 +22,24 @@ import java.util.List;
 @Service
 public class FundServiceImpl implements IFundService {
     private static final long DEFAULT_DETAIL_HOLDING_SIZE = 10;
+    private static final long DEFAULT_DETAIL_RATING_SIZE = 12;
 
     private final CfgFundMapper fundMapper;
     private final FundNavHistoryMapper navHistoryMapper;
     private final FundStockHoldingMapper stockHoldingMapper;
     private final FundFeatureDataMapper featureDataMapper;
+    private final FundRatingMapper ratingMapper;
 
     public FundServiceImpl(CfgFundMapper fundMapper,
                            FundNavHistoryMapper navHistoryMapper,
                            FundStockHoldingMapper stockHoldingMapper,
-                           FundFeatureDataMapper featureDataMapper) {
+                           FundFeatureDataMapper featureDataMapper,
+                           FundRatingMapper ratingMapper) {
         this.fundMapper = fundMapper;
         this.navHistoryMapper = navHistoryMapper;
         this.stockHoldingMapper = stockHoldingMapper;
         this.featureDataMapper = featureDataMapper;
+        this.ratingMapper = ratingMapper;
     }
 
     @Override
@@ -58,6 +64,7 @@ public class FundServiceImpl implements IFundService {
         response.setLatestNav(latestNav(fundCode));
         response.setLatestHoldings(latestHoldings(fundCode));
         response.setFeatures(features(fundCode));
+        response.setRatings(ratings(fundCode));
         return response;
     }
 
@@ -112,6 +119,14 @@ public class FundServiceImpl implements IFundService {
                 .eq(FundFeatureData::getFundCode, fundCode)
                 .orderByDesc(FundFeatureData::getCutoffDate)
                 .orderByAsc(FundFeatureData::getPeriodLabel));
+    }
+
+    @Override
+    public List<FundRating> ratings(String fundCode) {
+        findFund(fundCode);
+        return ratingMapper.selectPage(new Page<>(1, DEFAULT_DETAIL_RATING_SIZE), new LambdaQueryWrapper<FundRating>()
+                .eq(FundRating::getFundCode, fundCode)
+                .orderByDesc(FundRating::getRatingDate)).getRecords();
     }
 
     private CfgFund findFund(String fundCode) {

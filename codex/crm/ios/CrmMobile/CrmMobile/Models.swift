@@ -83,11 +83,39 @@ struct FundFeature: Decodable, Hashable {
     let sharpeRatio: Decimal?
 }
 
+struct FundRating: Decodable, Hashable {
+    let fundCode: String
+    let ratingDate: String
+    let zhaoshangRating: Int?
+    let shanghaiRating3y: Int?
+    let shanghaiRating5y: Int?
+    let jianRating: Int?
+    let morningStarRating: Int?
+}
+
 struct FundDetail: Decodable {
     let fund: Fund
     let latestNav: FundNav?
     let latestHoldings: [FundHolding]
     let features: [FundFeature]
+    let ratings: [FundRating]
+
+    enum CodingKeys: String, CodingKey {
+        case fund
+        case latestNav
+        case latestHoldings
+        case features
+        case ratings
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fund = try container.decode(Fund.self, forKey: .fund)
+        latestNav = try container.decodeIfPresent(FundNav.self, forKey: .latestNav)
+        latestHoldings = try container.decodeIfPresent([FundHolding].self, forKey: .latestHoldings) ?? []
+        features = try container.decodeIfPresent([FundFeature].self, forKey: .features) ?? []
+        ratings = try container.decodeIfPresent([FundRating].self, forKey: .ratings) ?? []
+    }
 }
 
 enum ApiError: LocalizedError {

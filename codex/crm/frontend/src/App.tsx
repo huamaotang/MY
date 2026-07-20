@@ -42,6 +42,7 @@ import {
   FundFeature,
   FundHolding,
   FundNav,
+  FundRating,
   Role,
   SysMenu,
   User,
@@ -54,6 +55,7 @@ import {
   listFundFeatures,
   listFundHoldings,
   listFundNavs,
+  listFundRatings,
   listFunds,
   listCustomers,
   listMenus,
@@ -613,6 +615,7 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
   const [holdingCurrent, setHoldingCurrent] = useState(1);
   const [holdingPageSize, setHoldingPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [features, setFeatures] = useState<FundFeature[]>([]);
+  const [ratings, setRatings] = useState<FundRating[]>([]);
 
   const loadDetail = async () => {
     if (!fundCode) {
@@ -623,6 +626,7 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
       const result = await getFundDetail(fundCode);
       setDetail(result);
       setFeatures(result.features || []);
+      setRatings(result.ratings || []);
       await Promise.all([loadChartNavs(), loadNavs(1), loadHoldings(1)]);
     } catch (error) {
       message.error((error as Error).message);
@@ -668,6 +672,13 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
     setFeatures(await listFundFeatures(fundCode));
   };
 
+  const refreshRatings = async () => {
+    if (!fundCode) {
+      return;
+    }
+    setRatings(await listFundRatings(fundCode));
+  };
+
   useEffect(() => {
     if (open && fundCode) {
       loadDetail();
@@ -677,6 +688,7 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
       setNavs([]);
       setHoldings([]);
       setFeatures([]);
+      setRatings([]);
     }
   }, [open, fundCode]);
 
@@ -702,6 +714,15 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
     { title: '统计周期', dataIndex: 'periodLabel', width: 100 },
     { title: '标准差', dataIndex: 'standardDeviation', width: 120, render: formatValue },
     { title: '夏普比率', dataIndex: 'sharpeRatio', width: 120, render: formatValue }
+  ];
+
+  const ratingColumns: ColumnsType<FundRating> = [
+    { title: '评级日期', dataIndex: 'ratingDate', width: 120 },
+    { title: '招商评级', dataIndex: 'zhaoshangRating', width: 120, render: renderRatingStars },
+    { title: '上海三年', dataIndex: 'shanghaiRating3y', width: 120, render: renderRatingStars },
+    { title: '上海五年', dataIndex: 'shanghaiRating5y', width: 120, render: renderRatingStars },
+    { title: '济安金信', dataIndex: 'jianRating', width: 120, render: renderRatingStars },
+    { title: '晨星评级', dataIndex: 'morningStarRating', width: 120, render: renderRatingStars }
   ];
 
   const trendRows = useMemo(() => buildTrendRows(chartNavs, trendPeriod), [chartNavs, trendPeriod]);
@@ -798,6 +819,20 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
                   pageSizeOptions: PAGE_SIZE_OPTIONS,
                   onChange: loadNavs
                 }}
+              />
+            )
+          },
+          {
+            key: 'ratings',
+            label: '评级',
+            children: (
+              <Table
+                rowKey={(record) => `${record.ratingDate}-${record.fundCode}`}
+                columns={ratingColumns}
+                dataSource={ratings}
+                loading={loading}
+                pagination={false}
+                onChange={refreshRatings}
               />
             )
           },
@@ -1453,6 +1488,14 @@ function menuTypeLabel(type: string) {
 
 function formatValue(value?: number | string | null) {
   return value == null || value === '' ? '-' : value;
+}
+
+function renderRatingStars(value?: number | string | null) {
+  const rating = toNumber(value);
+  if (!rating) {
+    return '-';
+  }
+  return <Tag color="gold">{'★'.repeat(Math.max(0, Math.min(5, Math.round(rating))))}</Tag>;
 }
 
 function toNumber(value?: number | string | null) {

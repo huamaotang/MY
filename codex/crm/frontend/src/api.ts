@@ -96,11 +96,23 @@ export type FundFeature = {
   sharpeRatio?: number;
 };
 
+export type FundRating = {
+  id?: number;
+  fundCode: string;
+  ratingDate: string;
+  zhaoshangRating?: number;
+  shanghaiRating3y?: number;
+  shanghaiRating5y?: number;
+  jianRating?: number;
+  morningStarRating?: number;
+};
+
 export type FundDetail = {
   fund: Fund;
   latestNav?: FundNav;
   latestHoldings: FundHolding[];
   features: FundFeature[];
+  ratings: FundRating[];
 };
 
 export type Role = {
@@ -216,6 +228,10 @@ export function listFundHoldings(fundCode: string, params: { current: number; si
 
 export function listFundFeatures(fundCode: string) {
   return request<FundFeature[]>(`/funds/${encodeURIComponent(fundCode)}/features`);
+}
+
+export function listFundRatings(fundCode: string) {
+  return request<FundRating[]>(`/funds/${encodeURIComponent(fundCode)}/ratings`);
 }
 
 export function saveFund(fund: Fund) {

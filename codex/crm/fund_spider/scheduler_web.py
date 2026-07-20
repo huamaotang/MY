@@ -32,6 +32,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "daily_crawl_profile": True,
     "daily_crawl_nav": True,
     "daily_crawl_feature": True,
+    "daily_crawl_rating": True,
     "daily_crawl_holdings": True,
     "daily_nav_start_date": "",
     "daily_nav_end_date": "",
@@ -284,6 +285,7 @@ def sanitize_config(updates: dict[str, Any]) -> dict[str, Any]:
         "daily_crawl_profile",
         "daily_crawl_nav",
         "daily_crawl_feature",
+        "daily_crawl_rating",
         "daily_crawl_holdings",
         "daily_use_cursor",
         "log_sql",
@@ -315,6 +317,7 @@ def env_config_overrides() -> dict[str, Any]:
         "DAILY_CRAWL_PROFILE": "daily_crawl_profile",
         "DAILY_CRAWL_NAV": "daily_crawl_nav",
         "DAILY_CRAWL_FEATURE": "daily_crawl_feature",
+        "DAILY_CRAWL_RATING": "daily_crawl_rating",
         "DAILY_CRAWL_HOLDINGS": "daily_crawl_holdings",
         "DAILY_NAV_START_DATE": "daily_nav_start_date",
         "DAILY_NAV_END_DATE": "daily_nav_end_date",
@@ -350,6 +353,7 @@ def build_runtime_env(config: dict[str, Any]) -> dict[str, str]:
         "DAILY_CRAWL_PROFILE": bool_env(config["daily_crawl_profile"]),
         "DAILY_CRAWL_NAV": bool_env(config["daily_crawl_nav"]),
         "DAILY_CRAWL_FEATURE": bool_env(config["daily_crawl_feature"]),
+        "DAILY_CRAWL_RATING": bool_env(config["daily_crawl_rating"]),
         "DAILY_CRAWL_HOLDINGS": bool_env(config["daily_crawl_holdings"]),
         "DAILY_NAV_START_DATE": str(config["daily_nav_start_date"]),
         "DAILY_NAV_END_DATE": str(config["daily_nav_end_date"]),
@@ -459,6 +463,7 @@ def render_index(snapshot: dict[str, Any]) -> str:
         {checkbox("daily_crawl_profile", "基础信息", config["daily_crawl_profile"])}
         {checkbox("daily_crawl_nav", "每日净值", config["daily_crawl_nav"])}
         {checkbox("daily_crawl_feature", "特色数据", config["daily_crawl_feature"])}
+        {checkbox("daily_crawl_rating", "基金评级", config["daily_crawl_rating"])}
         {checkbox("daily_crawl_holdings", "基金持仓", config["daily_crawl_holdings"])}
         {checkbox("daily_use_cursor", "启用游标续跑", config["daily_use_cursor"])}
         {checkbox("log_sql", "打印SQL", config["log_sql"])}

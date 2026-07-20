@@ -71,6 +71,10 @@ def build_parser() -> argparse.ArgumentParser:
     feature = subparsers.add_parser("feature", parents=[request_parent, db_parent, batch_parent])
     feature.add_argument("--feature-fund-code", dest="FEATURE_FUND_CODE")
 
+    rating = subparsers.add_parser("rating", parents=[request_parent, db_parent, batch_parent])
+    rating.add_argument("--rating-fund-code", dest="RATING_FUND_CODE")
+    rating.add_argument("--rating-page-size", dest="RATING_PAGE_SIZE")
+
     holdings = subparsers.add_parser("holdings", parents=[request_parent, db_parent, batch_parent])
     holdings.add_argument("--holding-fund-code", dest="HOLDING_FUND_CODE")
     holdings.add_argument("--top-line", dest="HOLDING_TOP_LINE")
@@ -80,8 +84,8 @@ def build_parser() -> argparse.ArgumentParser:
     all_jobs = subparsers.add_parser("all", parents=[request_parent, db_parent, batch_parent, nav_parent])
     all_jobs.add_argument(
         "--jobs",
-        default="fund-list,profile-nav,feature,holdings",
-        help="Comma-separated jobs: fund-list,profile-nav,feature,holdings",
+        default="fund-list,profile-nav,feature,rating,holdings",
+        help="Comma-separated jobs: fund-list,profile-nav,feature,rating,holdings",
     )
     all_jobs.add_argument("--crawl-profile", dest="CRAWL_PROFILE", choices=["0", "1"], default=None)
     all_jobs.add_argument("--crawl-nav", dest="CRAWL_NAV", choices=["0", "1"], default=None)
@@ -97,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     daily.add_argument("--crawl-profile", dest="DAILY_CRAWL_PROFILE", choices=["0", "1"], default=None)
     daily.add_argument("--crawl-nav", dest="DAILY_CRAWL_NAV", choices=["0", "1"], default=None)
     daily.add_argument("--crawl-feature", dest="DAILY_CRAWL_FEATURE", choices=["0", "1"], default=None)
+    daily.add_argument("--crawl-rating", dest="DAILY_CRAWL_RATING", choices=["0", "1"], default=None)
     daily.add_argument("--crawl-holdings", dest="DAILY_CRAWL_HOLDINGS", choices=["0", "1"], default=None)
     daily.add_argument("--use-cursor", dest="DAILY_USE_CURSOR", choices=["0", "1"], default=None)
     daily.add_argument("--cursor-date", dest="DAILY_CURSOR_DATE")
@@ -104,6 +109,7 @@ def build_parser() -> argparse.ArgumentParser:
     daily.add_argument("--top-line", dest="HOLDING_TOP_LINE")
     daily.add_argument("--year", dest="HOLDING_YEAR")
     daily.add_argument("--month", dest="HOLDING_MONTH")
+    daily.add_argument("--rating-page-size", dest="RATING_PAGE_SIZE")
     daily.add_argument("--page-size", dest="PAGE_SIZE")
     daily.add_argument("--start-page", dest="START_PAGE")
     daily.add_argument("--max-pages", dest="MAX_PAGES")
@@ -129,6 +135,8 @@ def build_env_overrides(args: argparse.Namespace) -> dict[str, str | None]:
 
     if getattr(args, "FEATURE_FUND_CODE", None):
         overrides["FUND_CODE"] = args.FEATURE_FUND_CODE
+    if getattr(args, "RATING_FUND_CODE", None):
+        overrides["FUND_CODE"] = args.RATING_FUND_CODE
     if getattr(args, "HOLDING_FUND_CODE", None):
         overrides["FUND_CODE"] = args.HOLDING_FUND_CODE
     return overrides
@@ -144,6 +152,8 @@ def run_command(args: argparse.Namespace) -> None:
         jobs.crawl_profile_nav()
     elif command == "feature":
         jobs.crawl_feature_data()
+    elif command == "rating":
+        jobs.crawl_ratings()
     elif command == "holdings":
         jobs.crawl_holdings()
     elif command == "all":
@@ -163,6 +173,7 @@ def run_job_chain(job_names: str) -> None:
         "fund-list": jobs.crawl_fund_list,
         "profile-nav": jobs.crawl_profile_nav,
         "feature": jobs.crawl_feature_data,
+        "rating": jobs.crawl_ratings,
         "holdings": jobs.crawl_holdings,
     }
     for raw_name in job_names.split(","):

@@ -6,6 +6,7 @@ import com.example.crm.dto.FundDetailResponse;
 import com.example.crm.entity.CfgFund;
 import com.example.crm.entity.FundFeatureData;
 import com.example.crm.entity.FundNavHistory;
+import com.example.crm.entity.FundRating;
 import com.example.crm.entity.FundStockHolding;
 import com.example.crm.service.IFundService;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -87,5 +88,11 @@ public class FundController {
     @PreAuthorize("hasAuthority('fund:list')")
     public ApiResponse<List<FundFeatureData>> features(@PathVariable String fundCode) {
         return ApiResponse.ok(fundService.features(fundCode));
+    }
+
+    @GetMapping("/{fundCode}/ratings")
+    @PreAuthorize("hasAuthority('fund:list')")
+    public ApiResponse<List<FundRating>> ratings(@PathVariable String fundCode) {
+        return ApiResponse.ok(fundService.ratings(fundCode));
     }
 }

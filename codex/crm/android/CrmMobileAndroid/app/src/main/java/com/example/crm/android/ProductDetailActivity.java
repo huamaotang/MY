@@ -133,6 +133,17 @@ public class ProductDetailActivity extends Activity {
             }
         }
 
+        section("基金评级");
+        if (detail == null || detail.ratings.isEmpty()) {
+            row("评级", null);
+        } else {
+            int count = Math.min(6, detail.ratings.size());
+            for (int i = 0; i < count; i++) {
+                FundRating rating = detail.ratings.get(i);
+                row(rating.ratingDate, ratingText(rating));
+            }
+        }
+
         section("特色数据");
         if (detail == null || detail.features.isEmpty()) {
             row("特色数据", null);
@@ -156,6 +167,26 @@ public class ProductDetailActivity extends Activity {
         TextView view = Ui.text(this, title + "： " + Ui.value(value), 15, Ui.MUTED, Typeface.NORMAL);
         view.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 4));
         content.addView(view);
+    }
+
+    private String ratingText(FundRating rating) {
+        return "招商 " + ratingStars(rating.zhaoshangRating)
+                + " / 上海3年 " + ratingStars(rating.shanghaiRating3y)
+                + " / 上海5年 " + ratingStars(rating.shanghaiRating5y)
+                + " / 济安 " + ratingStars(rating.jianRating)
+                + " / 晨星 " + ratingStars(rating.morningStarRating);
+    }
+
+    private String ratingStars(Integer value) {
+        if (value == null || value <= 0) {
+            return "-";
+        }
+        int count = Math.min(value, 5);
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            builder.append("★");
+        }
+        return builder.toString();
     }
 
     private void renderPeriodButtons() {

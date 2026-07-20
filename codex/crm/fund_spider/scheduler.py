@@ -110,6 +110,7 @@ def build_jobs(now: datetime, env: dict[str, str] | None = None) -> list[Job]:
         "DAILY_CRAWL_PROFILE": get_config_value("DAILY_CRAWL_PROFILE", "1", env) if profile_nav_enabled else "0",
         "DAILY_CRAWL_NAV": get_config_value("DAILY_CRAWL_NAV", "1", env) if profile_nav_enabled else "0",
         "DAILY_CRAWL_FEATURE": get_config_value("DAILY_CRAWL_FEATURE", "1", env),
+        "DAILY_CRAWL_RATING": get_config_value("DAILY_CRAWL_RATING", "1", env),
         "DAILY_CRAWL_HOLDINGS": get_config_value("DAILY_CRAWL_HOLDINGS", "1", env),
         "NAV_START_DATE": nav_start_date,
     }
@@ -124,6 +125,7 @@ def build_jobs(now: datetime, env: dict[str, str] | None = None) -> list[Job]:
             "DAILY_CRAWL_PROFILE",
             "DAILY_CRAWL_NAV",
             "DAILY_CRAWL_FEATURE",
+            "DAILY_CRAWL_RATING",
             "DAILY_CRAWL_HOLDINGS",
         )
     )

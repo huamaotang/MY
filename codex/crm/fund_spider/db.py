@@ -62,6 +62,17 @@ class FundFeatureData:
 
 
 @dataclass(frozen=True)
+class FundRating:
+    fund_code: str
+    rating_date: str
+    zhaoshang_rating: int | None
+    shanghai_rating_3y: int | None
+    shanghai_rating_5y: int | None
+    jian_rating: int | None
+    morning_star_rating: int | None
+
+
+@dataclass(frozen=True)
 class FundStockHolding:
     fund_code: str
     report_period: str | None
@@ -138,6 +149,7 @@ def ensure_schema(config: DatabaseConfig) -> None:
             cursor.execute(_fund_nav_history_ddl(database))
             cursor.execute(_fund_stock_holding_ddl(database))
             cursor.execute(_fund_feature_data_ddl(database))
+            cursor.execute(_fund_rating_ddl(database))
             cursor.execute(_fund_crawl_cursor_ddl(database))
         connection.commit()
     finally:
@@ -285,6 +297,48 @@ def upsert_feature_data(connection: Connection, rows: Iterable[FundFeatureData])
           updated_at = CURRENT_TIMESTAMP
     """
     log_write_sql("upsert_feature_data", sql, values)
+    with connection.cursor() as cursor:
+        cursor.executemany(sql, values)
+    connection.commit()
+    return len(values)
+
+
+def upsert_fund_ratings(connection: Connection, rows: Iterable[FundRating]) -> int:
+    values = [
+        (
+            row.fund_code,
+            row.rating_date,
+            row.zhaoshang_rating,
+            row.shanghai_rating_3y,
+            row.shanghai_rating_5y,
+            row.jian_rating,
+            row.morning_star_rating,
+        )
+        for row in rows
+    ]
+    if not values:
+        return 0
+
+    sql = """
+        INSERT INTO fund_rating (
+          fund_code,
+          rating_date,
+          zhaoshang_rating,
+          shanghai_rating_3y,
+          shanghai_rating_5y,
+          jian_rating,
+          morning_star_rating
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          zhaoshang_rating = VALUES(zhaoshang_rating),
+          shanghai_rating_3y = VALUES(shanghai_rating_3y),
+          shanghai_rating_5y = VALUES(shanghai_rating_5y),
+          jian_rating = VALUES(jian_rating),
+          morning_star_rating = VALUES(morning_star_rating),
+          updated_at = CURRENT_TIMESTAMP
+    """
+    log_write_sql("upsert_fund_ratings", sql, values)
     with connection.cursor() as cursor:
         cursor.executemany(sql, values)
     connection.commit()
@@ -527,6 +581,26 @@ def _fund_feature_data_ddl(database: str) -> str:
           UNIQUE KEY uk_fund_feature_period (fund_code, cutoff_date, period_label),
           KEY idx_fund_feature_cutoff_date (cutoff_date)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金特色数据表'
+    """
+
+
+def _fund_rating_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_rating (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+          fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
+          rating_date VARCHAR(8) NOT NULL COMMENT '评级日期',
+          zhaoshang_rating TINYINT UNSIGNED NULL COMMENT '招商评级',
+          shanghai_rating_3y TINYINT UNSIGNED NULL COMMENT '上海证券三年期评级',
+          shanghai_rating_5y TINYINT UNSIGNED NULL COMMENT '上海证券五年期评级',
+          jian_rating TINYINT UNSIGNED NULL COMMENT '济安金信评级',
+          morning_star_rating TINYINT UNSIGNED NULL COMMENT '晨星评级',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_fund_rating_code_date (fund_code, rating_date),
+          KEY idx_fund_rating_date (rating_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金评级表'
     """
 
 

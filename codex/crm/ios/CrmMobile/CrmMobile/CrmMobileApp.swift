@@ -296,6 +296,22 @@ struct ProductDetailView: View {
                 }
             }
 
+            Section("基金评级") {
+                ForEach(Array((detail?.ratings ?? []).prefix(6)), id: \.self) { rating in
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(rating.ratingDate)
+                            .font(.subheadline.bold())
+                        Text(ratingText(rating))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+                if detail?.ratings.isEmpty ?? true {
+                    DetailLine(title: "评级", value: nil)
+                }
+            }
+
             Section("特色数据") {
                 ForEach(Array((detail?.features ?? []).prefix(6)), id: \.self) { feature in
                     DetailLine(title: "\(feature.periodLabel) \(feature.cutoffDate)", value: "标准差 \(feature.standardDeviation.map(String.init) ?? "-") / 夏普 \(feature.sharpeRatio.map(String.init) ?? "-")")
@@ -331,6 +347,23 @@ struct ProductDetailView: View {
             errorMessage = error.localizedDescription
         }
     }
+}
+
+private func ratingText(_ rating: FundRating) -> String {
+    [
+        "招商 \(ratingStars(rating.zhaoshangRating))",
+        "上海3年 \(ratingStars(rating.shanghaiRating3y))",
+        "上海5年 \(ratingStars(rating.shanghaiRating5y))",
+        "济安 \(ratingStars(rating.jianRating))",
+        "晨星 \(ratingStars(rating.morningStarRating))"
+    ].joined(separator: " / ")
+}
+
+private func ratingStars(_ value: Int?) -> String {
+    guard let value, value > 0 else {
+        return "-"
+    }
+    return String(repeating: "★", count: min(value, 5))
 }
 
 private enum TrendPeriod: String, CaseIterable, Identifiable {

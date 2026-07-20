@@ -5,6 +5,7 @@ import com.example.crm.dto.FundDetailResponse;
 import com.example.crm.entity.CfgFund;
 import com.example.crm.entity.FundFeatureData;
 import com.example.crm.entity.FundNavHistory;
+import com.example.crm.entity.FundRating;
 import com.example.crm.entity.FundStockHolding;
 
 import java.util.List;
@@ -25,4 +26,6 @@ public interface IFundService {
     Page<FundStockHolding> holdings(String fundCode, long current, long size, String reportDate);
 
     List<FundFeatureData> features(String fundCode);
+
+    List<FundRating> ratings(String fundCode);
 }

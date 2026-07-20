@@ -5,6 +5,7 @@
   "daily_crawl_nav": true,
   "daily_crawl_profile": true,
   "daily_crawl_profile_nav": true,
+  "daily_crawl_rating": true,
   "daily_nav_end_date": "",
   "daily_nav_lookback_days": "10",
   "daily_nav_start_date": "",

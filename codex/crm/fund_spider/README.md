@@ -49,7 +49,7 @@ python cli.py fund-list --max-pages 2
 Run selected jobs through one entrypoint:
 
 ```bash
-python cli.py all --jobs fund-list,profile-nav,feature,holdings --nav-start-date 20260701
+python cli.py all --jobs fund-list,profile-nav,feature,rating,holdings --nav-start-date 20260701
 ```
 
 Run the daily incremental update in one pass:
@@ -137,6 +137,22 @@ Run a batch from `cfg_fund`:
 python cli.py feature --fund-limit 100 --fund-offset 0
 ```
 
+## Ratings
+
+`rating_spider.py` crawls the fund rating API behind `https://fundf10.eastmoney.com/jjpj_<fund_code>.html` and stores quarterly rating rows in `fund_rating`.
+
+Run one fund:
+
+```bash
+python cli.py rating --fund-code 519674
+```
+
+Run a batch from `cfg_fund`:
+
+```bash
+python cli.py rating --fund-limit 100 --fund-offset 0
+```
+
 ## Holdings
 
 `crawl_holdings.py` crawls the holding data behind `https://fundf10.eastmoney.com/ccmx_<fund_code>.html` and stores rows in `fund_stock_holding`.
@@ -192,7 +208,7 @@ Default daily job:
 daily_update
 ```
 
-`daily_update` optionally refreshes the fund list first, then scans selected `cfg_fund` codes once and updates profile, recent NAV, feature data, and holdings for each fund in the same loop.
+`daily_update` optionally refreshes the fund list first, then scans selected `cfg_fund` codes once and updates profile, recent NAV, feature data, ratings, and holdings for each fund in the same loop.
 
 Funds are processed in ascending `fund_code` order from `cfg_fund`.
 
@@ -205,6 +221,7 @@ DAILY_CRAWL_PROFILE_NAV=1
 DAILY_CRAWL_PROFILE=1
 DAILY_CRAWL_NAV=1
 DAILY_CRAWL_FEATURE=1
+DAILY_CRAWL_RATING=1
 DAILY_CRAWL_HOLDINGS=1
 DAILY_NAV_LOOKBACK_DAYS=10
 DAILY_NAV_MAX_PAGES=
