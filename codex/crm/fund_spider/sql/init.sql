@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS cfg_fund (
   management_company VARCHAR(255) NULL COMMENT '管理人',
   net_asset_scale VARCHAR(100) NULL COMMENT '净资产规模',
   scale_date DATE NULL COMMENT '规模截止至日',
+  profile_updated_at DATETIME NULL COMMENT '基础资料更新时间',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (id),
@@ -83,6 +84,19 @@ CREATE TABLE IF NOT EXISTS fund_rating (
   UNIQUE KEY uk_fund_rating_code_date (fund_code, rating_date),
   KEY idx_fund_rating_date (rating_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金评级表';
+
+CREATE TABLE IF NOT EXISTS fund_refresh_state (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
+  data_type VARCHAR(20) NOT NULL COMMENT '数据类型',
+  last_success_at DATETIME NOT NULL COMMENT '最近成功刷新时间',
+  last_row_count INT NOT NULL DEFAULT 0 COMMENT '最近刷新行数',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_fund_refresh_state_code_type (fund_code, data_type),
+  KEY idx_fund_refresh_state_type_time (data_type, last_success_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金数据刷新状态表';
 
 CREATE TABLE IF NOT EXISTS fund_crawl_cursor (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',

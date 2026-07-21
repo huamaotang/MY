@@ -10,6 +10,9 @@ from db import (
     connect,
     database_config_from_env,
     ensure_schema,
+    fund_profile_recently_updated,
+    fund_data_recently_refreshed,
+    fund_table_recently_updated,
     get_crawl_cursor,
     list_fund_codes,
     update_fund_profile,
@@ -17,6 +20,7 @@ from db import (
     upsert_feature_data,
     upsert_funds,
     upsert_fund_ratings,
+    upsert_fund_refresh_state,
     upsert_nav_history,
     upsert_stock_holdings,
 )
@@ -78,6 +82,7 @@ class FeatureOptions:
 class RatingOptions:
     selector: BatchSelector
     page_size: int = 50
+    max_pages: int | None = None
 
 
 @dataclass(frozen=True)
@@ -103,8 +108,14 @@ class DailyUpdateOptions:
     nav_max_pages: int | None = None
     nav_start_date: str = ""
     nav_end_date: str = ""
+    nav_refresh_days: int = 1
+    profile_refresh_days: int = 30
+    feature_refresh_days: int = 7
+    rating_refresh_days: int = 7
+    holding_refresh_days: int = 7
     holding_top_line: int = 10
     rating_page_size: int = 50
+    rating_max_pages: int | None = 1
     holding_year: str = ""
     holding_month: str = ""
     use_cursor: bool = True
@@ -321,7 +332,7 @@ def crawl_ratings(
     try:
         for index, fund_code in enumerate(fund_codes, start=1):
             try:
-                rows = spider.fetch_ratings(fund_code, page_size=options.page_size)
+                rows = spider.fetch_ratings(fund_code, page_size=options.page_size, max_pages=options.max_pages)
                 saved = upsert_fund_ratings(connection, rows)
                 total_saved += saved
                 succeeded += 1
@@ -460,7 +471,7 @@ def crawl_daily_update(
         after_fund_code or "-",
     )
     logger.info(
-        "daily update config profile=%s nav=%s feature=%s rating=%s holdings=%s nav_start=%s nav_end=%s nav_max_pages=%s rating_page_size=%s holding_top_line=%s",
+        "daily update config profile=%s nav=%s feature=%s rating=%s holdings=%s nav_start=%s nav_end=%s nav_max_pages=%s refresh_days_nav=%s refresh_days_profile=%s refresh_days_feature=%s refresh_days_rating=%s refresh_days_holding=%s rating_page_size=%s rating_max_pages=%s holding_top_line=%s",
         options.crawl_profile,
         options.crawl_nav,
         options.crawl_feature,
@@ -469,7 +480,13 @@ def crawl_daily_update(
         options.nav_start_date or "-",
         options.nav_end_date or "-",
         options.nav_max_pages,
+        options.nav_refresh_days,
+        options.profile_refresh_days,
+        options.feature_refresh_days,
+        options.rating_refresh_days,
+        options.holding_refresh_days,
         options.rating_page_size,
+        options.rating_max_pages,
         options.holding_top_line,
     )
 
@@ -501,103 +518,145 @@ def crawl_daily_update(
         connection = connect(db_config)
         try:
             if profile_spider is not None:
-                log_fund_step(fund_code, "profile", "start")
-                profile = profile_spider.fetch_profile(fund_code)
-                update_fund_profile(connection, profile)
-                fund_counts["profile"] = 1
-                totals["profile"] += 1
-                log_fund_step(
-                    fund_code,
-                    "profile",
-                    "success",
-                    inception=profile.inception_date,
-                    manager=profile.fund_manager,
-                    fund_type=profile.fund_type,
-                    company=profile.management_company,
-                    scale=profile.net_asset_scale,
-                    scale_date=profile.scale_date,
-                )
+                if (
+                    fund_data_recently_refreshed(connection, "profile", fund_code, options.profile_refresh_days)
+                    or fund_profile_recently_updated(connection, fund_code, options.profile_refresh_days)
+                ):
+                    log_fund_step(fund_code, "profile", "skip", reason="recent", refresh_days=options.profile_refresh_days)
+                else:
+                    log_fund_step(fund_code, "profile", "start")
+                    profile = profile_spider.fetch_profile(fund_code)
+                    update_fund_profile(connection, profile)
+                    upsert_fund_refresh_state(connection, fund_code, "profile", 1)
+                    fund_counts["profile"] = 1
+                    totals["profile"] += 1
+                    log_fund_step(
+                        fund_code,
+                        "profile",
+                        "success",
+                        inception=profile.inception_date,
+                        manager=profile.fund_manager,
+                        fund_type=profile.fund_type,
+                        company=profile.management_company,
+                        scale=profile.net_asset_scale,
+                        scale_date=profile.scale_date,
+                    )
             else:
                 log_fund_step(fund_code, "profile", "skip")
 
             if nav_spider is not None:
-                log_fund_step(
-                    fund_code,
-                    "nav",
-                    "start",
-                    page_size=options.nav_page_size,
-                    start_page=options.nav_start_page,
-                    max_pages=options.nav_max_pages,
-                    start_date=options.nav_start_date or "-",
-                    end_date=options.nav_end_date or "-",
-                )
-                nav_saved = 0
-                nav_parsed = 0
-                for page in nav_spider.iter_pages(
-                    fund_code=fund_code,
-                    page_size=options.nav_page_size,
-                    start_page=options.nav_start_page,
-                    max_pages=options.nav_max_pages,
-                    start_date=options.nav_start_date,
-                    end_date=options.nav_end_date,
-                ):
-                    saved = upsert_nav_history(connection, page.rows)
-                    nav_saved += saved
-                    nav_parsed += len(page.rows)
-                    logger.info(
-                        "daily update fund=%s step=nav page=%s/%s parsed=%s saved=%s total_count=%s",
+                if should_skip_nav_refresh(connection, fund_code, options):
+                    log_fund_step(fund_code, "nav", "skip", reason="recent", refresh_days=options.nav_refresh_days)
+                else:
+                    log_fund_step(
                         fund_code,
-                        page.page_index,
-                        page.total_pages,
-                        len(page.rows),
-                        saved,
-                        page.total_count,
+                        "nav",
+                        "start",
+                        page_size=options.nav_page_size,
+                        start_page=options.nav_start_page,
+                        max_pages=options.nav_max_pages,
+                        start_date=options.nav_start_date or "-",
+                        end_date=options.nav_end_date or "-",
                     )
-                fund_counts["nav"] = nav_saved
-                totals["nav"] += nav_saved
-                log_fund_step(fund_code, "nav", "success", parsed=nav_parsed, saved=nav_saved)
+                    nav_saved = 0
+                    nav_parsed = 0
+                    for page in nav_spider.iter_pages(
+                        fund_code=fund_code,
+                        page_size=options.nav_page_size,
+                        start_page=options.nav_start_page,
+                        max_pages=options.nav_max_pages,
+                        start_date=options.nav_start_date,
+                        end_date=options.nav_end_date,
+                    ):
+                        saved = upsert_nav_history(connection, page.rows)
+                        nav_saved += saved
+                        nav_parsed += len(page.rows)
+                        logger.info(
+                            "daily update fund=%s step=nav page=%s/%s parsed=%s saved=%s total_count=%s",
+                            fund_code,
+                            page.page_index,
+                            page.total_pages,
+                            len(page.rows),
+                            saved,
+                            page.total_count,
+                        )
+                    upsert_fund_refresh_state(connection, fund_code, "nav", nav_parsed)
+                    fund_counts["nav"] = nav_saved
+                    totals["nav"] += nav_saved
+                    log_fund_step(fund_code, "nav", "success", parsed=nav_parsed, saved=nav_saved)
             else:
                 log_fund_step(fund_code, "nav", "skip")
 
             if feature_spider is not None:
-                log_fund_step(fund_code, "feature", "start")
-                feature_rows = feature_spider.fetch_feature_data(fund_code)
-                feature_saved = upsert_feature_data(connection, feature_rows)
-                fund_counts["feature"] = feature_saved
-                totals["feature"] += feature_saved
-                log_fund_step(fund_code, "feature", "success", parsed=len(feature_rows), saved=feature_saved)
+                if (
+                    fund_data_recently_refreshed(connection, "feature", fund_code, options.feature_refresh_days)
+                    or fund_table_recently_updated(connection, "fund_feature_data", fund_code, options.feature_refresh_days)
+                ):
+                    log_fund_step(fund_code, "feature", "skip", reason="recent", refresh_days=options.feature_refresh_days)
+                else:
+                    log_fund_step(fund_code, "feature", "start")
+                    feature_rows = feature_spider.fetch_feature_data(fund_code)
+                    feature_saved = upsert_feature_data(connection, feature_rows)
+                    upsert_fund_refresh_state(connection, fund_code, "feature", len(feature_rows))
+                    fund_counts["feature"] = feature_saved
+                    totals["feature"] += feature_saved
+                    log_fund_step(fund_code, "feature", "success", parsed=len(feature_rows), saved=feature_saved)
             else:
                 log_fund_step(fund_code, "feature", "skip")
 
             if rating_spider is not None:
-                log_fund_step(fund_code, "rating", "start", page_size=options.rating_page_size)
-                rating_rows = rating_spider.fetch_ratings(fund_code, page_size=options.rating_page_size)
-                rating_saved = upsert_fund_ratings(connection, rating_rows)
-                fund_counts["rating"] = rating_saved
-                totals["rating"] += rating_saved
-                log_fund_step(fund_code, "rating", "success", parsed=len(rating_rows), saved=rating_saved)
+                if (
+                    fund_data_recently_refreshed(connection, "rating", fund_code, options.rating_refresh_days)
+                    or fund_table_recently_updated(connection, "fund_rating", fund_code, options.rating_refresh_days)
+                ):
+                    log_fund_step(fund_code, "rating", "skip", reason="recent", refresh_days=options.rating_refresh_days)
+                else:
+                    log_fund_step(
+                        fund_code,
+                        "rating",
+                        "start",
+                        page_size=options.rating_page_size,
+                        max_pages=options.rating_max_pages,
+                    )
+                    rating_rows = rating_spider.fetch_ratings(
+                        fund_code,
+                        page_size=options.rating_page_size,
+                        max_pages=options.rating_max_pages,
+                    )
+                    rating_saved = upsert_fund_ratings(connection, rating_rows)
+                    upsert_fund_refresh_state(connection, fund_code, "rating", len(rating_rows))
+                    fund_counts["rating"] = rating_saved
+                    totals["rating"] += rating_saved
+                    log_fund_step(fund_code, "rating", "success", parsed=len(rating_rows), saved=rating_saved)
             else:
                 log_fund_step(fund_code, "rating", "skip")
 
             if holding_spider is not None:
-                log_fund_step(
-                    fund_code,
-                    "holding",
-                    "start",
-                    top_line=options.holding_top_line,
-                    year=options.holding_year or "-",
-                    month=options.holding_month or "-",
-                )
-                holding_rows = holding_spider.fetch_holdings(
-                    fund_code,
-                    top_line=options.holding_top_line,
-                    year=options.holding_year,
-                    month=options.holding_month,
-                )
-                holding_saved = upsert_stock_holdings(connection, holding_rows)
-                fund_counts["holding"] = holding_saved
-                totals["holding"] += holding_saved
-                log_fund_step(fund_code, "holding", "success", parsed=len(holding_rows), saved=holding_saved)
+                if (
+                    fund_data_recently_refreshed(connection, "holding", fund_code, options.holding_refresh_days)
+                    or fund_table_recently_updated(connection, "fund_stock_holding", fund_code, options.holding_refresh_days)
+                ):
+                    log_fund_step(fund_code, "holding", "skip", reason="recent", refresh_days=options.holding_refresh_days)
+                else:
+                    log_fund_step(
+                        fund_code,
+                        "holding",
+                        "start",
+                        top_line=options.holding_top_line,
+                        year=options.holding_year or "-",
+                        month=options.holding_month or "-",
+                    )
+                    holding_rows = holding_spider.fetch_holdings(
+                        fund_code,
+                        top_line=options.holding_top_line,
+                        year=options.holding_year,
+                        month=options.holding_month,
+                    )
+                    holding_saved = upsert_stock_holdings(connection, holding_rows)
+                    upsert_fund_refresh_state(connection, fund_code, "holding", len(holding_rows))
+                    fund_counts["holding"] = holding_saved
+                    totals["holding"] += holding_saved
+                    log_fund_step(fund_code, "holding", "success", parsed=len(holding_rows), saved=holding_saved)
             else:
                 log_fund_step(fund_code, "holding", "skip")
 
@@ -682,6 +741,18 @@ def log_fund_step(fund_code: str, step: str, status: str, **details) -> None:
     logger.info("daily update fund=%s step=%s status=%s%s", fund_code, step, status, suffix)
 
 
+def should_skip_nav_refresh(connection, fund_code: str, options: DailyUpdateOptions) -> bool:
+    if options.nav_refresh_days <= 0:
+        return False
+    if options.nav_start_date or options.nav_end_date:
+        return False
+    if options.nav_start_page != 1:
+        return False
+    if options.nav_max_pages not in (None, 1):
+        return False
+    return fund_data_recently_refreshed(connection, "nav", fund_code, options.nav_refresh_days)
+
+
 def load_selected_fund_codes(
     db_config: DatabaseConfig,
     selector: BatchSelector,
@@ -752,6 +823,7 @@ def rating_options_from_env() -> RatingOptions:
     return RatingOptions(
         selector=selector_from_env("RATING_FUND_CODE"),
         page_size=int(os.getenv("RATING_PAGE_SIZE", "50")),
+        max_pages=parse_optional_int(os.getenv("RATING_MAX_PAGES"), "RATING_MAX_PAGES"),
     )
 
 
@@ -786,7 +858,16 @@ def daily_update_options_from_env() -> DailyUpdateOptions:
         nav_max_pages=nav_max_pages,
         nav_start_date=nav_start_date,
         nav_end_date=nav_end_date,
+        nav_refresh_days=int(os.getenv("DAILY_NAV_REFRESH_DAYS", "1")),
+        profile_refresh_days=int(os.getenv("DAILY_PROFILE_REFRESH_DAYS", "30")),
+        feature_refresh_days=int(os.getenv("DAILY_FEATURE_REFRESH_DAYS", "7")),
+        rating_refresh_days=int(os.getenv("DAILY_RATING_REFRESH_DAYS", "7")),
+        holding_refresh_days=int(os.getenv("DAILY_HOLDING_REFRESH_DAYS", "7")),
         rating_page_size=int(os.getenv("RATING_PAGE_SIZE", "50")),
+        rating_max_pages=parse_optional_int(
+            os.getenv("DAILY_RATING_MAX_PAGES", os.getenv("RATING_MAX_PAGES", "1")),
+            "DAILY_RATING_MAX_PAGES",
+        ),
         holding_top_line=int(os.getenv("HOLDING_TOP_LINE", "10")),
         holding_year=os.getenv("HOLDING_YEAR", "").strip(),
         holding_month=os.getenv("HOLDING_MONTH", "").strip(),

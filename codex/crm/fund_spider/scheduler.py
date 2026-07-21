@@ -112,6 +112,12 @@ def build_jobs(now: datetime, env: dict[str, str] | None = None) -> list[Job]:
         "DAILY_CRAWL_FEATURE": get_config_value("DAILY_CRAWL_FEATURE", "1", env),
         "DAILY_CRAWL_RATING": get_config_value("DAILY_CRAWL_RATING", "1", env),
         "DAILY_CRAWL_HOLDINGS": get_config_value("DAILY_CRAWL_HOLDINGS", "1", env),
+        "DAILY_NAV_REFRESH_DAYS": get_config_value("DAILY_NAV_REFRESH_DAYS", "1", env),
+        "DAILY_PROFILE_REFRESH_DAYS": get_config_value("DAILY_PROFILE_REFRESH_DAYS", "30", env),
+        "DAILY_FEATURE_REFRESH_DAYS": get_config_value("DAILY_FEATURE_REFRESH_DAYS", "7", env),
+        "DAILY_RATING_REFRESH_DAYS": get_config_value("DAILY_RATING_REFRESH_DAYS", "7", env),
+        "DAILY_HOLDING_REFRESH_DAYS": get_config_value("DAILY_HOLDING_REFRESH_DAYS", "7", env),
+        "DAILY_RATING_MAX_PAGES": get_config_value("DAILY_RATING_MAX_PAGES", "1", env),
         "NAV_START_DATE": nav_start_date,
     }
     nav_end_date = get_config_value("DAILY_NAV_END_DATE", get_config_value("NAV_END_DATE", "", env), env).strip()

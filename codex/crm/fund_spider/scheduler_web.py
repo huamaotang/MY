@@ -37,6 +37,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "daily_nav_start_date": "",
     "daily_nav_end_date": "",
     "daily_nav_lookback_days": "10",
+    "daily_nav_refresh_days": "1",
+    "daily_profile_refresh_days": "30",
+    "daily_feature_refresh_days": "7",
+    "daily_rating_refresh_days": "7",
+    "daily_holding_refresh_days": "7",
+    "daily_rating_max_pages": "1",
     "daily_use_cursor": True,
     "daily_cursor_date": "",
     "fund_limit": "",
@@ -305,6 +311,16 @@ def sanitize_config(updates: dict[str, Any]) -> dict[str, Any]:
     if "daily_nav_lookback_days" in result:
         if int(result["daily_nav_lookback_days"]) < 0:
             raise ValueError("daily_nav_lookback_days must be greater than or equal to 0")
+    for refresh_field in (
+        "daily_nav_refresh_days",
+        "daily_profile_refresh_days",
+        "daily_feature_refresh_days",
+        "daily_rating_refresh_days",
+        "daily_holding_refresh_days",
+        "daily_rating_max_pages",
+    ):
+        if refresh_field in result and int(result[refresh_field]) < 0:
+            raise ValueError(f"{refresh_field} must be greater than or equal to 0")
     return result
 
 
@@ -322,6 +338,12 @@ def env_config_overrides() -> dict[str, Any]:
         "DAILY_NAV_START_DATE": "daily_nav_start_date",
         "DAILY_NAV_END_DATE": "daily_nav_end_date",
         "DAILY_NAV_LOOKBACK_DAYS": "daily_nav_lookback_days",
+        "DAILY_NAV_REFRESH_DAYS": "daily_nav_refresh_days",
+        "DAILY_PROFILE_REFRESH_DAYS": "daily_profile_refresh_days",
+        "DAILY_FEATURE_REFRESH_DAYS": "daily_feature_refresh_days",
+        "DAILY_RATING_REFRESH_DAYS": "daily_rating_refresh_days",
+        "DAILY_HOLDING_REFRESH_DAYS": "daily_holding_refresh_days",
+        "DAILY_RATING_MAX_PAGES": "daily_rating_max_pages",
         "DAILY_USE_CURSOR": "daily_use_cursor",
         "DAILY_CURSOR_DATE": "daily_cursor_date",
         "FUND_LIMIT": "fund_limit",
@@ -358,6 +380,12 @@ def build_runtime_env(config: dict[str, Any]) -> dict[str, str]:
         "DAILY_NAV_START_DATE": str(config["daily_nav_start_date"]),
         "DAILY_NAV_END_DATE": str(config["daily_nav_end_date"]),
         "DAILY_NAV_LOOKBACK_DAYS": str(config["daily_nav_lookback_days"]),
+        "DAILY_NAV_REFRESH_DAYS": str(config["daily_nav_refresh_days"]),
+        "DAILY_PROFILE_REFRESH_DAYS": str(config["daily_profile_refresh_days"]),
+        "DAILY_FEATURE_REFRESH_DAYS": str(config["daily_feature_refresh_days"]),
+        "DAILY_RATING_REFRESH_DAYS": str(config["daily_rating_refresh_days"]),
+        "DAILY_HOLDING_REFRESH_DAYS": str(config["daily_holding_refresh_days"]),
+        "DAILY_RATING_MAX_PAGES": str(config["daily_rating_max_pages"]),
         "DAILY_USE_CURSOR": bool_env(config["daily_use_cursor"]),
         "DAILY_CURSOR_DATE": str(config["daily_cursor_date"]),
         "FUND_LIMIT": str(config["fund_limit"]),
@@ -449,6 +477,12 @@ def render_index(snapshot: dict[str, Any]) -> str:
         <label>净值开始日期 <input type="text" name="daily_nav_start_date" value="{escape(config["daily_nav_start_date"])}" placeholder="YYYYMMDD"></label>
         <label>净值结束日期 <input type="text" name="daily_nav_end_date" value="{escape(config["daily_nav_end_date"])}" placeholder="YYYYMMDD"></label>
         <label>游标日期 <input type="text" name="daily_cursor_date" value="{escape(config["daily_cursor_date"])}" placeholder="默认当天 YYYYMMDD"></label>
+        <label>净值刷新天数 <input type="number" min="0" name="daily_nav_refresh_days" value="{escape(config["daily_nav_refresh_days"])}"></label>
+        <label>基础资料刷新天数 <input type="number" min="0" name="daily_profile_refresh_days" value="{escape(config["daily_profile_refresh_days"])}"></label>
+        <label>特色数据刷新天数 <input type="number" min="0" name="daily_feature_refresh_days" value="{escape(config["daily_feature_refresh_days"])}"></label>
+        <label>评级刷新天数 <input type="number" min="0" name="daily_rating_refresh_days" value="{escape(config["daily_rating_refresh_days"])}"></label>
+        <label>持仓刷新天数 <input type="number" min="0" name="daily_holding_refresh_days" value="{escape(config["daily_holding_refresh_days"])}"></label>
+        <label>评级最大页数 <input type="number" min="1" name="daily_rating_max_pages" value="{escape(config["daily_rating_max_pages"])}"></label>
         <label>基金数量限制 <input type="text" name="fund_limit" value="{escape(config["fund_limit"])}"></label>
         <label>基金偏移量 <input type="number" min="0" name="fund_offset" value="{escape(config["fund_offset"])}"></label>
         <label>最小请求间隔秒 <input type="text" name="request_min_delay_seconds" value="{escape(config["request_min_delay_seconds"])}"></label>

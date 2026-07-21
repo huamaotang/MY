@@ -223,6 +223,12 @@ DAILY_CRAWL_NAV=1
 DAILY_CRAWL_FEATURE=1
 DAILY_CRAWL_RATING=1
 DAILY_CRAWL_HOLDINGS=1
+DAILY_NAV_REFRESH_DAYS=1
+DAILY_PROFILE_REFRESH_DAYS=30
+DAILY_FEATURE_REFRESH_DAYS=7
+DAILY_RATING_REFRESH_DAYS=7
+DAILY_HOLDING_REFRESH_DAYS=7
+DAILY_RATING_MAX_PAGES=1
 DAILY_NAV_LOOKBACK_DAYS=10
 DAILY_NAV_MAX_PAGES=
 DAILY_USE_CURSOR=1
@@ -230,6 +236,8 @@ DAILY_CURSOR_DATE=
 ```
 
 When `DAILY_NAV_START_DATE` is empty, the scheduler sets the NAV start date to today minus `DAILY_NAV_LOOKBACK_DAYS`. If no NAV date window is configured, `daily` defaults to one NAV page per fund.
+
+The refresh-day settings skip data that was updated recently. Set a value to `0` to force that data type on every run. `DAILY_NAV_REFRESH_DAYS` only skips the default recent-one-page NAV crawl; explicit NAV date windows are always crawled.
 
 `DAILY_USE_CURSOR=1` stores progress in `fund_crawl_cursor` by `job_name + cursor_date`. Same-day reruns resume after the last successful `fund_code`. If a fund fails, the run stops at that fund so the cursor will not skip it. To force a same-day rerun from the beginning:
 

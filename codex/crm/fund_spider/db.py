@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 import logging
 import os
 import re
@@ -138,6 +139,7 @@ def ensure_schema(config: DatabaseConfig) -> None:
                   management_company VARCHAR(255) NULL COMMENT '管理人',
                   net_asset_scale VARCHAR(100) NULL COMMENT '净资产规模',
                   scale_date DATE NULL COMMENT '规模截止至日',
+                  profile_updated_at DATETIME NULL COMMENT '基础资料更新时间',
                   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
                   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
                   PRIMARY KEY (id),
@@ -150,6 +152,7 @@ def ensure_schema(config: DatabaseConfig) -> None:
             cursor.execute(_fund_stock_holding_ddl(database))
             cursor.execute(_fund_feature_data_ddl(database))
             cursor.execute(_fund_rating_ddl(database))
+            cursor.execute(_fund_refresh_state_ddl(database))
             cursor.execute(_fund_crawl_cursor_ddl(database))
         connection.commit()
     finally:
@@ -213,6 +216,7 @@ def update_fund_profile(connection: Connection, profile: FundProfile) -> int:
           management_company = %s,
           net_asset_scale = %s,
           scale_date = %s,
+          profile_updated_at = CURRENT_TIMESTAMP,
           updated_at = CURRENT_TIMESTAMP
         WHERE fund_code = %s
     """
@@ -447,6 +451,87 @@ def upsert_crawl_cursor(
     connection.commit()
 
 
+def fund_profile_recently_updated(connection: Connection, fund_code: str, refresh_days: int) -> bool:
+    if refresh_days <= 0:
+        return False
+    sql = """
+        SELECT inception_date, fund_manager, fund_type, management_company, profile_updated_at
+        FROM cfg_fund
+        WHERE fund_code = %s
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(sql, (fund_code,))
+        row = cursor.fetchone()
+    if not row:
+        return False
+    if not any(row.get(name) for name in ("inception_date", "fund_manager", "fund_type", "management_company")):
+        return False
+    return _is_recent_timestamp(row.get("profile_updated_at"), refresh_days)
+
+
+def fund_table_recently_updated(
+    connection: Connection,
+    table_name: str,
+    fund_code: str,
+    refresh_days: int,
+) -> bool:
+    if refresh_days <= 0:
+        return False
+    if table_name not in {"fund_feature_data", "fund_rating", "fund_stock_holding"}:
+        raise ValueError(f"unsupported fund table for refresh check: {table_name}")
+    sql = f"SELECT MAX(updated_at) AS updated_at FROM {table_name} WHERE fund_code = %s"
+    with connection.cursor() as cursor:
+        cursor.execute(sql, (fund_code,))
+        row = cursor.fetchone()
+    if not row or row.get("updated_at") is None:
+        return False
+    return _is_recent_timestamp(row.get("updated_at"), refresh_days)
+
+
+def fund_data_recently_refreshed(
+    connection: Connection,
+    data_type: str,
+    fund_code: str,
+    refresh_days: int,
+) -> bool:
+    if refresh_days <= 0:
+        return False
+    _validate_refresh_data_type(data_type)
+    sql = """
+        SELECT last_success_at
+        FROM fund_refresh_state
+        WHERE fund_code = %s AND data_type = %s
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(sql, (fund_code, data_type))
+        row = cursor.fetchone()
+    if not row or row.get("last_success_at") is None:
+        return False
+    return _is_recent_timestamp(row.get("last_success_at"), refresh_days)
+
+
+def upsert_fund_refresh_state(connection: Connection, fund_code: str, data_type: str, row_count: int) -> None:
+    _validate_refresh_data_type(data_type)
+    sql = """
+        INSERT INTO fund_refresh_state (
+          fund_code,
+          data_type,
+          last_success_at,
+          last_row_count
+        )
+        VALUES (%s, %s, CURRENT_TIMESTAMP, %s)
+        ON DUPLICATE KEY UPDATE
+          last_success_at = VALUES(last_success_at),
+          last_row_count = VALUES(last_row_count),
+          updated_at = CURRENT_TIMESTAMP
+    """
+    values = (fund_code, data_type, row_count)
+    log_write_sql("upsert_fund_refresh_state", sql, values)
+    with connection.cursor() as cursor:
+        cursor.execute(sql, values)
+    connection.commit()
+
+
 def log_write_sql(operation: str, sql: str, params: Sequence[Any] | Sequence[Sequence[Any]]) -> None:
     if not _env_bool("LOG_SQL", False):
         return
@@ -491,6 +576,24 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _is_recent_timestamp(value: Any, refresh_days: int) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, datetime):
+        updated_at = value
+    else:
+        try:
+            updated_at = datetime.fromisoformat(str(value))
+        except ValueError:
+            return False
+    return updated_at >= datetime.now() - timedelta(days=refresh_days)
+
+
+def _validate_refresh_data_type(data_type: str) -> None:
+    if data_type not in {"profile", "nav", "feature", "rating", "holding"}:
+        raise ValueError(f"unsupported refresh data type: {data_type}")
+
+
 def _quote_identifier(value: str) -> str:
     if not re.fullmatch(r"[A-Za-z0-9_]+", value):
         raise ValueError(f"invalid database identifier: {value}")
@@ -505,6 +608,7 @@ def _ensure_cfg_fund_columns(cursor, database: str) -> None:
         "management_company": "VARCHAR(255) NULL COMMENT '管理人'",
         "net_asset_scale": "VARCHAR(100) NULL COMMENT '净资产规模'",
         "scale_date": "DATE NULL COMMENT '规模截止至日'",
+        "profile_updated_at": "DATETIME NULL COMMENT '基础资料更新时间'",
     }
     for column, definition in columns.items():
         cursor.execute(
@@ -601,6 +705,23 @@ def _fund_rating_ddl(database: str) -> str:
           UNIQUE KEY uk_fund_rating_code_date (fund_code, rating_date),
           KEY idx_fund_rating_date (rating_date)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金评级表'
+    """
+
+
+def _fund_refresh_state_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_refresh_state (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+          fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
+          data_type VARCHAR(20) NOT NULL COMMENT '数据类型',
+          last_success_at DATETIME NOT NULL COMMENT '最近成功刷新时间',
+          last_row_count INT NOT NULL DEFAULT 0 COMMENT '最近刷新行数',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_fund_refresh_state_code_type (fund_code, data_type),
+          KEY idx_fund_refresh_state_type_time (data_type, last_success_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金数据刷新状态表'
     """
 
 

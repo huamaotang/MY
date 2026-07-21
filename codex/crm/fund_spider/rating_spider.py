@@ -38,7 +38,12 @@ class EastMoneyRatingSpider:
             }
         )
 
-    def fetch_ratings(self, fund_code: str, page_size: int = 50) -> list[FundRating]:
+    def fetch_ratings(
+        self,
+        fund_code: str,
+        page_size: int = 50,
+        max_pages: int | None = None,
+    ) -> list[FundRating]:
         self.session.headers["Referer"] = f"https://fundf10.eastmoney.com/jjpj_{fund_code}.html"
         rows: list[FundRating] = []
         page_index = 1
@@ -49,6 +54,8 @@ class EastMoneyRatingSpider:
             page = parse_rating_page(fund_code, text)
             rows.extend(page.rows)
             total_pages = max(1, (page.total_count + page.page_size - 1) // page.page_size)
+            if max_pages is not None:
+                total_pages = min(total_pages, max_pages)
             if page.page_size <= 0 or not page.rows:
                 break
             page_index += 1
@@ -104,8 +111,15 @@ def build_rating_url(fund_code: str, page_index: int = 1, page_size: int = 50) -
 
 def parse_rating_page(fund_code: str, text: str) -> RatingPage:
     payload = _loads_json_or_jsonp(text)
-    if int(payload.get("ErrCode") or 0) != 0:
-        raise ValueError(f"rating api error: {payload.get('ErrMsg') or payload.get('ErrCode')}")
+    err_code = int(payload.get("ErrCode") or 0)
+    if err_code != 0:
+        logger.warning(
+            "rating api returned non-zero code, fund=%s err_code=%s err_msg=%s",
+            fund_code,
+            err_code,
+            payload.get("ErrMsg"),
+        )
+        return RatingPage(rows=[], total_count=0, page_size=int(payload.get("PageSize") or 1))
 
     raw_rows = payload.get("Data") or []
     rows: list[FundRating] = []
