@@ -4,7 +4,13 @@ node_modules/
 dist/
 .idea/
 .vscode/
+logs/
+log/
 *.log
+*.log.*
+*.pid
 *.iml
 .local/
 .tmp-xcode-derived-data/
+xcuserdata/
+*.xcuserstate

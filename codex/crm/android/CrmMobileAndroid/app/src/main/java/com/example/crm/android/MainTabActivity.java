@@ -41,6 +41,8 @@ public class MainTabActivity extends Activity {
     private int fundPage = 1;
     private int fundTotal = 0;
     private boolean loading = false;
+    private boolean refreshCustomersOnResume = false;
+    private boolean refreshFundsOnResume = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,6 +54,19 @@ public class MainTabActivity extends Activity {
         }
         buildShell();
         showCustomers();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (refreshCustomersOnResume && "customers".equals(activeTab)) {
+            refreshCustomersOnResume = false;
+            reloadCustomers();
+        }
+        if (refreshFundsOnResume && "funds".equals(activeTab)) {
+            refreshFundsOnResume = false;
+            reloadFunds();
+        }
     }
 
     private void buildShell() {
@@ -215,6 +230,7 @@ public class MainTabActivity extends Activity {
         card.setOnClickListener(view -> {
             Intent intent = new Intent(this, CustomerDetailActivity.class);
             intent.putExtra("customer", customer);
+            refreshCustomersOnResume = true;
             startActivity(intent);
         });
         card.addView(Ui.text(this, Ui.value(customer.customerName), 17, Ui.TEXT, Typeface.BOLD));
@@ -276,6 +292,7 @@ public class MainTabActivity extends Activity {
         card.setOnClickListener(view -> {
             Intent intent = new Intent(this, ProductDetailActivity.class);
             intent.putExtra("fund", fund);
+            refreshFundsOnResume = true;
             startActivity(intent);
         });
         card.addView(Ui.text(this, Ui.value(fund.fundName), 17, Ui.TEXT, Typeface.BOLD));

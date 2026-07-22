@@ -58,11 +58,13 @@ struct ProductListView: View {
     @State private var isLoading = false
     @State private var isLoadingMore = false
     @State private var errorMessage: String?
+    @State private var navigationPath: [Fund] = []
+    @State private var wasShowingDetail = false
 
     private let pageSize = 20
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             List {
                 if let errorMessage {
                     Section {
@@ -116,6 +118,16 @@ struct ProductListView: View {
             .navigationTitle("产品")
             .navigationDestination(for: Fund.self) { fund in
                 ProductDetailView(fund: fund)
+            }
+            .onChange(of: navigationPath) { newPath in
+                if newPath.isEmpty && wasShowingDetail {
+                    wasShowingDetail = false
+                    Task {
+                        await reload()
+                    }
+                } else if !newPath.isEmpty {
+                    wasShowingDetail = true
+                }
             }
             .task {
                 if funds.isEmpty {

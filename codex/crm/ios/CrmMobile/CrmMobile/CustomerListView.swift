@@ -10,11 +10,13 @@ struct CustomerListView: View {
     @State private var isLoading = false
     @State private var isLoadingMore = false
     @State private var errorMessage: String?
+    @State private var navigationPath: [Customer] = []
+    @State private var wasShowingDetail = false
 
     private let pageSize = 20
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             List {
                 if let errorMessage {
                     Section {
@@ -68,6 +70,16 @@ struct CustomerListView: View {
             .navigationTitle("客户")
             .navigationDestination(for: Customer.self) { customer in
                 CustomerDetailView(customer: customer)
+            }
+            .onChange(of: navigationPath) { newPath in
+                if newPath.isEmpty && wasShowingDetail {
+                    wasShowingDetail = false
+                    Task {
+                        await reload()
+                    }
+                } else if !newPath.isEmpty {
+                    wasShowingDetail = true
+                }
             }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
