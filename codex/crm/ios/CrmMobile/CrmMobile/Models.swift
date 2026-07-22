@@ -51,6 +51,7 @@ struct Fund: Decodable, Identifiable, Hashable {
     let managementCompany: String?
     let netAssetScale: String?
     let scaleDate: String?
+    let canBuy: Bool?
     let createdAt: String?
     let updatedAt: String?
 }
@@ -93,9 +94,30 @@ struct FundRating: Decodable, Hashable {
     let morningStarRating: Int?
 }
 
+struct FundPerformance: Decodable, Hashable {
+    let fundCode: String
+    let navDate: String
+    let weeklyReturnRate: Decimal?
+    let monthlyReturnRate: Decimal?
+    let threeMonthReturnRate: Decimal?
+    let sixMonthReturnRate: Decimal?
+    let oneYearReturnRate: Decimal?
+    let twoYearReturnRate: Decimal?
+    let threeYearReturnRate: Decimal?
+    let yearToDateReturnRate: Decimal?
+    let sinceInceptionReturnRate: Decimal?
+    let customStartDate: String
+    let customEndDate: String
+    let customReturnRate: Decimal?
+    let originalFeeRate: Decimal?
+    let discountedFeeRate: Decimal?
+    let cashManagementFeeRate: Decimal?
+}
+
 struct FundDetail: Decodable {
     let fund: Fund
     let latestNav: FundNav?
+    let latestPerformance: FundPerformance?
     let latestHoldings: [FundHolding]
     let features: [FundFeature]
     let ratings: [FundRating]
@@ -103,6 +125,7 @@ struct FundDetail: Decodable {
     enum CodingKeys: String, CodingKey {
         case fund
         case latestNav
+        case latestPerformance
         case latestHoldings
         case features
         case ratings
@@ -112,6 +135,7 @@ struct FundDetail: Decodable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         fund = try container.decode(Fund.self, forKey: .fund)
         latestNav = try container.decodeIfPresent(FundNav.self, forKey: .latestNav)
+        latestPerformance = try container.decodeIfPresent(FundPerformance.self, forKey: .latestPerformance)
         latestHoldings = try container.decodeIfPresent([FundHolding].self, forKey: .latestHoldings) ?? []
         features = try container.decodeIfPresent([FundFeature].self, forKey: .features) ?? []
         ratings = try container.decodeIfPresent([FundRating].self, forKey: .ratings) ?? []

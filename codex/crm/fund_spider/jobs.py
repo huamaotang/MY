@@ -18,7 +18,7 @@ from db import (
     update_fund_profile,
     upsert_crawl_cursor,
     upsert_feature_data,
-    upsert_funds,
+    upsert_fund_rankings,
     upsert_fund_ratings,
     upsert_fund_refresh_state,
     upsert_nav_history,
@@ -46,7 +46,7 @@ class BatchSelector:
 
 @dataclass(frozen=True)
 class FundListOptions:
-    page_size: int = 200
+    page_size: int = 50
     start_page: int = 1
     max_pages: int | None = None
 
@@ -144,11 +144,11 @@ def crawl_fund_list(
             max_pages=options.max_pages,
         ):
             total_parsed += len(page.funds)
-            saved = upsert_funds(connection, page.funds)
+            saved = upsert_fund_rankings(connection, page.funds)
             total_saved += saved
-            codes = [fund_code for fund_code, _ in page.funds]
+            codes = [row.fund_code for row in page.funds]
             logger.info(
-                "step=fund_list page=%s/%s parsed=%s saved=%s total_records=%s first_code=%s last_code=%s sample_codes=%s",
+                "step=fund_list page=%s/%s parsed=%s saved=%s total_records=%s first_code=%s last_code=%s sample_codes=%s nav_date=%s custom_window=%s..%s",
                 page.page_index,
                 page.total_pages,
                 len(page.funds),
@@ -157,6 +157,9 @@ def crawl_fund_list(
                 codes[0] if codes else "-",
                 codes[-1] if codes else "-",
                 ",".join(codes[:5]) if codes else "-",
+                page.funds[0].nav_date if page.funds else "-",
+                page.funds[0].custom_start_date if page.funds else "-",
+                page.funds[0].custom_end_date if page.funds else "-",
             )
     finally:
         connection.close()
@@ -785,7 +788,7 @@ def selector_from_env(single_code_env: str = "FUND_CODE") -> BatchSelector:
 
 def fund_list_options_from_env() -> FundListOptions:
     return FundListOptions(
-        page_size=int(os.getenv("PAGE_SIZE", "200")),
+        page_size=int(os.getenv("PAGE_SIZE", "50")),
         start_page=int(os.getenv("START_PAGE", "1")),
         max_pages=parse_optional_int(os.getenv("MAX_PAGES"), "MAX_PAGES"),
     )

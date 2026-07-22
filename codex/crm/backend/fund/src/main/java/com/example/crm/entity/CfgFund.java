@@ -18,6 +18,7 @@ public class CfgFund {
     private String managementCompany;
     private String netAssetScale;
     private LocalDate scaleDate;
+    private Boolean canBuy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

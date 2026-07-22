@@ -59,6 +59,7 @@ export type Fund = {
   managementCompany?: string;
   netAssetScale?: string;
   scaleDate?: string;
+  canBuy?: boolean;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -107,9 +108,33 @@ export type FundRating = {
   morningStarRating?: number;
 };
 
+export type FundPerformance = {
+  fundCode: string;
+  navDate: string;
+  fundNamePinyin?: string;
+  inceptionDate?: string;
+  weeklyReturnRate?: number;
+  monthlyReturnRate?: number;
+  threeMonthReturnRate?: number;
+  sixMonthReturnRate?: number;
+  oneYearReturnRate?: number;
+  twoYearReturnRate?: number;
+  threeYearReturnRate?: number;
+  yearToDateReturnRate?: number;
+  sinceInceptionReturnRate?: number;
+  customStartDate: string;
+  customEndDate: string;
+  customReturnRate?: number;
+  originalFeeRate?: number;
+  discountedFeeRate?: number;
+  discountFactor?: number;
+  cashManagementFeeRate?: number;
+};
+
 export type FundDetail = {
   fund: Fund;
   latestNav?: FundNav;
+  latestPerformance?: FundPerformance;
   latestHoldings: FundHolding[];
   features: FundFeature[];
   ratings: FundRating[];

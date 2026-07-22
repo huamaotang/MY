@@ -199,6 +199,12 @@ private struct ProductRow: View {
                     .padding(.vertical, 4)
                     .background(.blue.opacity(0.12), in: Capsule())
                     .foregroundStyle(.blue)
+                Text(fund.canBuy == true ? "可购" : "不可购")
+                    .font(.caption.bold())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background((fund.canBuy == true ? Color.green : Color.gray).opacity(0.12), in: Capsule())
+                    .foregroundStyle(fund.canBuy == true ? Color.green : Color.secondary)
             }
 
             HStack(spacing: 10) {
@@ -267,6 +273,7 @@ struct ProductDetailView: View {
                 DetailLine(title: "成立日期", value: displayFund.inceptionDate)
                 DetailLine(title: "净资产规模", value: displayFund.netAssetScale)
                 DetailLine(title: "规模截止", value: displayFund.scaleDate)
+                DetailLine(title: "购买状态", value: displayFund.canBuy == true ? "可购买" : "不可购买")
             }
 
             Section("最新净值") {
@@ -274,6 +281,21 @@ struct ProductDetailView: View {
                 DetailLine(title: "单位净值", value: detail?.latestNav?.unitNav.map(String.init))
                 DetailLine(title: "累计净值", value: detail?.latestNav?.accumulatedNav.map(String.init))
                 DetailLine(title: "日增长率", value: detail?.latestNav?.dailyGrowthRate.map { "\($0)%" })
+            }
+
+            Section("业绩表现") {
+                DetailLine(title: "近一周", value: percent(detail?.latestPerformance?.weeklyReturnRate))
+                DetailLine(title: "近一月", value: percent(detail?.latestPerformance?.monthlyReturnRate))
+                DetailLine(title: "近三月", value: percent(detail?.latestPerformance?.threeMonthReturnRate))
+                DetailLine(title: "近六月", value: percent(detail?.latestPerformance?.sixMonthReturnRate))
+                DetailLine(title: "近一年", value: percent(detail?.latestPerformance?.oneYearReturnRate))
+                DetailLine(title: "近两年", value: percent(detail?.latestPerformance?.twoYearReturnRate))
+                DetailLine(title: "近三年", value: percent(detail?.latestPerformance?.threeYearReturnRate))
+                DetailLine(title: "今年以来", value: percent(detail?.latestPerformance?.yearToDateReturnRate))
+                DetailLine(title: "成立以来", value: percent(detail?.latestPerformance?.sinceInceptionReturnRate))
+                DetailLine(title: "自定义区间", value: performanceWindow(detail?.latestPerformance))
+                DetailLine(title: "区间收益", value: percent(detail?.latestPerformance?.customReturnRate))
+                DetailLine(title: "折后手续费", value: percent(detail?.latestPerformance?.discountedFeeRate))
             }
 
             Section("净值与收益走势") {
@@ -369,6 +391,15 @@ private func ratingText(_ rating: FundRating) -> String {
         "济安 \(ratingStars(rating.jianRating))",
         "晨星 \(ratingStars(rating.morningStarRating))"
     ].joined(separator: " / ")
+}
+
+private func percent(_ value: Decimal?) -> String? {
+    value.map { "\($0)%" }
+}
+
+private func performanceWindow(_ value: FundPerformance?) -> String? {
+    guard let value else { return nil }
+    return "\(value.customStartDate) 至 \(value.customEndDate)"
 }
 
 private func ratingStars(_ value: Int?) -> String {

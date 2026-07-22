@@ -10,6 +10,7 @@ import java.util.List;
 public class FundDetail implements Serializable {
     public Fund fund;
     public FundNav latestNav;
+    public FundPerformance latestPerformance;
     public List<FundHolding> latestHoldings = new ArrayList<>();
     public List<FundFeature> features = new ArrayList<>();
     public List<FundRating> ratings = new ArrayList<>();
@@ -23,6 +24,10 @@ public class FundDetail implements Serializable {
         JSONObject navJson = json.optJSONObject("latestNav");
         if (navJson != null) {
             detail.latestNav = FundNav.fromJson(navJson);
+        }
+        JSONObject performanceJson = json.optJSONObject("latestPerformance");
+        if (performanceJson != null) {
+            detail.latestPerformance = FundPerformance.fromJson(performanceJson);
         }
         JSONArray holdings = json.optJSONArray("latestHoldings");
         if (holdings != null) {

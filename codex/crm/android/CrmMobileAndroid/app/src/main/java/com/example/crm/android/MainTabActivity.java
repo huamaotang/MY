@@ -296,7 +296,8 @@ public class MainTabActivity extends Activity {
             startActivity(intent);
         });
         card.addView(Ui.text(this, Ui.value(fund.fundName), 17, Ui.TEXT, Typeface.BOLD));
-        card.addView(Ui.text(this, "代码：" + Ui.value(fund.fundCode) + "    类型：" + Ui.value(fund.fundType), 13, Ui.BLUE, Typeface.BOLD));
+        card.addView(Ui.text(this, "代码：" + Ui.value(fund.fundCode) + "    " + (fund.canBuy ? "可购" : "不可购")
+                + "    类型：" + Ui.value(fund.fundType), 13, fund.canBuy ? 0xFF1B8A3A : Ui.MUTED, Typeface.BOLD));
         card.addView(Ui.text(this, "经理：" + Ui.value(fund.fundManager), 13, Ui.MUTED, Typeface.NORMAL));
         card.addView(Ui.text(this, "管理人：" + Ui.value(fund.managementCompany), 13, Ui.MUTED, Typeface.NORMAL));
         return card;

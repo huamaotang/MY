@@ -103,6 +103,7 @@ public class ProductDetailActivity extends Activity {
         row("成立日期", fund.inceptionDate);
         row("净资产规模", fund.netAssetScale);
         row("规模截止", fund.scaleDate);
+        row("购买状态", fund.canBuy ? "可购买" : "不可购买");
 
         section("最新净值");
         FundNav nav = detail == null ? null : detail.latestNav;
@@ -110,6 +111,21 @@ public class ProductDetailActivity extends Activity {
         row("单位净值", nav == null ? null : nav.unitNav);
         row("累计净值", nav == null ? null : nav.accumulatedNav);
         row("日增长率", nav == null ? null : nav.dailyGrowthRate);
+
+        section("业绩表现");
+        FundPerformance performance = detail == null ? null : detail.latestPerformance;
+        row("近一周", percent(performance == null ? null : performance.weeklyReturnRate));
+        row("近一月", percent(performance == null ? null : performance.monthlyReturnRate));
+        row("近三月", percent(performance == null ? null : performance.threeMonthReturnRate));
+        row("近六月", percent(performance == null ? null : performance.sixMonthReturnRate));
+        row("近一年", percent(performance == null ? null : performance.oneYearReturnRate));
+        row("近两年", percent(performance == null ? null : performance.twoYearReturnRate));
+        row("近三年", percent(performance == null ? null : performance.threeYearReturnRate));
+        row("今年以来", percent(performance == null ? null : performance.yearToDateReturnRate));
+        row("成立以来", percent(performance == null ? null : performance.sinceInceptionReturnRate));
+        row("自定义区间", performance == null ? null : Ui.value(performance.customStartDate) + " 至 " + Ui.value(performance.customEndDate));
+        row("区间收益", percent(performance == null ? null : performance.customReturnRate));
+        row("折后手续费", percent(performance == null ? null : performance.discountedFeeRate));
 
         section("净值与收益走势");
         renderPeriodButtons();
@@ -175,6 +191,10 @@ public class ProductDetailActivity extends Activity {
                 + " / 上海5年 " + ratingStars(rating.shanghaiRating5y)
                 + " / 济安 " + ratingStars(rating.jianRating)
                 + " / 晨星 " + ratingStars(rating.morningStarRating);
+    }
+
+    private String percent(String value) {
+        return value == null || value.isEmpty() ? null : value + "%";
     }
 
     private String ratingStars(Integer value) {

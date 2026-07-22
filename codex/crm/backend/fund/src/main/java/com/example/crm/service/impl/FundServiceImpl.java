@@ -7,11 +7,13 @@ import com.example.crm.dto.FundDetailResponse;
 import com.example.crm.entity.CfgFund;
 import com.example.crm.entity.FundFeatureData;
 import com.example.crm.entity.FundNavHistory;
+import com.example.crm.entity.FundPerformanceHistory;
 import com.example.crm.entity.FundRating;
 import com.example.crm.entity.FundStockHolding;
 import com.example.crm.mapper.CfgFundMapper;
 import com.example.crm.mapper.FundFeatureDataMapper;
 import com.example.crm.mapper.FundNavHistoryMapper;
+import com.example.crm.mapper.FundPerformanceHistoryMapper;
 import com.example.crm.mapper.FundRatingMapper;
 import com.example.crm.mapper.FundStockHoldingMapper;
 import com.example.crm.service.IFundService;
@@ -26,17 +28,20 @@ public class FundServiceImpl implements IFundService {
 
     private final CfgFundMapper fundMapper;
     private final FundNavHistoryMapper navHistoryMapper;
+    private final FundPerformanceHistoryMapper performanceHistoryMapper;
     private final FundStockHoldingMapper stockHoldingMapper;
     private final FundFeatureDataMapper featureDataMapper;
     private final FundRatingMapper ratingMapper;
 
     public FundServiceImpl(CfgFundMapper fundMapper,
                            FundNavHistoryMapper navHistoryMapper,
+                           FundPerformanceHistoryMapper performanceHistoryMapper,
                            FundStockHoldingMapper stockHoldingMapper,
                            FundFeatureDataMapper featureDataMapper,
                            FundRatingMapper ratingMapper) {
         this.fundMapper = fundMapper;
         this.navHistoryMapper = navHistoryMapper;
+        this.performanceHistoryMapper = performanceHistoryMapper;
         this.stockHoldingMapper = stockHoldingMapper;
         this.featureDataMapper = featureDataMapper;
         this.ratingMapper = ratingMapper;
@@ -62,6 +67,7 @@ public class FundServiceImpl implements IFundService {
         FundDetailResponse response = new FundDetailResponse();
         response.setFund(fund);
         response.setLatestNav(latestNav(fundCode));
+        response.setLatestPerformance(latestPerformance(fundCode));
         response.setLatestHoldings(latestHoldings(fundCode));
         response.setFeatures(features(fundCode));
         response.setRatings(ratings(fundCode));
@@ -148,6 +154,13 @@ public class FundServiceImpl implements IFundService {
         return navHistoryMapper.selectOne(new LambdaQueryWrapper<FundNavHistory>()
                 .eq(FundNavHistory::getFundCode, fundCode)
                 .orderByDesc(FundNavHistory::getNavDate)
+                .last("limit 1"));
+    }
+
+    private FundPerformanceHistory latestPerformance(String fundCode) {
+        return performanceHistoryMapper.selectOne(new LambdaQueryWrapper<FundPerformanceHistory>()
+                .eq(FundPerformanceHistory::getFundCode, fundCode)
+                .orderByDesc(FundPerformanceHistory::getNavDate)
                 .last("limit 1"));
     }
 

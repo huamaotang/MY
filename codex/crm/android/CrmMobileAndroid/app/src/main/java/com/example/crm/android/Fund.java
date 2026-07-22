@@ -13,6 +13,7 @@ public class Fund implements Serializable {
     public String managementCompany;
     public String netAssetScale;
     public String scaleDate;
+    public boolean canBuy;
     public String createdAt;
     public String updatedAt;
 
@@ -26,6 +27,7 @@ public class Fund implements Serializable {
         fund.managementCompany = optionalString(json, "managementCompany");
         fund.netAssetScale = optionalString(json, "netAssetScale");
         fund.scaleDate = optionalString(json, "scaleDate");
+        fund.canBuy = json.optBoolean("canBuy", false);
         fund.createdAt = optionalString(json, "createdAt");
         fund.updatedAt = optionalString(json, "updatedAt");
         return fund;

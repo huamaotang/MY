@@ -5,10 +5,13 @@ from datetime import datetime, timedelta
 import logging
 import os
 import re
-from typing import Any, Iterable, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Sequence
 
 import pymysql
 from pymysql.connections import Connection
+
+if TYPE_CHECKING:
+    from spider import FundRankingRow
 
 
 logger = logging.getLogger(__name__)
@@ -140,6 +143,7 @@ def ensure_schema(config: DatabaseConfig) -> None:
                   net_asset_scale VARCHAR(100) NULL COMMENT '净资产规模',
                   scale_date DATE NULL COMMENT '规模截止至日',
                   profile_updated_at DATETIME NULL COMMENT '基础资料更新时间',
+                  can_buy TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否可购买',
                   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
                   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
                   PRIMARY KEY (id),
@@ -149,6 +153,7 @@ def ensure_schema(config: DatabaseConfig) -> None:
             )
             _ensure_cfg_fund_columns(cursor, config.database)
             cursor.execute(_fund_nav_history_ddl(database))
+            cursor.execute(_fund_performance_history_ddl(database))
             cursor.execute(_fund_stock_holding_ddl(database))
             cursor.execute(_fund_feature_data_ddl(database))
             cursor.execute(_fund_rating_ddl(database))
@@ -176,6 +181,143 @@ def upsert_funds(connection: Connection, funds: Iterable[tuple[str, str]]) -> in
         cursor.executemany(sql, rows)
     connection.commit()
     return len(rows)
+
+
+def upsert_fund_rankings(connection: Connection, rows: Iterable[FundRankingRow]) -> int:
+    ranking_rows = list(rows)
+    if not ranking_rows:
+        return 0
+
+    fund_values = [
+        (row.fund_code, row.fund_name, int(row.can_buy))
+        for row in ranking_rows
+    ]
+    nav_values = [
+        (
+            row.fund_code,
+            row.nav_date,
+            row.unit_nav,
+            row.accumulated_nav,
+            row.daily_growth_rate,
+        )
+        for row in ranking_rows
+        if row.nav_date
+    ]
+    performance_values = [
+        (
+            row.fund_code,
+            row.nav_date,
+            row.fund_name_pinyin,
+            row.inception_date,
+            row.weekly_return_rate,
+            row.monthly_return_rate,
+            row.three_month_return_rate,
+            row.six_month_return_rate,
+            row.one_year_return_rate,
+            row.two_year_return_rate,
+            row.three_year_return_rate,
+            row.year_to_date_return_rate,
+            row.since_inception_return_rate,
+            row.custom_start_date,
+            row.custom_end_date,
+            row.custom_return_rate,
+            row.sale_status,
+            row.original_fee_rate,
+            row.discounted_fee_rate,
+            row.discount_factor,
+            row.cash_management_fee_rate,
+            row.source_row,
+        )
+        for row in ranking_rows
+        if row.nav_date
+    ]
+
+    fund_sql = """
+        INSERT INTO cfg_fund (fund_code, fund_name, can_buy)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          fund_name = VALUES(fund_name),
+          can_buy = VALUES(can_buy),
+          updated_at = CURRENT_TIMESTAMP
+    """
+    nav_sql = """
+        INSERT INTO fund_nav_history (
+          fund_code, nav_date, unit_nav, accumulated_nav, daily_growth_rate
+        )
+        VALUES (%s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          unit_nav = VALUES(unit_nav),
+          accumulated_nav = VALUES(accumulated_nav),
+          daily_growth_rate = VALUES(daily_growth_rate),
+          updated_at = CURRENT_TIMESTAMP
+    """
+    performance_sql = """
+        INSERT INTO fund_performance_history (
+          fund_code,
+          nav_date,
+          fund_name_pinyin,
+          inception_date,
+          weekly_return_rate,
+          monthly_return_rate,
+          three_month_return_rate,
+          six_month_return_rate,
+          one_year_return_rate,
+          two_year_return_rate,
+          three_year_return_rate,
+          year_to_date_return_rate,
+          since_inception_return_rate,
+          custom_start_date,
+          custom_end_date,
+          custom_return_rate,
+          sale_status,
+          original_fee_rate,
+          discounted_fee_rate,
+          discount_factor,
+          cash_management_fee_rate,
+          source_row
+        )
+        VALUES (
+          %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+          %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+        )
+        ON DUPLICATE KEY UPDATE
+          fund_name_pinyin = VALUES(fund_name_pinyin),
+          inception_date = VALUES(inception_date),
+          weekly_return_rate = VALUES(weekly_return_rate),
+          monthly_return_rate = VALUES(monthly_return_rate),
+          three_month_return_rate = VALUES(three_month_return_rate),
+          six_month_return_rate = VALUES(six_month_return_rate),
+          one_year_return_rate = VALUES(one_year_return_rate),
+          two_year_return_rate = VALUES(two_year_return_rate),
+          three_year_return_rate = VALUES(three_year_return_rate),
+          year_to_date_return_rate = VALUES(year_to_date_return_rate),
+          since_inception_return_rate = VALUES(since_inception_return_rate),
+          custom_start_date = VALUES(custom_start_date),
+          custom_end_date = VALUES(custom_end_date),
+          custom_return_rate = VALUES(custom_return_rate),
+          sale_status = VALUES(sale_status),
+          original_fee_rate = VALUES(original_fee_rate),
+          discounted_fee_rate = VALUES(discounted_fee_rate),
+          discount_factor = VALUES(discount_factor),
+          cash_management_fee_rate = VALUES(cash_management_fee_rate),
+          source_row = VALUES(source_row),
+          updated_at = CURRENT_TIMESTAMP
+    """
+    log_write_sql("upsert_ranking_funds", fund_sql, fund_values)
+    log_write_sql("upsert_ranking_nav", nav_sql, nav_values)
+    log_write_sql("upsert_ranking_performance", performance_sql, performance_values)
+    try:
+        with connection.cursor() as cursor:
+            cursor.executemany(fund_sql, fund_values)
+            if nav_values:
+                cursor.executemany(nav_sql, nav_values)
+            if performance_values:
+                cursor.executemany(performance_sql, performance_values)
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    return len(ranking_rows)
 
 
 def list_fund_codes(
@@ -609,6 +751,7 @@ def _ensure_cfg_fund_columns(cursor, database: str) -> None:
         "net_asset_scale": "VARCHAR(100) NULL COMMENT '净资产规模'",
         "scale_date": "DATE NULL COMMENT '规模截止至日'",
         "profile_updated_at": "DATETIME NULL COMMENT '基础资料更新时间'",
+        "can_buy": "TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否可购买'",
     }
     for column, definition in columns.items():
         cursor.execute(
@@ -641,6 +784,41 @@ def _fund_nav_history_ddl(database: str) -> str:
           UNIQUE KEY uk_fund_nav_code_date (fund_code, nav_date),
           KEY idx_fund_nav_date (nav_date)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金历史净值表'
+    """
+
+
+def _fund_performance_history_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_performance_history (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+          fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
+          nav_date VARCHAR(8) NOT NULL COMMENT '净值日期',
+          fund_name_pinyin VARCHAR(255) NULL COMMENT '基金简称拼音',
+          inception_date DATE NULL COMMENT '成立日期',
+          weekly_return_rate DECIMAL(14,4) NULL COMMENT '近一周收益率',
+          monthly_return_rate DECIMAL(14,4) NULL COMMENT '近一月收益率',
+          three_month_return_rate DECIMAL(14,4) NULL COMMENT '近三月收益率',
+          six_month_return_rate DECIMAL(14,4) NULL COMMENT '近六月收益率',
+          one_year_return_rate DECIMAL(14,4) NULL COMMENT '近一年收益率',
+          two_year_return_rate DECIMAL(14,4) NULL COMMENT '近两年收益率',
+          three_year_return_rate DECIMAL(14,4) NULL COMMENT '近三年收益率',
+          year_to_date_return_rate DECIMAL(14,4) NULL COMMENT '今年以来收益率',
+          since_inception_return_rate DECIMAL(14,4) NULL COMMENT '成立以来收益率',
+          custom_start_date DATE NOT NULL COMMENT '自定义区间开始日期',
+          custom_end_date DATE NOT NULL COMMENT '自定义区间结束日期',
+          custom_return_rate DECIMAL(14,4) NULL COMMENT '自定义区间收益率',
+          sale_status VARCHAR(10) NULL COMMENT '东方财富销售状态码',
+          original_fee_rate DECIMAL(10,4) NULL COMMENT '原手续费率',
+          discounted_fee_rate DECIMAL(10,4) NULL COMMENT '折后手续费率',
+          discount_factor DECIMAL(10,4) NULL COMMENT '折扣',
+          cash_management_fee_rate DECIMAL(10,4) NULL COMMENT '活期宝手续费率',
+          source_row TEXT NOT NULL COMMENT '接口原始行',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_fund_performance_code_date (fund_code, nav_date),
+          KEY idx_fund_performance_nav_date (nav_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金业绩表现历史表'
     """
 
 

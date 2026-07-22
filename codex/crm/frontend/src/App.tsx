@@ -453,6 +453,12 @@ function FundList() {
   const columns: ColumnsType<Fund> = [
     { title: '基金代码', dataIndex: 'fundCode', fixed: 'left', width: 120 },
     { title: '基金名称', dataIndex: 'fundName', fixed: 'left', width: 240 },
+    {
+      title: '可购买',
+      dataIndex: 'canBuy',
+      width: 100,
+      render: (value) => <Tag color={value ? 'green' : 'default'}>{value ? '可购' : '不可购'}</Tag>
+    },
     { title: '类型', dataIndex: 'fundType', width: 120, render: (value) => value || '-' },
     { title: '基金经理', dataIndex: 'fundManager', width: 160, render: (value) => value || '-' },
     { title: '管理人', dataIndex: 'managementCompany', width: 220, render: (value) => value || '-' },
@@ -744,9 +750,39 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
                 <Descriptions.Item label="成立日期">{detail?.fund.inceptionDate || '-'}</Descriptions.Item>
                 <Descriptions.Item label="净资产规模">{detail?.fund.netAssetScale || '-'}</Descriptions.Item>
                 <Descriptions.Item label="规模截止日期">{detail?.fund.scaleDate || '-'}</Descriptions.Item>
+                <Descriptions.Item label="购买状态">
+                  <Tag color={detail?.fund.canBuy ? 'green' : 'default'}>{detail?.fund.canBuy ? '可购买' : '不可购买'}</Tag>
+                </Descriptions.Item>
                 <Descriptions.Item label="最新净值">{formatValue(detail?.latestNav?.unitNav)}</Descriptions.Item>
                 <Descriptions.Item label="净值日期">{detail?.latestNav?.navDate || '-'}</Descriptions.Item>
               </Descriptions>
+            )
+          },
+          {
+            key: 'performance',
+            label: '业绩表现',
+            children: detail?.latestPerformance ? (
+              <Descriptions bordered column={3} size="small">
+                <Descriptions.Item label="净值日期">{detail.latestPerformance.navDate}</Descriptions.Item>
+                <Descriptions.Item label="近一周">{formatPercent(detail.latestPerformance.weeklyReturnRate)}</Descriptions.Item>
+                <Descriptions.Item label="近一月">{formatPercent(detail.latestPerformance.monthlyReturnRate)}</Descriptions.Item>
+                <Descriptions.Item label="近三月">{formatPercent(detail.latestPerformance.threeMonthReturnRate)}</Descriptions.Item>
+                <Descriptions.Item label="近六月">{formatPercent(detail.latestPerformance.sixMonthReturnRate)}</Descriptions.Item>
+                <Descriptions.Item label="近一年">{formatPercent(detail.latestPerformance.oneYearReturnRate)}</Descriptions.Item>
+                <Descriptions.Item label="近两年">{formatPercent(detail.latestPerformance.twoYearReturnRate)}</Descriptions.Item>
+                <Descriptions.Item label="近三年">{formatPercent(detail.latestPerformance.threeYearReturnRate)}</Descriptions.Item>
+                <Descriptions.Item label="今年以来">{formatPercent(detail.latestPerformance.yearToDateReturnRate)}</Descriptions.Item>
+                <Descriptions.Item label="成立以来">{formatPercent(detail.latestPerformance.sinceInceptionReturnRate)}</Descriptions.Item>
+                <Descriptions.Item label="自定义区间">
+                  {detail.latestPerformance.customStartDate} 至 {detail.latestPerformance.customEndDate}
+                </Descriptions.Item>
+                <Descriptions.Item label="区间收益">{formatPercent(detail.latestPerformance.customReturnRate)}</Descriptions.Item>
+                <Descriptions.Item label="原手续费">{formatPercent(detail.latestPerformance.originalFeeRate)}</Descriptions.Item>
+                <Descriptions.Item label="折后手续费">{formatPercent(detail.latestPerformance.discountedFeeRate)}</Descriptions.Item>
+                <Descriptions.Item label="活期宝手续费">{formatPercent(detail.latestPerformance.cashManagementFeeRate)}</Descriptions.Item>
+              </Descriptions>
+            ) : (
+              <Typography.Text type="secondary">暂无业绩数据</Typography.Text>
             )
           },
           {
@@ -1488,6 +1524,10 @@ function menuTypeLabel(type: string) {
 
 function formatValue(value?: number | string | null) {
   return value == null || value === '' ? '-' : value;
+}
+
+function formatPercent(value?: number | string | null) {
+  return value == null || value === '' ? '-' : `${value}%`;
 }
 
 function renderRatingStars(value?: number | string | null) {

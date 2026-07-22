@@ -1,6 +1,6 @@
 # Fund Spider
 
-Python crawler for EastMoney fund list data. It fetches the fund ranking endpoint by page, parses fund code and fund name, and stores them in MySQL table `fund.cfg_fund`.
+Python crawler for EastMoney fund data. The daily fund-list step reads every page of the open-fund ranking, uses a rolling one-year query window, and atomically writes fund configuration, current NAV, and performance history.
 
 ## Files
 
@@ -13,7 +13,7 @@ Python crawler for EastMoney fund list data. It fetches the fund ranking endpoin
 - `spider.py`: browser-like request headers, random delay, retry, and response parsing.
 - `nav_spider.py`: historical NAV page-by-page crawler for `fundf10.eastmoney.com/jjjz_*.html`.
 - `db.py`: MySQL connection and upsert logic.
-- `sql/init.sql`: creates database `fund` and table `cfg_fund`.
+- `sql/init.sql`: creates the `fund` database and crawler tables.
 - `.env.example`: local configuration template.
 
 ## Setup
@@ -87,12 +87,18 @@ LOG_SQL_MAX_PARAMS=3
 Pagination is controlled by:
 
 ```env
-PAGE_SIZE=200
+PAGE_SIZE=50
 START_PAGE=1
 MAX_PAGES=
 ```
 
-When `MAX_PAGES` is empty, the crawler reads EastMoney's `pages` field from the first response and crawls every page sequentially.
+When `MAX_PAGES` is empty, the crawler reads EastMoney's `allPages` field from the first response and crawls every page sequentially. One page is committed as one transaction across these tables:
+
+- `cfg_fund`: fund code, short name, and `can_buy`.
+- `fund_nav_history`: NAV date, unit NAV, accumulated NAV, and daily growth rate.
+- `fund_performance_history`: rolling-period returns, custom-period return, sale/fee fields, and the original source row.
+
+The custom ranking window is calculated in `Asia/Shanghai` as task date minus one year through task date. Performance rows are idempotent on `(fund_code, nav_date)`, so weekend and retry runs update the same source-date snapshot. EastMoney sale statuses `1`, `2`, `3`, `8`, and `9` are treated as purchasable.
 
 ## Historical NAV
 
@@ -208,7 +214,7 @@ Default daily job:
 daily_update
 ```
 
-`daily_update` optionally refreshes the fund list first, then scans selected `cfg_fund` codes once and updates profile, recent NAV, feature data, ratings, and holdings for each fund in the same loop.
+`daily_update` optionally refreshes the complete ranking first, then scans selected `cfg_fund` codes once and updates profile, recent NAV, feature data, ratings, and holdings for each fund in the same loop.
 
 Funds are processed in ascending `fund_code` order from `cfg_fund`.
 
