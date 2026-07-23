@@ -76,17 +76,26 @@ def build_parser() -> argparse.ArgumentParser:
     rating.add_argument("--rating-page-size", dest="RATING_PAGE_SIZE")
     rating.add_argument("--rating-max-pages", dest="RATING_MAX_PAGES")
 
+    subparsers.add_parser("rating-list", parents=[request_parent, db_parent])
+
     holdings = subparsers.add_parser("holdings", parents=[request_parent, db_parent, batch_parent])
     holdings.add_argument("--holding-fund-code", dest="HOLDING_FUND_CODE")
     holdings.add_argument("--top-line", dest="HOLDING_TOP_LINE")
     holdings.add_argument("--year", dest="HOLDING_YEAR")
     holdings.add_argument("--month", dest="HOLDING_MONTH")
 
+    news = subparsers.add_parser("news", parents=[request_parent, db_parent])
+    news.add_argument("--score", dest="YJB_NEWS_SCORE")
+    sina_news = subparsers.add_parser("sina-news", parents=[request_parent, db_parent])
+    sina_news.add_argument("--max-pages", dest="SINA_NEWS_MAX_PAGES")
+    stock = subparsers.add_parser("stock", parents=[request_parent, db_parent])
+    stock.add_argument("--page-size", dest="STOCK_PAGE_SIZE")
+
     all_jobs = subparsers.add_parser("all", parents=[request_parent, db_parent, batch_parent, nav_parent])
     all_jobs.add_argument(
         "--jobs",
-        default="fund-list,profile-nav,feature,rating,holdings",
-        help="Comma-separated jobs: fund-list,profile-nav,feature,rating,holdings",
+        default="fund-list,profile-nav,feature,rating-list,holdings",
+        help="Comma-separated jobs: fund-list,profile-nav,feature,rating-list,rating,holdings",
     )
     all_jobs.add_argument("--crawl-profile", dest="CRAWL_PROFILE", choices=["0", "1"], default=None)
     all_jobs.add_argument("--crawl-nav", dest="CRAWL_NAV", choices=["0", "1"], default=None)
@@ -104,6 +113,8 @@ def build_parser() -> argparse.ArgumentParser:
     daily.add_argument("--crawl-feature", dest="DAILY_CRAWL_FEATURE", choices=["0", "1"], default=None)
     daily.add_argument("--crawl-rating", dest="DAILY_CRAWL_RATING", choices=["0", "1"], default=None)
     daily.add_argument("--crawl-holdings", dest="DAILY_CRAWL_HOLDINGS", choices=["0", "1"], default=None)
+    daily.add_argument("--crawl-news", dest="DAILY_CRAWL_NEWS", choices=["0", "1"], default=None)
+    daily.add_argument("--crawl-sina-news", dest="DAILY_CRAWL_SINA_NEWS", choices=["0", "1"], default=None)
     daily.add_argument("--use-cursor", dest="DAILY_USE_CURSOR", choices=["0", "1"], default=None)
     daily.add_argument("--cursor-date", dest="DAILY_CURSOR_DATE")
     daily.add_argument("--cursor-job-name", dest="DAILY_CURSOR_JOB_NAME")
@@ -161,8 +172,16 @@ def run_command(args: argparse.Namespace) -> None:
         jobs.crawl_feature_data()
     elif command == "rating":
         jobs.crawl_ratings()
+    elif command == "rating-list":
+        jobs.crawl_rating_list()
     elif command == "holdings":
         jobs.crawl_holdings()
+    elif command == "news":
+        jobs.crawl_yangjibao_news()
+    elif command == "sina-news":
+        jobs.crawl_sina_news()
+    elif command == "stock":
+        jobs.crawl_stocks()
     elif command == "all":
         run_job_chain(args.jobs)
     elif command == "daily":
@@ -181,7 +200,11 @@ def run_job_chain(job_names: str) -> None:
         "profile-nav": jobs.crawl_profile_nav,
         "feature": jobs.crawl_feature_data,
         "rating": jobs.crawl_ratings,
+        "rating-list": jobs.crawl_rating_list,
         "holdings": jobs.crawl_holdings,
+        "news": jobs.crawl_yangjibao_news,
+        "sina-news": jobs.crawl_sina_news,
+        "stock": jobs.crawl_stocks,
     }
     for raw_name in job_names.split(","):
         name = raw_name.strip()

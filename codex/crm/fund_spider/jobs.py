@@ -23,6 +23,9 @@ from db import (
     upsert_fund_refresh_state,
     upsert_nav_history,
     upsert_stock_holdings,
+    upsert_yangjibao_news,
+    upsert_sina_finance_news,
+    upsert_stock_quotes,
 )
 from feature_spider import EastMoneyFeatureSpider
 from holding_spider import EastMoneyHoldingSpider
@@ -31,6 +34,9 @@ from profile_spider import EastMoneyProfileSpider
 from rating_spider import EastMoneyRatingSpider
 from settings import normalize_query_date, parse_bool, parse_optional_int, request_config_from_env
 from spider import EastMoneyFundSpider, RequestConfig
+from yangjibao_news_spider import YangjibaoNewsSpider
+from sina_news_spider import SINA_NEWS_CATEGORIES, SinaNewsSpider
+from stock_spider import EastMoneyStockSpider
 
 
 logger = logging.getLogger(__name__)
@@ -102,6 +108,8 @@ class DailyUpdateOptions:
     crawl_feature: bool = True
     crawl_rating: bool = True
     crawl_holdings: bool = True
+    crawl_news: bool = False
+    crawl_sina_news: bool = True
     fund_list_options: FundListOptions = field(default_factory=FundListOptions)
     nav_page_size: int = 20
     nav_start_page: int = 1
@@ -219,7 +227,7 @@ def crawl_profile_nav(
 
     ensure_schema(db_config)
     fund_codes = load_selected_fund_codes(db_config, options.selector)
-    logger.info("loaded %s fund codes from cfg_fund", len(fund_codes))
+    logger.info("loaded %s fund codes from fund_detail", len(fund_codes))
 
     profile_spider = EastMoneyProfileSpider(request_config)
     nav_spider = EastMoneyNavSpider(request_config)
@@ -357,6 +365,93 @@ def crawl_ratings(
     return succeeded, failed, total_saved
 
 
+def crawl_rating_list(
+    db_config: DatabaseConfig | None = None,
+    request_config: RequestConfig | None = None,
+) -> int:
+    db_config = db_config or database_config_from_env()
+    request_config = request_config or request_config_from_env()
+
+    ensure_schema(db_config)
+    rows = EastMoneyRatingSpider(request_config).fetch_rating_list()
+    connection = connect(db_config)
+    try:
+        saved = upsert_fund_ratings(connection, rows)
+    finally:
+        connection.close()
+
+    logger.info(
+        "rating list crawl completed, parsed: %s, saved rows: %s, rating date: %s",
+        len(rows),
+        saved,
+        rows[0].rating_date if rows else "-",
+    )
+    return saved
+
+
+def crawl_yangjibao_news(
+    score: int | None = None,
+    db_config: DatabaseConfig | None = None,
+    request_config: RequestConfig | None = None,
+) -> int:
+    db_config = db_config or database_config_from_env()
+    request_config = request_config or request_config_from_env()
+    score = int(os.getenv("YJB_NEWS_SCORE", "2")) if score is None else score
+    ensure_schema(db_config)
+    rows = YangjibaoNewsSpider(request_config).fetch_news(score)
+    connection = connect(db_config)
+    try:
+        saved = upsert_yangjibao_news(connection, rows)
+    finally:
+        connection.close()
+    logger.info("Yangjibao news crawl completed, score=%s parsed=%s saved=%s", score, len(rows), saved)
+    return saved
+
+
+def crawl_sina_news(
+    max_pages: int | None = None,
+    db_config: DatabaseConfig | None = None,
+    request_config: RequestConfig | None = None,
+) -> int:
+    db_config = db_config or database_config_from_env()
+    request_config = request_config or request_config_from_env()
+    max_pages = int(os.getenv("SINA_NEWS_MAX_PAGES", "1")) if max_pages is None else max_pages
+    ensure_schema(db_config)
+    spider = SinaNewsSpider(request_config)
+    default_tags = ",".join(str(tag) for tag in SINA_NEWS_CATEGORIES)
+    tags = [int(value.strip()) for value in os.getenv("SINA_NEWS_TAGS", os.getenv("SINA_NEWS_TAG", default_tags)).split(",") if value.strip()]
+    rows = []
+    for tag in tags:
+        rows.extend(spider.fetch_news(
+            page_size=int(os.getenv("SINA_NEWS_PAGE_SIZE", "20")), max_pages=max_pages, tag=tag))
+    connection = connect(db_config)
+    try:
+        saved = upsert_sina_finance_news(connection, rows)
+    finally:
+        connection.close()
+    logger.info("Sina 7x24 crawl completed, tags=%s parsed=%s saved=%s", tags, len(rows), saved)
+    return saved
+
+
+def crawl_stocks(
+    db_config: DatabaseConfig | None = None,
+    request_config: RequestConfig | None = None,
+) -> int:
+    db_config = db_config or database_config_from_env()
+    request_config = request_config or request_config_from_env()
+    ensure_schema(db_config)
+    rows = EastMoneyStockSpider(request_config).fetch_all(
+        page_size=int(os.getenv("STOCK_PAGE_SIZE", "200")))
+    connection = connect(db_config)
+    try:
+        saved = upsert_stock_quotes(connection, rows)
+    finally:
+        connection.close()
+    trade_dates = sorted({row.trade_date for row in rows})
+    logger.info("EastMoney stock crawl completed, trade_dates=%s parsed=%s saved=%s", trade_dates, len(rows), saved)
+    return saved
+
+
 def crawl_holdings(
     options: HoldingOptions | None = None,
     db_config: DatabaseConfig | None = None,
@@ -427,6 +522,28 @@ def crawl_daily_update(
     else:
         logger.info("daily update step=fund_list status=skip")
 
+    if options.crawl_news:
+        logger.info("daily update step=yangjibao_news status=start")
+        news_saved = crawl_yangjibao_news(db_config=db_config, request_config=request_config)
+        logger.info("daily update step=yangjibao_news status=success saved=%s", news_saved)
+    else:
+        logger.info("daily update step=yangjibao_news status=skip")
+
+    if options.crawl_sina_news:
+        logger.info("daily update step=sina_news status=start")
+        sina_saved = crawl_sina_news(db_config=db_config, request_config=request_config)
+        logger.info("daily update step=sina_news status=success saved=%s", sina_saved)
+    else:
+        logger.info("daily update step=sina_news status=skip")
+
+    rating_list_saved = 0
+    if options.crawl_rating:
+        logger.info("daily update step=rating_list status=start")
+        rating_list_saved = crawl_rating_list(db_config, request_config)
+        logger.info("daily update step=rating_list status=success saved=%s", rating_list_saved)
+    else:
+        logger.info("daily update step=rating_list status=skip")
+
     cursor = None
     after_fund_code = None
     if options.use_cursor and not options.selector.fund_code:
@@ -496,7 +613,7 @@ def crawl_daily_update(
     profile_spider = EastMoneyProfileSpider(request_config) if options.crawl_profile else None
     nav_spider = EastMoneyNavSpider(request_config) if options.crawl_nav else None
     feature_spider = EastMoneyFeatureSpider(request_config) if options.crawl_feature else None
-    rating_spider = EastMoneyRatingSpider(request_config) if options.crawl_rating else None
+    rating_spider = None
     holding_spider = EastMoneyHoldingSpider(request_config) if options.crawl_holdings else None
 
     succeeded = 0
@@ -505,7 +622,7 @@ def crawl_daily_update(
         "profile": 0,
         "nav": 0,
         "feature": 0,
-        "rating": 0,
+        "rating": rating_list_saved,
         "holding": 0,
     }
 
@@ -855,6 +972,8 @@ def daily_update_options_from_env() -> DailyUpdateOptions:
         crawl_feature=parse_bool(os.getenv("DAILY_CRAWL_FEATURE", "1")),
         crawl_rating=parse_bool(os.getenv("DAILY_CRAWL_RATING", "1")),
         crawl_holdings=parse_bool(os.getenv("DAILY_CRAWL_HOLDINGS", "1")),
+        crawl_news=parse_bool(os.getenv("DAILY_CRAWL_NEWS", "0")),
+        crawl_sina_news=parse_bool(os.getenv("DAILY_CRAWL_SINA_NEWS", "1")),
         fund_list_options=fund_list_options_from_env(),
         nav_page_size=int(os.getenv("NAV_PAGE_SIZE", "20")),
         nav_start_page=int(os.getenv("NAV_START_PAGE", "1")),

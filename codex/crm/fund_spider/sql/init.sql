@@ -2,7 +2,7 @@ CREATE DATABASE IF NOT EXISTS fund DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4
 
 USE fund;
 
-CREATE TABLE IF NOT EXISTS cfg_fund (
+CREATE TABLE IF NOT EXISTS fund_detail (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
   fund_name VARCHAR(255) NOT NULL COMMENT '基金名称',
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS cfg_fund (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (id),
-  UNIQUE KEY uk_cfg_fund_code (fund_code)
+  UNIQUE KEY uk_fund_detail_code (fund_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金配置表';
 
 CREATE TABLE IF NOT EXISTS fund_nav_history (
@@ -87,6 +87,71 @@ CREATE TABLE IF NOT EXISTS fund_stock_holding (
   KEY idx_fund_stock_code (stock_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金持仓表';
 
+CREATE TABLE IF NOT EXISTS fund_holding_import (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  owner_username VARCHAR(64) NOT NULL COMMENT '归属用户',
+  source_label VARCHAR(32) NOT NULL COMMENT '来源标识',
+  status VARCHAR(32) NOT NULL COMMENT '状态',
+  screenshot_date DATE NULL COMMENT '截图日期',
+  image_count INT NOT NULL DEFAULT 0 COMMENT '图片数量',
+  image_hashes_json JSON NULL COMMENT '图片哈希',
+  raw_ocr_json JSON NULL COMMENT '原始OCR结果',
+  warnings_json JSON NULL COMMENT '识别告警',
+  parser_version VARCHAR(64) NULL COMMENT '解析器版本',
+  confirmed_at DATETIME NULL COMMENT '确认时间',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  KEY idx_fund_holding_import_owner_time (owner_username, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金持仓导入批次表';
+
+CREATE TABLE IF NOT EXISTS fund_holding_import_item (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  import_id BIGINT UNSIGNED NOT NULL COMMENT '导入批次ID',
+  row_no INT NOT NULL COMMENT '行号',
+  fund_code VARCHAR(20) NULL COMMENT '基金代码',
+  fund_name VARCHAR(255) NULL COMMENT '基金名称',
+  holding_amount DECIMAL(20,4) NULL COMMENT '持有金额',
+  holding_profit DECIMAL(20,4) NULL COMMENT '持有收益',
+  holding_return_rate DECIMAL(20,4) NULL COMMENT '持有收益率',
+  yesterday_profit DECIMAL(20,4) NULL COMMENT '昨日收益',
+  today_profit DECIMAL(20,4) NULL COMMENT '今日收益',
+  holding_shares DECIMAL(20,4) NULL COMMENT '持有份额',
+  cost_nav DECIMAL(20,6) NULL COMMENT '成本净值',
+  screenshot_date DATE NULL COMMENT '截图日期',
+  confidence DECIMAL(10,4) NULL COMMENT '识别置信度',
+  candidate_json JSON NULL COMMENT '候选基金',
+  raw_text_json JSON NULL COMMENT '原始文本',
+  status VARCHAR(32) NOT NULL COMMENT '状态',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  KEY idx_fund_holding_import_item_import (import_id),
+  KEY idx_fund_holding_import_item_fund_code (fund_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金持仓导入明细表';
+
+CREATE TABLE IF NOT EXISTS user_fund_holding (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  owner_username VARCHAR(64) NOT NULL COMMENT '归属用户',
+  fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
+  fund_name VARCHAR(255) NOT NULL COMMENT '基金名称',
+  holding_amount DECIMAL(20,4) NULL COMMENT '持有金额',
+  holding_profit DECIMAL(20,4) NULL COMMENT '持有收益',
+  holding_return_rate DECIMAL(20,4) NULL COMMENT '持有收益率',
+  yesterday_profit DECIMAL(20,4) NULL COMMENT '昨日收益',
+  today_profit DECIMAL(20,4) NULL COMMENT '今日收益',
+  holding_shares DECIMAL(20,4) NULL COMMENT '持有份额',
+  cost_nav DECIMAL(20,6) NULL COMMENT '成本净值',
+  screenshot_date DATE NULL COMMENT '截图日期',
+  latest_import_id BIGINT UNSIGNED NULL COMMENT '最近导入批次ID',
+  latest_import_at DATETIME NULL COMMENT '最近导入时间',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_user_fund_holding_owner_code (owner_username, fund_code),
+  KEY idx_user_fund_holding_owner_time (owner_username, latest_import_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户基金持仓表';
+
 CREATE TABLE IF NOT EXISTS fund_feature_data (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
   fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
@@ -142,3 +207,69 @@ CREATE TABLE IF NOT EXISTS fund_crawl_cursor (
   UNIQUE KEY uk_fund_crawl_cursor_job_date (job_name, cursor_date),
   KEY idx_fund_crawl_cursor_date (cursor_date)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金抓取游标表';
+
+CREATE TABLE IF NOT EXISTS yangjibao_news (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+  news_id VARCHAR(32) NOT NULL COMMENT '养基宝资讯ID',
+  title VARCHAR(500) NULL COMMENT '标题',
+  content TEXT NOT NULL COMMENT '正文',
+  display_time DATETIME NOT NULL COMMENT '展示时间',
+  images_json JSON NULL COMMENT '图片列表',
+  score INT NULL COMMENT '重要级别',
+  news_type INT NULL COMMENT '资讯类型',
+  source_json JSON NOT NULL COMMENT '接口原始数据',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_yangjibao_news_id (news_id),
+  KEY idx_yangjibao_news_display_time (display_time),
+  KEY idx_yangjibao_news_score (score)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='养基宝资讯表';
+
+CREATE TABLE IF NOT EXISTS sina_finance_news (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  news_id VARCHAR(32) NOT NULL,
+  category_tag INT NOT NULL DEFAULT 0 COMMENT '频道标签：0全部，10 A股',
+  category_name VARCHAR(50) NOT NULL DEFAULT '全部' COMMENT '频道名称',
+  content TEXT NOT NULL,
+  create_time DATETIME NOT NULL,
+  source_update_time DATETIME NOT NULL,
+  doc_url VARCHAR(1000) NULL,
+  tags_json JSON NULL,
+  images_json JSON NULL,
+  source_json JSON NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_sina_finance_news_id (news_id),
+  KEY idx_sina_finance_news_category_time (category_tag, create_time),
+  KEY idx_sina_finance_news_time (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='新浪财经7x24资讯表';
+
+CREATE TABLE IF NOT EXISTS stock_detail (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  stock_code VARCHAR(20) NOT NULL, stock_name VARCHAR(100) NOT NULL,
+  market_code INT NOT NULL, exchange_name VARCHAR(20) NOT NULL, listing_date DATE NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), UNIQUE KEY uk_stock_detail_code (stock_code),
+  KEY idx_stock_detail_name (stock_name), KEY idx_stock_detail_market (market_code)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='股票基础信息表';
+
+CREATE TABLE IF NOT EXISTS stock_daily_history (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  stock_code VARCHAR(20) NOT NULL, trade_date DATE NOT NULL, quote_time DATETIME NULL,
+  latest_price DECIMAL(20,4) NULL, change_rate DECIMAL(12,4) NULL, change_amount DECIMAL(20,4) NULL,
+  volume BIGINT NULL, amount DECIMAL(24,4) NULL, amplitude DECIMAL(12,4) NULL,
+  turnover_rate DECIMAL(12,4) NULL, pe_dynamic DECIMAL(20,4) NULL, volume_ratio DECIMAL(12,4) NULL,
+  five_min_change_rate DECIMAL(12,4) NULL, high_price DECIMAL(20,4) NULL, low_price DECIMAL(20,4) NULL,
+  open_price DECIMAL(20,4) NULL, previous_close DECIMAL(20,4) NULL,
+  total_market_cap DECIMAL(24,4) NULL, float_market_cap DECIMAL(24,4) NULL,
+  speed_rate DECIMAL(12,4) NULL, pb_ratio DECIMAL(20,4) NULL,
+  change_rate_60d DECIMAL(12,4) NULL, change_rate_ytd DECIMAL(12,4) NULL,
+  main_net_inflow DECIMAL(24,4) NULL, pe_ttm DECIMAL(20,4) NULL, raw_json JSON NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id), UNIQUE KEY uk_stock_daily (stock_code, trade_date),
+  KEY idx_stock_daily_date (trade_date), KEY idx_stock_daily_date_change (trade_date, change_rate)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='股票每日行情表';

@@ -12,6 +12,7 @@ from pymysql.connections import Connection
 
 if TYPE_CHECKING:
     from spider import FundRankingRow
+    from stock_spider import StockQuote
 
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,32 @@ class CrawlCursor:
     completed: bool
 
 
+@dataclass(frozen=True)
+class YangjibaoNews:
+    news_id: str
+    title: str | None
+    content: str
+    display_time: str
+    images_json: str
+    score: int | None
+    news_type: int | None
+    source_json: str
+
+
+@dataclass(frozen=True)
+class SinaFinanceNews:
+    news_id: str
+    category_tag: int
+    category_name: str
+    content: str
+    create_time: str
+    update_time: str
+    doc_url: str | None
+    tags_json: str
+    images_json: str
+    source_json: str
+
+
 def connect(config: DatabaseConfig) -> Connection:
     return pymysql.connect(
         host=config.host,
@@ -132,7 +159,7 @@ def ensure_schema(config: DatabaseConfig) -> None:
             )
             cursor.execute(
                 f"""
-                CREATE TABLE IF NOT EXISTS {database}.cfg_fund (
+                CREATE TABLE IF NOT EXISTS {database}.fund_detail (
                   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
                   fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
                   fund_name VARCHAR(255) NOT NULL COMMENT '基金名称',
@@ -147,18 +174,26 @@ def ensure_schema(config: DatabaseConfig) -> None:
                   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
                   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
                   PRIMARY KEY (id),
-                  UNIQUE KEY uk_cfg_fund_code (fund_code)
+                  UNIQUE KEY uk_fund_detail_code (fund_code)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金配置表'
                 """
             )
-            _ensure_cfg_fund_columns(cursor, config.database)
+            _ensure_fund_detail_columns(cursor, config.database)
             cursor.execute(_fund_nav_history_ddl(database))
             cursor.execute(_fund_performance_history_ddl(database))
             cursor.execute(_fund_stock_holding_ddl(database))
+            cursor.execute(_fund_holding_import_ddl(database))
+            cursor.execute(_fund_holding_import_item_ddl(database))
+            cursor.execute(_user_fund_holding_ddl(database))
             cursor.execute(_fund_feature_data_ddl(database))
             cursor.execute(_fund_rating_ddl(database))
             cursor.execute(_fund_refresh_state_ddl(database))
             cursor.execute(_fund_crawl_cursor_ddl(database))
+            cursor.execute(_yangjibao_news_ddl(database))
+            cursor.execute(_sina_finance_news_ddl(database))
+            _ensure_sina_finance_news_columns(cursor, config.database)
+            cursor.execute(_stock_detail_ddl(database))
+            cursor.execute(_stock_daily_history_ddl(database))
         connection.commit()
     finally:
         connection.close()
@@ -170,7 +205,7 @@ def upsert_funds(connection: Connection, funds: Iterable[tuple[str, str]]) -> in
         return 0
 
     sql = """
-        INSERT INTO cfg_fund (fund_code, fund_name)
+        INSERT INTO fund_detail (fund_code, fund_name)
         VALUES (%s, %s)
         ON DUPLICATE KEY UPDATE
           fund_name = VALUES(fund_name),
@@ -233,7 +268,7 @@ def upsert_fund_rankings(connection: Connection, rows: Iterable[FundRankingRow])
     ]
 
     fund_sql = """
-        INSERT INTO cfg_fund (fund_code, fund_name, can_buy)
+        INSERT INTO fund_detail (fund_code, fund_name, can_buy)
         VALUES (%s, %s, %s)
         ON DUPLICATE KEY UPDATE
           fund_name = VALUES(fund_name),
@@ -327,7 +362,7 @@ def list_fund_codes(
     start_fund_code: str | None = None,
     after_fund_code: str | None = None,
 ) -> list[str]:
-    sql = "SELECT fund_code FROM cfg_fund"
+    sql = "SELECT fund_code FROM fund_detail"
     params: list[int | str] = []
     conditions: list[str] = []
     if start_fund_code:
@@ -350,7 +385,7 @@ def list_fund_codes(
 
 def update_fund_profile(connection: Connection, profile: FundProfile) -> int:
     sql = """
-        UPDATE cfg_fund
+        UPDATE fund_detail
         SET
           inception_date = %s,
           fund_manager = %s,
@@ -491,6 +526,90 @@ def upsert_fund_ratings(connection: Connection, rows: Iterable[FundRating]) -> i
     return len(values)
 
 
+def upsert_yangjibao_news(connection: Connection, rows: Iterable[YangjibaoNews]) -> int:
+    values = [(row.news_id, row.title, row.content, row.display_time, row.images_json,
+               row.score, row.news_type, row.source_json) for row in rows]
+    if not values:
+        return 0
+    sql = """
+        INSERT INTO yangjibao_news
+          (news_id, title, content, display_time, images_json, score, news_type, source_json)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          title=VALUES(title), content=VALUES(content), display_time=VALUES(display_time),
+          images_json=VALUES(images_json), score=VALUES(score), news_type=VALUES(news_type),
+          source_json=VALUES(source_json), updated_at=CURRENT_TIMESTAMP
+    """
+    log_write_sql("upsert_yangjibao_news", sql, values)
+    with connection.cursor() as cursor:
+        cursor.executemany(sql, values)
+    connection.commit()
+    return len(values)
+
+
+def upsert_sina_finance_news(connection: Connection, rows: Iterable[SinaFinanceNews]) -> int:
+    values = [(r.news_id, r.category_tag, r.category_name, r.content, r.create_time, r.update_time, r.doc_url, r.tags_json, r.images_json, r.source_json) for r in rows]
+    if not values:
+        return 0
+    sql = """
+      INSERT INTO sina_finance_news (news_id,category_tag,category_name,content,create_time,source_update_time,doc_url,tags_json,images_json,source_json)
+      VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+      ON DUPLICATE KEY UPDATE content=VALUES(content),source_update_time=VALUES(source_update_time),doc_url=VALUES(doc_url),
+        category_name=VALUES(category_name),tags_json=VALUES(tags_json),images_json=VALUES(images_json),
+        source_json=VALUES(source_json),updated_at=CURRENT_TIMESTAMP
+    """
+    with connection.cursor() as cursor:
+        cursor.executemany(sql, values)
+    connection.commit()
+    return len(values)
+
+
+def upsert_stock_quotes(connection: Connection, rows: Iterable["StockQuote"]) -> int:
+    values = list(rows)
+    if not values:
+        return 0
+    detail_sql = """
+      INSERT INTO stock_detail (stock_code,stock_name,market_code,exchange_name,listing_date)
+      VALUES (%s,%s,%s,%s,%s)
+      ON DUPLICATE KEY UPDATE stock_name=VALUES(stock_name),market_code=VALUES(market_code),
+        exchange_name=VALUES(exchange_name),listing_date=COALESCE(VALUES(listing_date),listing_date),updated_at=CURRENT_TIMESTAMP
+    """
+    history_sql = """
+      INSERT INTO stock_daily_history (
+        stock_code,trade_date,quote_time,latest_price,change_rate,change_amount,volume,amount,amplitude,
+        turnover_rate,pe_dynamic,volume_ratio,five_min_change_rate,high_price,low_price,open_price,
+        previous_close,total_market_cap,float_market_cap,speed_rate,pb_ratio,change_rate_60d,
+        change_rate_ytd,main_net_inflow,pe_ttm,raw_json
+      ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+      ON DUPLICATE KEY UPDATE quote_time=VALUES(quote_time),latest_price=VALUES(latest_price),
+        change_rate=VALUES(change_rate),change_amount=VALUES(change_amount),volume=VALUES(volume),
+        amount=VALUES(amount),amplitude=VALUES(amplitude),turnover_rate=VALUES(turnover_rate),
+        pe_dynamic=VALUES(pe_dynamic),volume_ratio=VALUES(volume_ratio),five_min_change_rate=VALUES(five_min_change_rate),
+        high_price=VALUES(high_price),low_price=VALUES(low_price),open_price=VALUES(open_price),
+        previous_close=VALUES(previous_close),total_market_cap=VALUES(total_market_cap),
+        float_market_cap=VALUES(float_market_cap),speed_rate=VALUES(speed_rate),pb_ratio=VALUES(pb_ratio),
+        change_rate_60d=VALUES(change_rate_60d),change_rate_ytd=VALUES(change_rate_ytd),
+        main_net_inflow=VALUES(main_net_inflow),pe_ttm=VALUES(pe_ttm),raw_json=VALUES(raw_json),
+        updated_at=CURRENT_TIMESTAMP
+    """
+    detail_values = [(r.stock_code, r.stock_name, r.market_code, r.exchange_name, r.listing_date) for r in values]
+    history_values = [(
+        r.stock_code,r.trade_date,r.quote_time,r.latest_price,r.change_rate,r.change_amount,r.volume,r.amount,
+        r.amplitude,r.turnover_rate,r.pe_dynamic,r.volume_ratio,r.five_min_change_rate,r.high_price,r.low_price,
+        r.open_price,r.previous_close,r.total_market_cap,r.float_market_cap,r.speed_rate,r.pb_ratio,
+        r.change_rate_60d,r.change_rate_ytd,r.main_net_inflow,r.pe_ttm,r.raw_json
+    ) for r in values]
+    try:
+        with connection.cursor() as cursor:
+            cursor.executemany(detail_sql, detail_values)
+            cursor.executemany(history_sql, history_values)
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
+    return len(values)
+
+
 def upsert_stock_holdings(connection: Connection, rows: Iterable[FundStockHolding]) -> int:
     values = [
         (
@@ -598,7 +717,7 @@ def fund_profile_recently_updated(connection: Connection, fund_code: str, refres
         return False
     sql = """
         SELECT inception_date, fund_manager, fund_type, management_company, profile_updated_at
-        FROM cfg_fund
+        FROM fund_detail
         WHERE fund_code = %s
     """
     with connection.cursor() as cursor:
@@ -742,7 +861,7 @@ def _quote_identifier(value: str) -> str:
     return f"`{value}`"
 
 
-def _ensure_cfg_fund_columns(cursor, database: str) -> None:
+def _ensure_fund_detail_columns(cursor, database: str) -> None:
     columns = {
         "inception_date": "DATE NULL COMMENT '成立日期'",
         "fund_manager": "VARCHAR(255) NULL COMMENT '基金经理'",
@@ -759,14 +878,14 @@ def _ensure_cfg_fund_columns(cursor, database: str) -> None:
             SELECT COUNT(*) AS cnt
             FROM information_schema.COLUMNS
             WHERE TABLE_SCHEMA = %s
-              AND TABLE_NAME = 'cfg_fund'
+              AND TABLE_NAME = 'fund_detail'
               AND COLUMN_NAME = %s
             """,
             (database, column),
         )
         exists = cursor.fetchone()["cnt"] > 0
         if not exists:
-            cursor.execute(f"ALTER TABLE {_quote_identifier(database)}.cfg_fund ADD COLUMN {column} {definition}")
+            cursor.execute(f"ALTER TABLE {_quote_identifier(database)}.fund_detail ADD COLUMN {column} {definition}")
 
 
 def _fund_nav_history_ddl(database: str) -> str:
@@ -848,6 +967,83 @@ def _fund_stock_holding_ddl(database: str) -> str:
     """
 
 
+def _fund_holding_import_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_holding_import (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+          owner_username VARCHAR(64) NOT NULL COMMENT '归属用户',
+          source_label VARCHAR(32) NOT NULL COMMENT '来源标识',
+          status VARCHAR(32) NOT NULL COMMENT '状态',
+          screenshot_date DATE NULL COMMENT '截图日期',
+          image_count INT NOT NULL DEFAULT 0 COMMENT '图片数量',
+          image_hashes_json JSON NULL COMMENT '图片哈希',
+          raw_ocr_json JSON NULL COMMENT '原始OCR结果',
+          warnings_json JSON NULL COMMENT '识别告警',
+          parser_version VARCHAR(64) NULL COMMENT '解析器版本',
+          confirmed_at DATETIME NULL COMMENT '确认时间',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+          PRIMARY KEY (id),
+          KEY idx_fund_holding_import_owner_time (owner_username, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金持仓导入批次表'
+    """
+
+
+def _fund_holding_import_item_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_holding_import_item (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+          import_id BIGINT UNSIGNED NOT NULL COMMENT '导入批次ID',
+          row_no INT NOT NULL COMMENT '行号',
+          fund_code VARCHAR(20) NULL COMMENT '基金代码',
+          fund_name VARCHAR(255) NULL COMMENT '基金名称',
+          holding_amount DECIMAL(20,4) NULL COMMENT '持有金额',
+          holding_profit DECIMAL(20,4) NULL COMMENT '持有收益',
+          holding_return_rate DECIMAL(20,4) NULL COMMENT '持有收益率',
+          yesterday_profit DECIMAL(20,4) NULL COMMENT '昨日收益',
+          today_profit DECIMAL(20,4) NULL COMMENT '今日收益',
+          holding_shares DECIMAL(20,4) NULL COMMENT '持有份额',
+          cost_nav DECIMAL(20,6) NULL COMMENT '成本净值',
+          screenshot_date DATE NULL COMMENT '截图日期',
+          confidence DECIMAL(10,4) NULL COMMENT '识别置信度',
+          candidate_json JSON NULL COMMENT '候选基金',
+          raw_text_json JSON NULL COMMENT '原始文本',
+          status VARCHAR(32) NOT NULL COMMENT '状态',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+          PRIMARY KEY (id),
+          KEY idx_fund_holding_import_item_import (import_id),
+          KEY idx_fund_holding_import_item_fund_code (fund_code)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金持仓导入明细表'
+    """
+
+
+def _user_fund_holding_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.user_fund_holding (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+          owner_username VARCHAR(64) NOT NULL COMMENT '归属用户',
+          fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
+          fund_name VARCHAR(255) NOT NULL COMMENT '基金名称',
+          holding_amount DECIMAL(20,4) NULL COMMENT '持有金额',
+          holding_profit DECIMAL(20,4) NULL COMMENT '持有收益',
+          holding_return_rate DECIMAL(20,4) NULL COMMENT '持有收益率',
+          yesterday_profit DECIMAL(20,4) NULL COMMENT '昨日收益',
+          today_profit DECIMAL(20,4) NULL COMMENT '今日收益',
+          holding_shares DECIMAL(20,4) NULL COMMENT '持有份额',
+          cost_nav DECIMAL(20,6) NULL COMMENT '成本净值',
+          screenshot_date DATE NULL COMMENT '截图日期',
+          latest_import_id BIGINT UNSIGNED NULL COMMENT '最近导入批次ID',
+          latest_import_at DATETIME NULL COMMENT '最近导入时间',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_user_fund_holding_owner_code (owner_username, fund_code),
+          KEY idx_user_fund_holding_owner_time (owner_username, latest_import_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='用户基金持仓表'
+    """
+
+
 def _fund_feature_data_ddl(database: str) -> str:
     return f"""
         CREATE TABLE IF NOT EXISTS {database}.fund_feature_data (
@@ -901,6 +1097,102 @@ def _fund_refresh_state_ddl(database: str) -> str:
           KEY idx_fund_refresh_state_type_time (data_type, last_success_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金数据刷新状态表'
     """
+
+
+def _yangjibao_news_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.yangjibao_news (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键',
+          news_id VARCHAR(32) NOT NULL COMMENT '养基宝资讯ID',
+          title VARCHAR(500) NULL COMMENT '标题',
+          content TEXT NOT NULL COMMENT '正文',
+          display_time DATETIME NOT NULL COMMENT '展示时间',
+          images_json JSON NULL COMMENT '图片列表',
+          score INT NULL COMMENT '重要级别',
+          news_type INT NULL COMMENT '资讯类型',
+          source_json JSON NOT NULL COMMENT '接口原始数据',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_yangjibao_news_id (news_id),
+          KEY idx_yangjibao_news_display_time (display_time),
+          KEY idx_yangjibao_news_score (score)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='养基宝资讯表'
+    """
+
+
+def _sina_finance_news_ddl(database: str) -> str:
+    return f"""
+      CREATE TABLE IF NOT EXISTS {database}.sina_finance_news (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, news_id VARCHAR(32) NOT NULL,
+        category_tag INT NOT NULL DEFAULT 0, category_name VARCHAR(50) NOT NULL DEFAULT '全部',
+        content TEXT NOT NULL, create_time DATETIME NOT NULL, source_update_time DATETIME NOT NULL,
+        doc_url VARCHAR(1000) NULL, tags_json JSON NULL, images_json JSON NULL, source_json JSON NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id), UNIQUE KEY uk_sina_finance_news_id (news_id),
+        KEY idx_sina_finance_news_category_time (category_tag, create_time), KEY idx_sina_finance_news_time (create_time)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='新浪财经7x24资讯表'
+    """
+
+
+def _stock_detail_ddl(database: str) -> str:
+    return f"""
+      CREATE TABLE IF NOT EXISTS {database}.stock_detail (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, stock_code VARCHAR(20) NOT NULL,
+        stock_name VARCHAR(100) NOT NULL, market_code INT NOT NULL, exchange_name VARCHAR(20) NOT NULL,
+        listing_date DATE NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id), UNIQUE KEY uk_stock_detail_code (stock_code),
+        KEY idx_stock_detail_name (stock_name), KEY idx_stock_detail_market (market_code)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='股票基础信息表'
+    """
+
+
+def _stock_daily_history_ddl(database: str) -> str:
+    return f"""
+      CREATE TABLE IF NOT EXISTS {database}.stock_daily_history (
+        id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, stock_code VARCHAR(20) NOT NULL, trade_date DATE NOT NULL,
+        quote_time DATETIME NULL, latest_price DECIMAL(20,4) NULL, change_rate DECIMAL(12,4) NULL,
+        change_amount DECIMAL(20,4) NULL, volume BIGINT NULL, amount DECIMAL(24,4) NULL,
+        amplitude DECIMAL(12,4) NULL, turnover_rate DECIMAL(12,4) NULL, pe_dynamic DECIMAL(20,4) NULL,
+        volume_ratio DECIMAL(12,4) NULL, five_min_change_rate DECIMAL(12,4) NULL,
+        high_price DECIMAL(20,4) NULL, low_price DECIMAL(20,4) NULL, open_price DECIMAL(20,4) NULL,
+        previous_close DECIMAL(20,4) NULL, total_market_cap DECIMAL(24,4) NULL,
+        float_market_cap DECIMAL(24,4) NULL, speed_rate DECIMAL(12,4) NULL, pb_ratio DECIMAL(20,4) NULL,
+        change_rate_60d DECIMAL(12,4) NULL, change_rate_ytd DECIMAL(12,4) NULL,
+        main_net_inflow DECIMAL(24,4) NULL, pe_ttm DECIMAL(20,4) NULL, raw_json JSON NOT NULL,
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (id), UNIQUE KEY uk_stock_daily (stock_code,trade_date),
+        KEY idx_stock_daily_date (trade_date), KEY idx_stock_daily_date_change (trade_date,change_rate)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='股票每日行情表'
+    """
+
+
+def _ensure_sina_finance_news_columns(cursor: Any, database: str) -> None:
+    cursor.execute(f"USE {_quote_identifier(database)}")
+    cursor.execute(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema=%s AND table_name='sina_finance_news'",
+        (database,),
+    )
+    columns = {row["column_name"] for row in cursor.fetchall()}
+    if "category_tag" not in columns:
+        cursor.execute(f"ALTER TABLE {_quote_identifier(database)}.sina_finance_news ADD COLUMN category_tag INT NOT NULL DEFAULT 0 AFTER news_id")
+    if "category_name" not in columns:
+        cursor.execute(f"ALTER TABLE {_quote_identifier(database)}.sina_finance_news ADD COLUMN category_name VARCHAR(50) NOT NULL DEFAULT '全部' AFTER category_tag")
+    cursor.execute(
+        "SELECT index_name FROM information_schema.statistics WHERE table_schema=%s AND table_name='sina_finance_news'",
+        (database,),
+    )
+    indexes = {row["index_name"] for row in cursor.fetchall()}
+    if "uk_sina_finance_news_category" in indexes:
+        cursor.execute("DELETE newer FROM sina_finance_news newer JOIN sina_finance_news older ON newer.news_id=older.news_id AND newer.id>older.id")
+        cursor.execute(f"ALTER TABLE {_quote_identifier(database)}.sina_finance_news DROP INDEX uk_sina_finance_news_category")
+    if "uk_sina_finance_news_id" not in indexes:
+        cursor.execute(f"ALTER TABLE {_quote_identifier(database)}.sina_finance_news ADD UNIQUE KEY uk_sina_finance_news_id (news_id)")
+    if "idx_sina_finance_news_category_time" not in indexes:
+        cursor.execute(f"ALTER TABLE {_quote_identifier(database)}.sina_finance_news ADD KEY idx_sina_finance_news_category_time (category_tag, create_time)")
 
 
 def _fund_crawl_cursor_ddl(database: str) -> str:

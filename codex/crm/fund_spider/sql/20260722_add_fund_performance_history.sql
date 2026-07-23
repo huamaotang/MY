@@ -1,6 +1,6 @@
 USE fund;
 
-ALTER TABLE cfg_fund
+ALTER TABLE fund_detail
   ADD COLUMN can_buy TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否可购买' AFTER profile_updated_at;
 
 CREATE TABLE IF NOT EXISTS fund_performance_history (

@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 RATING_API_URL = "https://api.fund.eastmoney.com/F10/JJPJ/"
+RATING_LIST_URL = "https://fund.eastmoney.com/data/fundrating.html"
 
 
 class EastMoneyRatingSpider:
@@ -37,6 +38,10 @@ class EastMoneyRatingSpider:
                 "Referer": "https://fundf10.eastmoney.com/",
             }
         )
+
+    def fetch_rating_list(self, url: str = RATING_LIST_URL) -> list[FundRating]:
+        self.session.headers["Referer"] = RATING_LIST_URL
+        return parse_rating_list(self._get_text(url))
 
     def fetch_ratings(
         self,
@@ -147,6 +152,54 @@ def parse_rating_page(fund_code: str, text: str) -> RatingPage:
         total_count=int(payload.get("TotalCount") or len(rows)),
         page_size=int(payload.get("PageSize") or len(rows) or 1),
     )
+
+
+def parse_rating_list(text: str) -> list[FundRating]:
+    data_match = re.search(r'var\s+fundinfos\s*=\s*"([\s\S]*?)"\s*;', text)
+    if not data_match:
+        raise ValueError("could not find fundinfos in rating list page")
+
+    institution_dates = [
+        _extract_list_rating_date(text, institution_id)
+        for institution_id in (2, 3, 4, 5)
+    ]
+    rating_date = max((value for value in institution_dates if value), default=None)
+    if not rating_date:
+        raise ValueError("could not find institution rating date in rating list page")
+
+    rows: list[FundRating] = []
+    for raw_row in data_match.group(1).split("_"):
+        fields = raw_row.split("|")
+        if len(fields) < 18:
+            logger.warning("skip malformed rating list row with %s fields", len(fields))
+            continue
+        fund_code = fields[0].strip()
+        ratings = (
+            _clean_rating(fields[10]),
+            _clean_rating(fields[12]),
+            _clean_rating(fields[16]),
+            _clean_rating(fields[14]),
+        )
+        if not fund_code or not any(value is not None for value in ratings):
+            continue
+        rows.append(
+            FundRating(
+                fund_code=fund_code,
+                rating_date=rating_date,
+                zhaoshang_rating=ratings[0],
+                shanghai_rating_3y=ratings[1],
+                shanghai_rating_5y=None,
+                jian_rating=ratings[2],
+                morning_star_rating=ratings[3],
+            )
+        )
+    return rows
+
+
+def _extract_list_rating_date(text: str, institution_id: int) -> str | None:
+    values = re.findall(rf"JG_{institution_id}_pjrq\s*=\s*\"([^\"]*)\"", text)
+    dates = [_clean_date(value) for value in values]
+    return max((value for value in dates if value), default=None)
 
 
 def _loads_json_or_jsonp(text: str) -> dict[str, Any]:

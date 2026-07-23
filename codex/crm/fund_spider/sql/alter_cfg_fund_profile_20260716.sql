@@ -1,6 +1,6 @@
 USE fund;
 
-ALTER TABLE cfg_fund
+ALTER TABLE fund_detail
   ADD COLUMN inception_date DATE NULL COMMENT '成立日期',
   ADD COLUMN fund_manager VARCHAR(255) NULL COMMENT '基金经理',
   ADD COLUMN fund_type VARCHAR(100) NULL COMMENT '类型',

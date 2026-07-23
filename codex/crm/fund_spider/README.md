@@ -49,7 +49,7 @@ python cli.py fund-list --max-pages 2
 Run selected jobs through one entrypoint:
 
 ```bash
-python cli.py all --jobs fund-list,profile-nav,feature,rating,holdings --nav-start-date 20260701
+python cli.py all --jobs fund-list,profile-nav,feature,rating-list,holdings --nav-start-date 20260701
 ```
 
 Run the daily incremental update in one pass:
@@ -57,6 +57,18 @@ Run the daily incremental update in one pass:
 ```bash
 python cli.py daily --fund-limit 100 --nav-start-date 20260701
 ```
+
+Verify an Alipay holding screenshot from the command line:
+
+```bash
+python portfolio_holding_ocr.py --json --image ../screenshots/ali_001.jpg
+```
+
+Pass `--image` up to three times for scrolling screenshots. The Web, iOS, and
+Android clients upload JPG/PNG images to `/portfolio/imports/ocr`, show the OCR
+and fund-code match preview, and call `/portfolio/imports/{importId}/confirm`
+only after user confirmation. The fund service can override the local runtime
+with `CRM_PYTHON_EXECUTABLE` and `CRM_PYTHON_OCR_SCRIPT`.
 
 Print insert/update SQL templates:
 
@@ -94,7 +106,7 @@ MAX_PAGES=
 
 When `MAX_PAGES` is empty, the crawler reads EastMoney's `allPages` field from the first response and crawls every page sequentially. One page is committed as one transaction across these tables:
 
-- `cfg_fund`: fund code, short name, and `can_buy`.
+- `fund_detail`: fund code, short name, and `can_buy`.
 - `fund_nav_history`: NAV date, unit NAV, accumulated NAV, and daily growth rate.
 - `fund_performance_history`: rolling-period returns, custom-period return, sale/fee fields, and the original source row.
 
@@ -137,7 +149,7 @@ Run one fund:
 python cli.py feature --fund-code 519674
 ```
 
-Run a batch from `cfg_fund`:
+Run a batch from `fund_detail`:
 
 ```bash
 python cli.py feature --fund-limit 100 --fund-offset 0
@@ -145,7 +157,15 @@ python cli.py feature --fund-limit 100 --fund-offset 0
 
 ## Ratings
 
-`rating_spider.py` crawls the fund rating API behind `https://fundf10.eastmoney.com/jjpj_<fund_code>.html` and stores quarterly rating rows in `fund_rating`.
+`rating_spider.py` crawls the complete current rating list at `https://fund.eastmoney.com/data/fundrating.html` and stores the four institution ratings in `fund_rating`. The original per-fund API remains available for historical quarterly ratings.
+
+Current complete rating list (also used by the daily update):
+
+```bash
+python cli.py rating-list
+```
+
+Historical ratings for a single fund:
 
 Run one fund:
 
@@ -153,7 +173,7 @@ Run one fund:
 python cli.py rating --fund-code 519674
 ```
 
-Run a batch from `cfg_fund`:
+Run a batch from `fund_detail`:
 
 ```bash
 python cli.py rating --fund-limit 100 --fund-offset 0
@@ -163,21 +183,36 @@ python cli.py rating --fund-limit 100 --fund-offset 0
 
 `crawl_holdings.py` crawls the holding data behind `https://fundf10.eastmoney.com/ccmx_<fund_code>.html` and stores rows in `fund_stock_holding`.
 
+## Yangjibao news
+
+`yangjibao_news_spider.py` crawls `https://app-api.yangjibao.com/news?score=2` and upserts records into `yangjibao_news` by the source `_id`.
+
+Configure fresh request headers captured from the official app, then run:
+
+```bash
+export YJB_AUTHORIZATION='ios:...'
+export YJB_REQUEST_SIGN='...'
+export YJB_REQUEST_TIME='...'
+python cli.py news --score 2
+```
+
+Set `DAILY_CRAWL_NEWS=1` to include the same idempotent fetch in the daily task. Credentials are intentionally not stored in source control.
+
 Run one fund:
 
 ```bash
 python cli.py holdings --fund-code 519674
 ```
 
-Run a batch from `cfg_fund`:
+Run a batch from `fund_detail`:
 
 ```bash
 python cli.py holdings --fund-limit 100 --fund-offset 0
 ```
 
-## Batch From `cfg_fund`
+## Batch From `fund_detail`
 
-`crawl_all_funds.py` reads existing fund codes from `cfg_fund`, opens each corresponding detail page such as `https://fundf10.eastmoney.com/jjjz_519674.html`, saves profile fields back to `cfg_fund`, and crawls paginated historical NAV rows.
+`crawl_all_funds.py` reads existing fund codes from `fund_detail`, opens each corresponding detail page such as `https://fundf10.eastmoney.com/jjjz_519674.html`, saves profile fields back to `fund_detail`, and crawls paginated historical NAV rows.
 
 Useful controls:
 
@@ -208,15 +243,17 @@ Use conservative values and comply with the target site's terms and robots/acces
 
 `scheduler.py` is a lightweight local job runner similar to a single-machine xxl-job executor. It runs one combined daily job, writes one log file per trigger under `logs/`, and uses a lock file to avoid overlapping runs.
 
+On macOS, install `deploy/macos/com.crm.sina-news.plist` as a LaunchAgent to let `launchd` fetch the newest Sina page every 120 seconds independently of the daily fund scheduler.
+
 Default daily job:
 
 ```text
 daily_update
 ```
 
-`daily_update` optionally refreshes the complete ranking first, then scans selected `cfg_fund` codes once and updates profile, recent NAV, feature data, ratings, and holdings for each fund in the same loop.
+`daily_update` optionally refreshes the complete ranking first, then scans selected `fund_detail` codes once and updates profile, recent NAV, feature data, ratings, and holdings for each fund in the same loop.
 
-Funds are processed in ascending `fund_code` order from `cfg_fund`.
+Funds are processed in ascending `fund_code` order from `fund_detail`.
 
 Important scheduler configuration:
 
