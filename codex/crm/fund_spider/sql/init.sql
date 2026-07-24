@@ -114,6 +114,7 @@ CREATE TABLE IF NOT EXISTS fund_holding_import_item (
   holding_amount DECIMAL(20,4) NULL COMMENT '持有金额',
   holding_profit DECIMAL(20,4) NULL COMMENT '持有收益',
   holding_return_rate DECIMAL(20,4) NULL COMMENT '持有收益率',
+  holding_cost DECIMAL(20,4) NULL COMMENT '持仓成本',
   yesterday_profit DECIMAL(20,4) NULL COMMENT '昨日收益',
   today_profit DECIMAL(20,4) NULL COMMENT '今日收益',
   holding_shares DECIMAL(20,4) NULL COMMENT '持有份额',
@@ -138,6 +139,7 @@ CREATE TABLE IF NOT EXISTS user_fund_holding (
   holding_amount DECIMAL(20,4) NULL COMMENT '持有金额',
   holding_profit DECIMAL(20,4) NULL COMMENT '持有收益',
   holding_return_rate DECIMAL(20,4) NULL COMMENT '持有收益率',
+  holding_cost DECIMAL(20,4) NULL COMMENT '持仓成本',
   yesterday_profit DECIMAL(20,4) NULL COMMENT '昨日收益',
   today_profit DECIMAL(20,4) NULL COMMENT '今日收益',
   holding_shares DECIMAL(20,4) NULL COMMENT '持有份额',
@@ -270,6 +272,7 @@ CREATE TABLE IF NOT EXISTS stock_daily_history (
   main_net_inflow DECIMAL(24,4) NULL, pe_ttm DECIMAL(20,4) NULL, raw_json JSON NOT NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `comment` VARCHAR(500) NULL COMMENT '备注',
   PRIMARY KEY (id), UNIQUE KEY uk_stock_daily (stock_code, trade_date),
   KEY idx_stock_daily_date (trade_date), KEY idx_stock_daily_date_change (trade_date, change_rate)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='股票每日行情表';

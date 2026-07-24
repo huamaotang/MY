@@ -185,6 +185,7 @@ def ensure_schema(config: DatabaseConfig) -> None:
             cursor.execute(_fund_holding_import_ddl(database))
             cursor.execute(_fund_holding_import_item_ddl(database))
             cursor.execute(_user_fund_holding_ddl(database))
+            _ensure_portfolio_holding_columns(cursor, config.database)
             cursor.execute(_fund_feature_data_ddl(database))
             cursor.execute(_fund_rating_ddl(database))
             cursor.execute(_fund_refresh_state_ddl(database))
@@ -194,6 +195,7 @@ def ensure_schema(config: DatabaseConfig) -> None:
             _ensure_sina_finance_news_columns(cursor, config.database)
             cursor.execute(_stock_detail_ddl(database))
             cursor.execute(_stock_daily_history_ddl(database))
+            _ensure_stock_daily_history_columns(cursor, config.database)
         connection.commit()
     finally:
         connection.close()
@@ -888,6 +890,54 @@ def _ensure_fund_detail_columns(cursor, database: str) -> None:
             cursor.execute(f"ALTER TABLE {_quote_identifier(database)}.fund_detail ADD COLUMN {column} {definition}")
 
 
+def _ensure_portfolio_holding_columns(cursor, database: str) -> None:
+    database_name = _quote_identifier(database)
+    for table_name in ("fund_holding_import_item", "user_fund_holding"):
+        for column_name, _definition in (
+            ("holding_cost", "DECIMAL(20,4) NULL COMMENT '持仓成本' AFTER holding_return_rate"),
+            ("cost_nav", "DECIMAL(20,6) NULL COMMENT '成本净值' AFTER holding_cost"),
+        ):
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS cnt
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = %s
+                  AND TABLE_NAME = %s
+                  AND COLUMN_NAME = %s
+                """,
+                (database, table_name, column_name),
+            )
+            if cursor.fetchone()["cnt"] == 0:
+                if column_name == "cost_nav":
+                    cursor.execute(
+                        f"ALTER TABLE {database_name}.{_quote_identifier(table_name)} "
+                        "ADD COLUMN cost_nav DECIMAL(20,6) NULL COMMENT '成本净值' "
+                        "AFTER holding_cost"
+                    )
+                else:
+                    cursor.execute(
+                        f"ALTER TABLE {database_name}.{_quote_identifier(table_name)} "
+                        "ADD COLUMN holding_cost DECIMAL(20,4) NULL COMMENT '持仓成本' "
+                        "AFTER holding_return_rate"
+                    )
+        cursor.execute(
+            f"UPDATE {database_name}.{_quote_identifier(table_name)} "
+            "SET holding_cost = ROUND(holding_amount - holding_profit, 4) "
+            "WHERE holding_cost IS NULL "
+            "AND holding_amount IS NOT NULL "
+            "AND holding_profit IS NOT NULL "
+            "AND holding_amount - holding_profit >= 0"
+        )
+        cursor.execute(
+            f"UPDATE {database_name}.{_quote_identifier(table_name)} "
+            "SET cost_nav = ROUND(holding_cost / holding_shares, 6) "
+            "WHERE cost_nav IS NULL "
+            "AND holding_cost IS NOT NULL "
+            "AND holding_shares IS NOT NULL "
+            "AND holding_shares > 0"
+        )
+
+
 def _fund_nav_history_ddl(database: str) -> str:
     return f"""
         CREATE TABLE IF NOT EXISTS {database}.fund_nav_history (
@@ -1000,6 +1050,7 @@ def _fund_holding_import_item_ddl(database: str) -> str:
           holding_amount DECIMAL(20,4) NULL COMMENT '持有金额',
           holding_profit DECIMAL(20,4) NULL COMMENT '持有收益',
           holding_return_rate DECIMAL(20,4) NULL COMMENT '持有收益率',
+          holding_cost DECIMAL(20,4) NULL COMMENT '持仓成本',
           yesterday_profit DECIMAL(20,4) NULL COMMENT '昨日收益',
           today_profit DECIMAL(20,4) NULL COMMENT '今日收益',
           holding_shares DECIMAL(20,4) NULL COMMENT '持有份额',
@@ -1028,6 +1079,7 @@ def _user_fund_holding_ddl(database: str) -> str:
           holding_amount DECIMAL(20,4) NULL COMMENT '持有金额',
           holding_profit DECIMAL(20,4) NULL COMMENT '持有收益',
           holding_return_rate DECIMAL(20,4) NULL COMMENT '持有收益率',
+          holding_cost DECIMAL(20,4) NULL COMMENT '持仓成本',
           yesterday_profit DECIMAL(20,4) NULL COMMENT '昨日收益',
           today_profit DECIMAL(20,4) NULL COMMENT '今日收益',
           holding_shares DECIMAL(20,4) NULL COMMENT '持有份额',
@@ -1164,10 +1216,29 @@ def _stock_daily_history_ddl(database: str) -> str:
         main_net_inflow DECIMAL(24,4) NULL, pe_ttm DECIMAL(20,4) NULL, raw_json JSON NOT NULL,
         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        `comment` VARCHAR(500) NULL COMMENT '备注',
         PRIMARY KEY (id), UNIQUE KEY uk_stock_daily (stock_code,trade_date),
         KEY idx_stock_daily_date (trade_date), KEY idx_stock_daily_date_change (trade_date,change_rate)
       ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='股票每日行情表'
     """
+
+
+def _ensure_stock_daily_history_columns(cursor: Any, database: str) -> None:
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = %s
+          AND TABLE_NAME = 'stock_daily_history'
+          AND COLUMN_NAME = 'comment'
+        """,
+        (database,),
+    )
+    if cursor.fetchone()["cnt"] == 0:
+        cursor.execute(
+            f"ALTER TABLE {_quote_identifier(database)}.stock_daily_history "
+            "ADD COLUMN `comment` VARCHAR(500) NULL COMMENT '备注' AFTER updated_at"
+        )
 
 
 def _ensure_sina_finance_news_columns(cursor: Any, database: str) -> None:
