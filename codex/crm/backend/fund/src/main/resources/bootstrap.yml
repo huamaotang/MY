@@ -1,6 +1,10 @@
 spring:
   application:
     name: fund
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 20MB
   profiles:
     active: ${SPRING_PROFILES_ACTIVE:dev}
   cloud:
@@ -17,3 +21,7 @@ spring:
           - data-id: fund-${spring.profiles.active}.yaml
             group: ${NACOS_GROUP:DEFAULT_GROUP}
             refresh: true
+
+crm:
+  python-executable: ${CRM_PYTHON_EXECUTABLE:python3}
+  python-ocr-script: ${CRM_PYTHON_OCR_SCRIPT:fund_spider/portfolio_holding_ocr.py}

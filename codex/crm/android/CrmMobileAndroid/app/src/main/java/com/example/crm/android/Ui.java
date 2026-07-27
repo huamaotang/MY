@@ -13,6 +13,8 @@ public final class Ui {
     public static final int BLUE = Color.rgb(29, 78, 216);
     public static final int TEXT = Color.rgb(17, 24, 39);
     public static final int MUTED = Color.rgb(107, 114, 128);
+    public static final int RED = Color.rgb(220, 38, 38);
+    public static final int GREEN = Color.rgb(22, 163, 74);
     public static final int BORDER = Color.rgb(229, 231, 235);
 
     private Ui() {

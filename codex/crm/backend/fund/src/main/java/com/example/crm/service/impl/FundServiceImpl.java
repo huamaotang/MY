@@ -3,6 +3,7 @@ package com.example.crm.service.impl;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.crm.common.BusinessException;
+import com.example.crm.dto.FundDailyValuationDto;
 import com.example.crm.dto.FundDetailResponse;
 import com.example.crm.entity.CfgFund;
 import com.example.crm.entity.FundFeatureData;
@@ -20,11 +21,14 @@ import com.example.crm.service.IFundService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
 
 @Service
 public class FundServiceImpl implements IFundService {
     private static final long DEFAULT_DETAIL_HOLDING_SIZE = 10;
     private static final long DEFAULT_DETAIL_RATING_SIZE = 12;
+    private static final Map<String, String> SORT_FIELDS = sortFields();
 
     private final CfgFundMapper fundMapper;
     private final FundNavHistoryMapper navHistoryMapper;
@@ -32,33 +36,56 @@ public class FundServiceImpl implements IFundService {
     private final FundStockHoldingMapper stockHoldingMapper;
     private final FundFeatureDataMapper featureDataMapper;
     private final FundRatingMapper ratingMapper;
+    private final FundValuationService valuationService;
 
     public FundServiceImpl(CfgFundMapper fundMapper,
                            FundNavHistoryMapper navHistoryMapper,
                            FundPerformanceHistoryMapper performanceHistoryMapper,
                            FundStockHoldingMapper stockHoldingMapper,
                            FundFeatureDataMapper featureDataMapper,
-                           FundRatingMapper ratingMapper) {
+                           FundRatingMapper ratingMapper,
+                           FundValuationService valuationService) {
         this.fundMapper = fundMapper;
         this.navHistoryMapper = navHistoryMapper;
         this.performanceHistoryMapper = performanceHistoryMapper;
         this.stockHoldingMapper = stockHoldingMapper;
         this.featureDataMapper = featureDataMapper;
         this.ratingMapper = ratingMapper;
+        this.valuationService = valuationService;
     }
 
     @Override
-    public Page<CfgFund> page(long current, long size, String keyword, String fundType) {
-        LambdaQueryWrapper<CfgFund> query = new LambdaQueryWrapper<CfgFund>()
-                .and(hasText(keyword), wrapper -> wrapper
-                        .like(CfgFund::getFundName, keyword.trim())
-                        .or()
-                        .like(CfgFund::getFundCode, keyword.trim())
-                        .or()
-                        .like(CfgFund::getFundManager, keyword.trim()))
-                .eq(hasText(fundType), CfgFund::getFundType, fundType)
-                .orderByAsc(CfgFund::getFundCode);
-        return fundMapper.selectPage(new Page<>(current, size), query);
+    public Page<CfgFund> page(long current, long size, String keyword, String fundType, String sortField, String sortOrder) {
+        String sortExpression = SORT_FIELDS.getOrDefault(sortField, "f.fund_code");
+        String sortDirection = "descend".equalsIgnoreCase(sortOrder) ? "DESC" : "ASC";
+        Page<CfgFund> page = fundMapper.selectFundPage(new Page<>(current, size),
+                hasText(keyword) ? keyword.trim() : null, fundType, sortExpression, sortDirection);
+        page.getRecords().forEach(fund -> {
+            fund.setLatestPerformance(latestPerformance(fund.getFundCode()));
+            fund.setLatestRating(latestRating(fund.getFundCode()));
+            fund.setFeatures(featureRows(fund.getFundCode()));
+            fund.setLatestValuation(valuationService.latest(fund.getFundCode()));
+        });
+        return page;
+    }
+
+    private static Map<String, String> sortFields() {
+        Map<String, String> fields = new HashMap<>();
+        fields.put("fundCode", "f.fund_code"); fields.put("fundName", "f.fund_name");
+        fields.put("canBuy", "f.can_buy"); fields.put("fundType", "f.fund_type");
+        fields.put("fundManager", "f.fund_manager"); fields.put("managementCompany", "f.management_company");
+        fields.put("netAssetScale", "CAST(f.net_asset_scale AS DECIMAL(20,4))"); fields.put("inceptionDate", "f.inception_date");
+        fields.put("zhaoshangRating", "r.zhaoshang_rating"); fields.put("morningStarRating", "r.morning_star_rating");
+        fields.put("weeklyReturnRate", "p.weekly_return_rate"); fields.put("monthlyReturnRate", "p.monthly_return_rate");
+        fields.put("threeMonthReturnRate", "p.three_month_return_rate"); fields.put("sixMonthReturnRate", "p.six_month_return_rate");
+        fields.put("oneYearReturnRate", "p.one_year_return_rate"); fields.put("twoYearReturnRate", "p.two_year_return_rate");
+        fields.put("threeYearReturnRate", "p.three_year_return_rate"); fields.put("yearToDateReturnRate", "p.year_to_date_return_rate");
+        fields.put("sinceInceptionReturnRate", "p.since_inception_return_rate"); fields.put("customReturnRate", "p.custom_return_rate");
+        fields.put("originalFeeRate", "p.original_fee_rate"); fields.put("discountedFeeRate", "p.discounted_fee_rate");
+        fields.put("cashManagementFeeRate", "p.cash_management_fee_rate");
+        fields.put("standardDeviation", "(SELECT ff.standard_deviation FROM fund_feature_data ff WHERE ff.fund_code=f.fund_code ORDER BY ff.cutoff_date DESC, ff.period_label ASC LIMIT 1)");
+        fields.put("sharpeRatio", "(SELECT ff.sharpe_ratio FROM fund_feature_data ff WHERE ff.fund_code=f.fund_code ORDER BY ff.cutoff_date DESC, ff.period_label ASC LIMIT 1)");
+        return java.util.Collections.unmodifiableMap(fields);
     }
 
     @Override
@@ -68,6 +95,7 @@ public class FundServiceImpl implements IFundService {
         response.setFund(fund);
         response.setLatestNav(latestNav(fundCode));
         response.setLatestPerformance(latestPerformance(fundCode));
+        response.setLatestValuation(valuationService.latest(fundCode));
         response.setLatestHoldings(latestHoldings(fundCode));
         response.setFeatures(features(fundCode));
         response.setRatings(ratings(fundCode));
@@ -119,8 +147,18 @@ public class FundServiceImpl implements IFundService {
     }
 
     @Override
+    public Page<FundDailyValuationDto> valuations(String fundCode, long current, long size) {
+        findFund(fundCode);
+        return valuationService.history(fundCode, current, size);
+    }
+
+    @Override
     public List<FundFeatureData> features(String fundCode) {
         findFund(fundCode);
+        return featureRows(fundCode);
+    }
+
+    private List<FundFeatureData> featureRows(String fundCode) {
         return featureDataMapper.selectList(new LambdaQueryWrapper<FundFeatureData>()
                 .eq(FundFeatureData::getFundCode, fundCode)
                 .orderByDesc(FundFeatureData::getCutoffDate)
@@ -161,6 +199,13 @@ public class FundServiceImpl implements IFundService {
         return performanceHistoryMapper.selectOne(new LambdaQueryWrapper<FundPerformanceHistory>()
                 .eq(FundPerformanceHistory::getFundCode, fundCode)
                 .orderByDesc(FundPerformanceHistory::getNavDate)
+                .last("limit 1"));
+    }
+
+    private FundRating latestRating(String fundCode) {
+        return ratingMapper.selectOne(new LambdaQueryWrapper<FundRating>()
+                .eq(FundRating::getFundCode, fundCode)
+                .orderByDesc(FundRating::getRatingDate)
                 .last("limit 1"));
     }
 

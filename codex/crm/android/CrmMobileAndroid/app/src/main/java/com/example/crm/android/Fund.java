@@ -16,6 +16,10 @@ public class Fund implements Serializable {
     public boolean canBuy;
     public String createdAt;
     public String updatedAt;
+    public FundPerformance latestPerformance;
+    public FundRating latestRating;
+    public FundDailyValuation latestValuation;
+    public java.util.List<FundFeature> features = new java.util.ArrayList<>();
 
     public static Fund fromJson(JSONObject json) {
         Fund fund = new Fund();
@@ -30,6 +34,16 @@ public class Fund implements Serializable {
         fund.canBuy = json.optBoolean("canBuy", false);
         fund.createdAt = optionalString(json, "createdAt");
         fund.updatedAt = optionalString(json, "updatedAt");
+        JSONObject performance = json.optJSONObject("latestPerformance");
+        if (performance != null) fund.latestPerformance = FundPerformance.fromJson(performance);
+        JSONObject rating = json.optJSONObject("latestRating");
+        if (rating != null) fund.latestRating = FundRating.fromJson(rating);
+        JSONObject valuation = json.optJSONObject("latestValuation");
+        if (valuation != null) fund.latestValuation = FundDailyValuation.fromJson(valuation);
+        org.json.JSONArray features = json.optJSONArray("features");
+        if (features != null) {
+            for (int i = 0; i < features.length(); i++) fund.features.add(FundFeature.fromJson(features.optJSONObject(i)));
+        }
         return fund;
     }
 

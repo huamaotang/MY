@@ -54,6 +54,10 @@ struct Fund: Decodable, Identifiable, Hashable {
     let canBuy: Bool?
     let createdAt: String?
     let updatedAt: String?
+    let latestPerformance: FundPerformance?
+    let latestRating: FundRating?
+    let features: [FundFeature]?
+    let latestValuation: FundDailyValuation?
 }
 
 struct FundNav: Decodable, Hashable {
@@ -114,10 +118,27 @@ struct FundPerformance: Decodable, Hashable {
     let cashManagementFeeRate: Decimal?
 }
 
+struct FundDailyValuation: Decodable, Hashable {
+    let fundCode: String
+    let valuationDate: String
+    let holdingReportDate: String?
+    let baseNavDate: String?
+    let baseUnitNav: Decimal?
+    let estimatedUnitNav: Decimal?
+    let estimatedChangeRate: Decimal?
+    let holdingWeight: Decimal?
+    let quotedHoldingWeight: Decimal?
+    let quoteCoverageRate: Decimal?
+    let holdingCount: Int?
+    let quotedHoldingCount: Int?
+    let quoteUpdatedAt: String?
+}
+
 struct FundDetail: Decodable {
     let fund: Fund
     let latestNav: FundNav?
     let latestPerformance: FundPerformance?
+    let latestValuation: FundDailyValuation?
     let latestHoldings: [FundHolding]
     let features: [FundFeature]
     let ratings: [FundRating]
@@ -126,6 +147,7 @@ struct FundDetail: Decodable {
         case fund
         case latestNav
         case latestPerformance
+        case latestValuation
         case latestHoldings
         case features
         case ratings
@@ -136,10 +158,131 @@ struct FundDetail: Decodable {
         fund = try container.decode(Fund.self, forKey: .fund)
         latestNav = try container.decodeIfPresent(FundNav.self, forKey: .latestNav)
         latestPerformance = try container.decodeIfPresent(FundPerformance.self, forKey: .latestPerformance)
+        latestValuation = try container.decodeIfPresent(FundDailyValuation.self, forKey: .latestValuation)
         latestHoldings = try container.decodeIfPresent([FundHolding].self, forKey: .latestHoldings) ?? []
         features = try container.decodeIfPresent([FundFeature].self, forKey: .features) ?? []
         ratings = try container.decodeIfPresent([FundRating].self, forKey: .ratings) ?? []
     }
+}
+
+struct FinanceNews: Decodable, Identifiable, Hashable {
+    let id: Int
+    let newsId: String
+    let categoryTag: Int
+    let categoryName: String
+    let content: String
+    let createTime: String
+    let docUrl: String?
+    let tagsJson: String?
+}
+
+struct PortfolioHoldingCandidate: Decodable, Hashable {
+    let fundCode: String
+    let fundName: String
+    let score: Int?
+}
+
+struct PortfolioHoldingImportRow: Decodable, Hashable {
+    let rowNo: Int
+    var fundCode: String?
+    let fundName: String
+    let holdingAmount: Decimal?
+    let holdingProfit: Decimal?
+    let holdingReturnRate: Decimal?
+    let holdingCost: Decimal?
+    let yesterdayProfit: Decimal?
+    let todayProfit: Decimal?
+    let holdingShares: Decimal?
+    let costNav: Decimal?
+    let screenshotDate: String?
+    let confidence: Decimal?
+    let rawTexts: [String]
+    let candidates: [PortfolioHoldingCandidate]
+}
+
+struct PortfolioHoldingImportPreview: Decodable {
+    let importId: Int
+    let sourceLabel: String
+    let status: String
+    let screenshotDate: String?
+    let imageCount: Int
+    let imageHashes: [String]
+    let warnings: [String]
+    var rows: [PortfolioHoldingImportRow]
+}
+
+struct PortfolioHoldingBatch: Decodable, Identifiable, Hashable {
+    let id: Int
+    let status: String
+    let sourceLabel: String
+    let screenshotDate: String?
+    let imageCount: Int
+    let itemCount: Int
+    let confirmedAt: String?
+    let createdAt: String?
+    let updatedAt: String?
+}
+
+struct UserFundHolding: Decodable, Identifiable, Hashable {
+    let id: Int
+    let ownerUsername: String
+    let fundCode: String
+    let fundName: String
+    let holdingAmount: Decimal?
+    let holdingProfit: Decimal?
+    let holdingReturnRate: Decimal?
+    let holdingCost: Decimal?
+    let yesterdayProfit: Decimal?
+    let todayProfit: Decimal?
+    let holdingShares: Decimal?
+    let costNav: Decimal?
+    let valuationDate: String?
+    let holdingReportDate: String?
+    let estimatedChangeRate: Decimal?
+    let estimatedDailyProfit: Decimal?
+    let estimatedHoldingAmount: Decimal?
+    let estimatedUnitNav: Decimal?
+    let estimatedCumulativeChangeRate: Decimal?
+    let estimatedCumulativeProfit: Decimal?
+    let valuationCoverageRate: Decimal?
+    let valuationUpdatedAt: String?
+    let screenshotDate: String?
+    let latestImportId: Int?
+    let latestImportAt: String?
+    let createdAt: String?
+    let updatedAt: String?
+}
+
+struct StockQuote: Decodable, Identifiable, Hashable {
+    var id: String { "\(stockCode)-\(tradeDate ?? "")" }
+    let stockCode: String
+    let stockName: String?
+    let marketCode: Int?
+    let exchangeName: String?
+    let listingDate: String?
+    let tradeDate: String?
+    let quoteTime: String?
+    let updatedAt: String?
+    let comment: String?
+    let latestPrice: Decimal?
+    let changeRate: Decimal?
+    let changeAmount: Decimal?
+    let volume: Decimal?
+    let amount: Decimal?
+    let amplitude: Decimal?
+    let turnoverRate: Decimal?
+    let peDynamic: Decimal?
+    let peTtm: Decimal?
+    let volumeRatio: Decimal?
+    let highPrice: Decimal?
+    let lowPrice: Decimal?
+    let openPrice: Decimal?
+    let previousClose: Decimal?
+    let totalMarketCap: Decimal?
+    let floatMarketCap: Decimal?
+    let pbRatio: Decimal?
+    let changeRate60d: Decimal?
+    let changeRateYtd: Decimal?
 }
 
 enum ApiError: LocalizedError {

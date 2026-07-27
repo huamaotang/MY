@@ -15,6 +15,7 @@ public class FundDetailResponse {
     private CfgFund fund;
     private FundNavHistory latestNav;
     private FundPerformanceHistory latestPerformance;
+    private FundDailyValuationDto latestValuation;
     private List<FundStockHolding> latestHoldings;
     private List<FundFeatureData> features;
     private List<FundRating> ratings;

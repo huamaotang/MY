@@ -51,7 +51,7 @@ spring:
         - id: fund
           uri: lb://fund
           predicates:
-            - Path=/api/funds/**
+            - Path=/api/funds/**,/api/news/**,/api/stocks/**,/api/portfolio/**
           filters:
             - StripPrefix=1
 

@@ -5,13 +5,17 @@ import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.UUID;
 
 public class ApiClient {
     private static final int TIMEOUT_MS = 15000;
@@ -98,6 +102,37 @@ public class ApiClient {
         }
     }
 
+    public PageResult<FinanceNews> listFinanceNews(int current, int size, int categoryTag) throws ApiException {
+        try {
+            String path="/news?current="+current+"&size="+size+(categoryTag < 0 ? "" : "&categoryTag="+categoryTag);
+            JSONObject data=request("GET", path, null); PageResult<FinanceNews> page=new PageResult<>();
+            page.total=data.optInt("total"); page.current=data.optInt("current"); page.size=data.optInt("size"); JSONArray records=data.optJSONArray("records");
+            if(records!=null) for(int i=0;i<records.length();i++) page.records.add(FinanceNews.fromJson(records.getJSONObject(i))); return page;
+        } catch(Exception ex) { throw new ApiException("加载资讯失败", ex); }
+    }
+
+    public PageResult<StockQuote> listStocks(int current, int size, String keyword) throws ApiException {
+        try {
+            String path="/stocks?current="+current+"&size="+size+"&sortField=changeRate&sortOrder=descend";
+            if(keyword!=null&&!keyword.trim().isEmpty()) path += "&keyword="+URLEncoder.encode(keyword.trim(), "UTF-8");
+            JSONObject data=request("GET", path, null); PageResult<StockQuote> page=new PageResult<>();
+            page.total=data.optInt("total"); page.current=data.optInt("current"); page.size=data.optInt("size");
+            JSONArray records=data.optJSONArray("records");
+            if(records!=null) for(int i=0;i<records.length();i++) page.records.add(StockQuote.fromJson(records.getJSONObject(i)));
+            return page;
+        } catch(Exception ex) { throw new ApiException("加载股票行情失败", ex); }
+    }
+
+    public PageResult<StockQuote> stockHistory(String stockCode, int current, int size) throws ApiException {
+        try {
+            JSONObject data=request("GET", "/stocks/"+stockCode+"/history?current="+current+"&size="+size, null);
+            PageResult<StockQuote> page=new PageResult<>(); page.total=data.optInt("total"); page.current=data.optInt("current"); page.size=data.optInt("size");
+            JSONArray records=data.optJSONArray("records");
+            if(records!=null) for(int i=0;i<records.length();i++) page.records.add(StockQuote.fromJson(records.getJSONObject(i)));
+            return page;
+        } catch(Exception ex) { throw new ApiException("加载股票历史失败", ex); }
+    }
+
     public PageResult<Fund> listFunds(int current, int size, String keyword) throws ApiException {
         try {
             StringBuilder path = new StringBuilder("/funds?current=")
@@ -160,6 +195,76 @@ public class ApiClient {
         }
     }
 
+    public PageResult<UserFundHolding> listPortfolioHoldings(int current, int size, String keyword) throws ApiException {
+        try {
+            StringBuilder path = new StringBuilder("/portfolio/holdings?current=")
+                    .append(current)
+                    .append("&size=")
+                    .append(size);
+            if (keyword != null && !keyword.trim().isEmpty()) {
+                path.append("&keyword=").append(URLEncoder.encode(keyword.trim(), "UTF-8"));
+            }
+            JSONObject data = request("GET", path.toString(), null);
+            PageResult<UserFundHolding> page = new PageResult<>();
+            page.total = data.optInt("total");
+            page.size = data.optInt("size");
+            page.current = data.optInt("current");
+            JSONArray records = data.optJSONArray("records");
+            if (records != null) {
+                for (int i = 0; i < records.length(); i++) {
+                    page.records.add(UserFundHolding.fromJson(records.getJSONObject(i)));
+                }
+            }
+            return page;
+        } catch (Exception ex) {
+            throw new ApiException("加载持仓失败", ex);
+        }
+    }
+
+    public PageResult<PortfolioHoldingBatch> listPortfolioImports(int current, int size) throws ApiException {
+        try {
+            JSONObject data = request("GET", "/portfolio/imports?current=" + current + "&size=" + size, null);
+            PageResult<PortfolioHoldingBatch> page = new PageResult<>();
+            page.total = data.optInt("total");
+            page.size = data.optInt("size");
+            page.current = data.optInt("current");
+            JSONArray records = data.optJSONArray("records");
+            if (records != null) {
+                for (int i = 0; i < records.length(); i++) {
+                    page.records.add(PortfolioHoldingBatch.fromJson(records.getJSONObject(i)));
+                }
+            }
+            return page;
+        } catch (Exception ex) {
+            throw new ApiException("加载导入历史失败", ex);
+        }
+    }
+
+    public PortfolioHoldingImportPreview previewPortfolioHoldings(List<byte[]> images) throws ApiException {
+        try {
+            JSONObject data = requestMultipart("/portfolio/imports/ocr", images);
+            return PortfolioHoldingImportPreview.fromJson(data);
+        } catch (Exception ex) {
+            throw new ApiException("识别持仓截图失败", ex);
+        }
+    }
+
+    public PortfolioHoldingImportPreview portfolioHoldingImport(int importId) throws ApiException {
+        try {
+            return PortfolioHoldingImportPreview.fromJson(request("GET", "/portfolio/imports/" + importId, null));
+        } catch (Exception ex) {
+            throw new ApiException("加载导入详情失败", ex);
+        }
+    }
+
+    public void confirmPortfolioHoldingImport(int importId, PortfolioHoldingConfirmRequest requestBody) throws ApiException {
+        try {
+            requestNoData("POST", "/portfolio/imports/" + importId + "/confirm", requestBody.toJson());
+        } catch (Exception ex) {
+            throw new ApiException("确认入库失败", ex);
+        }
+    }
+
     private JSONObject request(String method, String path, JSONObject body) throws Exception {
         if (baseUrl == null || baseUrl.isEmpty()) {
             throw new ApiException("服务器地址无效");
@@ -185,6 +290,96 @@ public class ApiClient {
             writer.flush();
             writer.close();
         }
+
+        int status = connection.getResponseCode();
+        InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();
+        String text = readAll(stream);
+        if (text.isEmpty()) {
+            throw new ApiException("服务器未返回数据");
+        }
+
+        JSONObject response = new JSONObject(text);
+        int code = response.optInt("code", -1);
+        String message = response.optString("message", "请求失败 (" + status + ")");
+        if (status < 200 || status >= 300 || code != 0) {
+            throw new ApiException(message);
+        }
+        JSONObject data = response.optJSONObject("data");
+        if (data == null) {
+            throw new ApiException("服务器未返回数据");
+        }
+        return data;
+    }
+
+    private void requestNoData(String method, String path, JSONObject body) throws Exception {
+        if (baseUrl == null || baseUrl.isEmpty()) {
+            throw new ApiException("服务器地址无效");
+        }
+
+        URL url = new URL(baseUrl + path);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod(method);
+        connection.setConnectTimeout(TIMEOUT_MS);
+        connection.setReadTimeout(TIMEOUT_MS);
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Content-Type", "application/json");
+        connection.setRequestProperty("X-Client-Source", "android");
+        connection.setRequestProperty("User-Agent", "CrmMobile/Android");
+        if (token != null && !token.isEmpty()) {
+            connection.setRequestProperty("Authorization", "Bearer " + token);
+        }
+        connection.setDoOutput(true);
+        BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(connection.getOutputStream(), StandardCharsets.UTF_8));
+        writer.write(body.toString());
+        writer.flush();
+        writer.close();
+
+        int status = connection.getResponseCode();
+        InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();
+        String text = readAll(stream);
+        if (text.isEmpty()) {
+            throw new ApiException("服务器未返回数据");
+        }
+        JSONObject response = new JSONObject(text);
+        int code = response.optInt("code", -1);
+        String message = response.optString("message", "请求失败 (" + status + ")");
+        if (status < 200 || status >= 300 || code != 0) {
+            throw new ApiException(message);
+        }
+    }
+
+    private JSONObject requestMultipart(String path, List<byte[]> images) throws Exception {
+        if (baseUrl == null || baseUrl.isEmpty()) {
+            throw new ApiException("服务器地址无效");
+        }
+
+        String boundary = "Boundary-" + UUID.randomUUID();
+        URL url = new URL(baseUrl + path);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("POST");
+        connection.setConnectTimeout(TIMEOUT_MS);
+        connection.setReadTimeout(TIMEOUT_MS);
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Accept", "application/json");
+        connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+        connection.setRequestProperty("X-Client-Source", "android");
+        connection.setRequestProperty("User-Agent", "CrmMobile/Android");
+        if (token != null && !token.isEmpty()) {
+            connection.setRequestProperty("Authorization", "Bearer " + token);
+        }
+
+        OutputStream outputStream = connection.getOutputStream();
+        for (int i = 0; i < images.size(); i++) {
+            byte[] image = images.get(i);
+            outputStream.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+            outputStream.write(("Content-Disposition: form-data; name=\"images\"; filename=\"screenshot-" + (i + 1) + ".jpg\"\r\n").getBytes(StandardCharsets.UTF_8));
+            outputStream.write(("Content-Type: image/jpeg\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+            outputStream.write(image);
+            outputStream.write("\r\n".getBytes(StandardCharsets.UTF_8));
+        }
+        outputStream.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        outputStream.flush();
+        outputStream.close();
 
         int status = connection.getResponseCode();
         InputStream stream = status >= 200 && status < 300 ? connection.getInputStream() : connection.getErrorStream();

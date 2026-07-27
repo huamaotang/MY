@@ -6,8 +6,8 @@ Work in `fund_spider/`.
 
 Important files:
 
-- `main.py`: fund list crawler into `cfg_fund`
-- `crawl_all_funds.py`: batch profile + NAV crawler from `cfg_fund`
+- `main.py`: fund list crawler into `fund_detail`
+- `crawl_all_funds.py`: batch profile + NAV crawler from `fund_detail`
 - `crawl_nav.py`: single-fund historical NAV crawler
 - `crawl_feature_data.py`: feature data crawler
 - `profile_spider.py`: basic profile parser
@@ -22,7 +22,7 @@ Database: `fund`
 
 Tables currently used:
 
-- `cfg_fund`: fund code, name, profile fields
+- `fund_detail`: fund code, name, profile fields
 - `fund_nav_history`: daily NAV history
 - `fund_feature_data`: standard deviation and Sharpe ratio
 - `fund_stock_holding`: stock holdings

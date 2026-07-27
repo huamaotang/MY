@@ -13,6 +13,7 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.util.ArrayList;
+import java.math.BigDecimal;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -110,22 +111,35 @@ public class ProductDetailActivity extends Activity {
         row("净值日期", nav == null ? null : nav.navDate);
         row("单位净值", nav == null ? null : nav.unitNav);
         row("累计净值", nav == null ? null : nav.accumulatedNav);
-        row("日增长率", nav == null ? null : nav.dailyGrowthRate);
+        signedPercentRow("日增长率", nav == null ? null : nav.dailyGrowthRate);
+
+        section("每日估值");
+        FundDailyValuation valuation = detail == null ? null : detail.latestValuation;
+        row("估值日期", valuation == null ? null : valuation.valuationDate);
+        signedPercentRow("预估涨跌幅", valuation == null ? null : valuation.estimatedChangeRate);
+        row("预估单位净值", valuation == null ? null : valuation.estimatedUnitNav);
+        row("基准净值日期", valuation == null ? null : valuation.baseNavDate);
+        row("重仓报告日", valuation == null ? null : valuation.holdingReportDate);
+        row("重仓占净值", valuation == null ? null : percent(valuation.holdingWeight));
+        row("行情覆盖率", valuation == null ? null : percent(valuation.quoteCoverageRate));
+        row("行情更新时间", valuation == null ? null : valuation.quoteUpdatedAt);
 
         section("业绩表现");
         FundPerformance performance = detail == null ? null : detail.latestPerformance;
-        row("近一周", percent(performance == null ? null : performance.weeklyReturnRate));
-        row("近一月", percent(performance == null ? null : performance.monthlyReturnRate));
-        row("近三月", percent(performance == null ? null : performance.threeMonthReturnRate));
-        row("近六月", percent(performance == null ? null : performance.sixMonthReturnRate));
-        row("近一年", percent(performance == null ? null : performance.oneYearReturnRate));
-        row("近两年", percent(performance == null ? null : performance.twoYearReturnRate));
-        row("近三年", percent(performance == null ? null : performance.threeYearReturnRate));
-        row("今年以来", percent(performance == null ? null : performance.yearToDateReturnRate));
-        row("成立以来", percent(performance == null ? null : performance.sinceInceptionReturnRate));
+        signedPercentRow("近一周", performance == null ? null : performance.weeklyReturnRate);
+        signedPercentRow("近一月", performance == null ? null : performance.monthlyReturnRate);
+        signedPercentRow("近三月", performance == null ? null : performance.threeMonthReturnRate);
+        signedPercentRow("近六月", performance == null ? null : performance.sixMonthReturnRate);
+        signedPercentRow("近一年", performance == null ? null : performance.oneYearReturnRate);
+        signedPercentRow("近两年", performance == null ? null : performance.twoYearReturnRate);
+        signedPercentRow("近三年", performance == null ? null : performance.threeYearReturnRate);
+        signedPercentRow("今年以来", performance == null ? null : performance.yearToDateReturnRate);
+        signedPercentRow("成立以来", performance == null ? null : performance.sinceInceptionReturnRate);
         row("自定义区间", performance == null ? null : Ui.value(performance.customStartDate) + " 至 " + Ui.value(performance.customEndDate));
-        row("区间收益", percent(performance == null ? null : performance.customReturnRate));
-        row("折后手续费", percent(performance == null ? null : performance.discountedFeeRate));
+        signedPercentRow("区间收益", performance == null ? null : performance.customReturnRate);
+        signedPercentRow("原手续费", performance == null ? null : performance.originalFeeRate);
+        signedPercentRow("折后手续费", performance == null ? null : performance.discountedFeeRate);
+        signedPercentRow("活期宝手续费", performance == null ? null : performance.cashManagementFeeRate);
 
         section("净值与收益走势");
         renderPeriodButtons();
@@ -145,7 +159,7 @@ public class ProductDetailActivity extends Activity {
             int count = Math.min(5, detail.latestHoldings.size());
             for (int i = 0; i < count; i++) {
                 FundHolding holding = detail.latestHoldings.get(i);
-                row(Ui.value(holding.stockName), Ui.value(holding.netValueRatio) + "%");
+                signedPercentRow(Ui.value(holding.stockName), holding.netValueRatio);
             }
         }
 
@@ -185,6 +199,26 @@ public class ProductDetailActivity extends Activity {
         content.addView(view);
     }
 
+    private void signedPercentRow(String title, String value) {
+        content.addView(signedPercentView(this, title, value));
+    }
+
+    static TextView signedPercentView(android.content.Context context, String title, String value) {
+        String displayValue = percent(value);
+        int color = Ui.MUTED;
+        if (value != null && !value.trim().isEmpty()) {
+            try {
+                int sign = new BigDecimal(value.trim().replace("%", "")).signum();
+                color = sign > 0 ? Color.rgb(207, 19, 34) : sign < 0 ? Color.rgb(56, 158, 13) : Ui.TEXT;
+            } catch (NumberFormatException ignored) {
+                color = Ui.MUTED;
+            }
+        }
+        TextView view = Ui.text(context, title + "： " + Ui.value(displayValue), 15, color, Typeface.NORMAL);
+        view.setPadding(0, Ui.dp(context, 4), 0, Ui.dp(context, 4));
+        return view;
+    }
+
     private String ratingText(FundRating rating) {
         return "招商 " + ratingStars(rating.zhaoshangRating)
                 + " / 上海3年 " + ratingStars(rating.shanghaiRating3y)
@@ -193,7 +227,7 @@ public class ProductDetailActivity extends Activity {
                 + " / 晨星 " + ratingStars(rating.morningStarRating);
     }
 
-    private String percent(String value) {
+    private static String percent(String value) {
         return value == null || value.isEmpty() ? null : value + "%";
     }
 

@@ -11,6 +11,7 @@ public class FundDetail implements Serializable {
     public Fund fund;
     public FundNav latestNav;
     public FundPerformance latestPerformance;
+    public FundDailyValuation latestValuation;
     public List<FundHolding> latestHoldings = new ArrayList<>();
     public List<FundFeature> features = new ArrayList<>();
     public List<FundRating> ratings = new ArrayList<>();
@@ -28,6 +29,10 @@ public class FundDetail implements Serializable {
         JSONObject performanceJson = json.optJSONObject("latestPerformance");
         if (performanceJson != null) {
             detail.latestPerformance = FundPerformance.fromJson(performanceJson);
+        }
+        JSONObject valuationJson = json.optJSONObject("latestValuation");
+        if (valuationJson != null) {
+            detail.latestValuation = FundDailyValuation.fromJson(valuationJson);
         }
         JSONArray holdings = json.optJSONArray("latestHoldings");
         if (holdings != null) {

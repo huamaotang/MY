@@ -12,6 +12,7 @@ final class KeychainStore {
         guard let data = value.data(using: .utf8) else {
             return
         }
+        
         delete(account: account)
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

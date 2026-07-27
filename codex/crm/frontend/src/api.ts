@@ -9,8 +9,11 @@ const API_BASE = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '');
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('crm_token');
   const headers = new Headers(options.headers);
-  headers.set('Content-Type', 'application/json');
   headers.set('X-Client-Source', 'web');
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (!isFormData && options.body !== undefined && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -62,6 +65,10 @@ export type Fund = {
   canBuy?: boolean;
   createdAt?: string;
   updatedAt?: string;
+  latestPerformance?: FundPerformance;
+  latestRating?: FundRating;
+  features?: FundFeature[];
+  latestValuation?: FundDailyValuation;
 };
 
 export type FundNav = {
@@ -131,14 +138,174 @@ export type FundPerformance = {
   cashManagementFeeRate?: number;
 };
 
+export type FundDailyValuation = {
+  fundCode: string;
+  valuationDate: string;
+  holdingReportDate?: string;
+  baseNavDate?: string;
+  baseUnitNav?: number;
+  estimatedUnitNav?: number;
+  estimatedChangeRate?: number;
+  holdingWeight?: number;
+  quotedHoldingWeight?: number;
+  quoteCoverageRate?: number;
+  holdingCount?: number;
+  quotedHoldingCount?: number;
+  quoteUpdatedAt?: string;
+};
+
 export type FundDetail = {
   fund: Fund;
   latestNav?: FundNav;
   latestPerformance?: FundPerformance;
+  latestValuation?: FundDailyValuation;
   latestHoldings: FundHolding[];
   features: FundFeature[];
   ratings: FundRating[];
 };
+
+export type FinanceNews = { id: number; newsId: string; categoryTag: number; categoryName: string; content: string; createTime: string; sourceUpdateTime?: string; docUrl?: string; tagsJson?: string; imagesJson?: string };
+
+export type PortfolioHoldingCandidate = {
+  fundCode: string;
+  fundName: string;
+  score?: number;
+};
+
+export type PortfolioHoldingImportRow = {
+  rowNo: number;
+  fundCode?: string;
+  fundName: string;
+  holdingAmount?: number;
+  holdingProfit?: number;
+  holdingReturnRate?: number;
+  holdingCost?: number;
+  yesterdayProfit?: number;
+  todayProfit?: number;
+  holdingShares?: number;
+  costNav?: number;
+  screenshotDate?: string;
+  confidence?: number;
+  rawTexts: string[];
+  candidates: PortfolioHoldingCandidate[];
+};
+
+export type PortfolioHoldingImportPreview = {
+  importId: number;
+  sourceLabel: string;
+  status: string;
+  screenshotDate?: string;
+  imageCount: number;
+  imageHashes: string[];
+  warnings: string[];
+  rows: PortfolioHoldingImportRow[];
+};
+
+export type PortfolioHoldingBatch = {
+  id: number;
+  status: string;
+  sourceLabel: string;
+  screenshotDate?: string;
+  imageCount: number;
+  itemCount: number;
+  confirmedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type UserFundHolding = {
+  id: number;
+  ownerUsername: string;
+  fundCode: string;
+  fundName: string;
+  holdingAmount?: number;
+  holdingProfit?: number;
+  holdingReturnRate?: number;
+  holdingCost?: number;
+  yesterdayProfit?: number;
+  todayProfit?: number;
+  holdingShares?: number;
+  costNav?: number;
+  valuationDate?: string;
+  holdingReportDate?: string;
+  estimatedChangeRate?: number;
+  estimatedDailyProfit?: number;
+  estimatedHoldingAmount?: number;
+  estimatedUnitNav?: number;
+  estimatedCumulativeChangeRate?: number;
+  estimatedCumulativeProfit?: number;
+  valuationCoverageRate?: number;
+  valuationUpdatedAt?: string;
+  screenshotDate?: string;
+  latestImportId?: number;
+  latestImportAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export function listFinanceNews(params: { current: number; size: number; keyword?: string; categoryTag?: number }) {
+  const search = new URLSearchParams({ current: String(params.current), size: String(params.size) });
+  if (params.keyword) search.set('keyword', params.keyword);
+  if (params.categoryTag !== undefined) search.set('categoryTag', String(params.categoryTag));
+  return request<PageResult<FinanceNews>>(`/news?${search.toString()}`);
+}
+
+export function deleteFinanceNews(id: number) { return request<void>(`/news/${id}`, { method: 'DELETE' }); }
+
+export function previewPortfolioHoldings(files: File[]) {
+  const formData = new FormData();
+  files.forEach((file) => formData.append('images', file));
+  return request<PortfolioHoldingImportPreview>('/portfolio/imports/ocr', {
+    method: 'POST',
+    body: formData
+  });
+}
+
+export function confirmPortfolioHoldingImport(importId: number, body: { screenshotDate?: string; items: Array<Partial<PortfolioHoldingImportRow> & { rowNo: number; fundCode?: string; fundName: string }> }) {
+  return request<void>(`/portfolio/imports/${importId}/confirm`, {
+    method: 'POST',
+    body: JSON.stringify(body)
+  });
+}
+
+export function listPortfolioHoldings(params: { current: number; size: number; keyword?: string }) {
+  const search = new URLSearchParams({ current: String(params.current), size: String(params.size) });
+  if (params.keyword) search.set('keyword', params.keyword);
+  return request<PageResult<UserFundHolding>>(`/portfolio/holdings?${search.toString()}`);
+}
+
+export function listPortfolioImports(params: { current: number; size: number }) {
+  const search = new URLSearchParams({ current: String(params.current), size: String(params.size) });
+  return request<PageResult<PortfolioHoldingBatch>>(`/portfolio/imports?${search.toString()}`);
+}
+
+export function getPortfolioImport(importId: number) {
+  return request<PortfolioHoldingImportPreview>(`/portfolio/imports/${importId}`);
+}
+
+export type StockQuote = {
+  id?: number; stockCode: string; stockName?: string; marketCode?: number; exchangeName?: string;
+  listingDate?: string; tradeDate?: string; quoteTime?: string; updatedAt?: string; comment?: string; latestPrice?: number; changeRate?: number;
+  changeAmount?: number; volume?: number; amount?: number; amplitude?: number; turnoverRate?: number;
+  peDynamic?: number; peTtm?: number; volumeRatio?: number; fiveMinChangeRate?: number;
+  highPrice?: number; lowPrice?: number; openPrice?: number; previousClose?: number;
+  totalMarketCap?: number; floatMarketCap?: number; speedRate?: number; pbRatio?: number;
+  changeRate60d?: number; changeRateYtd?: number; mainNetInflow?: number;
+};
+
+export function listStocks(params: { current: number; size: number; keyword?: string; marketCode?: number; sortField?: string; sortOrder?: string }) {
+  const search = new URLSearchParams({ current: String(params.current), size: String(params.size) });
+  if (params.keyword) search.set('keyword', params.keyword);
+  if (params.marketCode !== undefined) search.set('marketCode', String(params.marketCode));
+  if (params.sortField) search.set('sortField', params.sortField);
+  if (params.sortOrder) search.set('sortOrder', params.sortOrder);
+  return request<PageResult<StockQuote>>(`/stocks?${search}`);
+}
+
+export function getStock(stockCode: string) { return request<StockQuote>(`/stocks/${stockCode}`); }
+export function listStockHistory(stockCode: string, current = 1, size = 50) {
+  return request<PageResult<StockQuote>>(`/stocks/${stockCode}/history?current=${current}&size=${size}`);
+}
 
 export type Role = {
   id?: number;
@@ -217,7 +384,7 @@ export function deleteCustomer(id: number) {
   return request<void>(`/customers/${id}`, { method: 'DELETE' });
 }
 
-export function listFunds(params: { current: number; size: number; keyword?: string; fundType?: string }) {
+export function listFunds(params: { current: number; size: number; keyword?: string; fundType?: string; sortField?: string; sortOrder?: string }) {
   const search = new URLSearchParams();
   search.set('current', String(params.current));
   search.set('size', String(params.size));
@@ -227,6 +394,8 @@ export function listFunds(params: { current: number; size: number; keyword?: str
   if (params.fundType) {
     search.set('fundType', params.fundType);
   }
+  if (params.sortField) search.set('sortField', params.sortField);
+  if (params.sortOrder) search.set('sortOrder', params.sortOrder);
   return request<PageResult<Fund>>(`/funds?${search.toString()}`);
 }
 
@@ -249,6 +418,15 @@ export function listFundHoldings(fundCode: string, params: { current: number; si
     search.set('reportDate', params.reportDate);
   }
   return request<PageResult<FundHolding>>(`/funds/${encodeURIComponent(fundCode)}/holdings?${search.toString()}`);
+}
+
+export function listFundValuations(fundCode: string, params: { current: number; size: number }) {
+  const search = new URLSearchParams();
+  search.set('current', String(params.current));
+  search.set('size', String(params.size));
+  return request<PageResult<FundDailyValuation>>(
+    `/funds/${encodeURIComponent(fundCode)}/valuations?${search.toString()}`
+  );
 }
 
 export function listFundFeatures(fundCode: string) {

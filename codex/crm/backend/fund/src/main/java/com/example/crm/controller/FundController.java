@@ -2,6 +2,7 @@ package com.example.crm.controller;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.crm.common.ApiResponse;
+import com.example.crm.dto.FundDailyValuationDto;
 import com.example.crm.dto.FundDetailResponse;
 import com.example.crm.entity.CfgFund;
 import com.example.crm.entity.FundFeatureData;
@@ -36,8 +37,10 @@ public class FundController {
     public ApiResponse<Page<CfgFund>> page(@RequestParam(defaultValue = "1") long current,
                                            @RequestParam(defaultValue = "10") long size,
                                            @RequestParam(required = false) String keyword,
-                                           @RequestParam(required = false) String fundType) {
-        return ApiResponse.ok(fundService.page(current, size, keyword, fundType));
+                                           @RequestParam(required = false) String fundType,
+                                           @RequestParam(required = false) String sortField,
+                                           @RequestParam(required = false) String sortOrder) {
+        return ApiResponse.ok(fundService.page(current, size, keyword, fundType, sortField, sortOrder));
     }
 
     @GetMapping("/{fundCode}")
@@ -82,6 +85,14 @@ public class FundController {
                                                         @RequestParam(defaultValue = "10") long size,
                                                         @RequestParam(required = false) String reportDate) {
         return ApiResponse.ok(fundService.holdings(fundCode, current, size, reportDate));
+    }
+
+    @GetMapping("/{fundCode}/valuations")
+    @PreAuthorize("hasAuthority('fund:list')")
+    public ApiResponse<Page<FundDailyValuationDto>> valuations(@PathVariable String fundCode,
+                                                               @RequestParam(defaultValue = "1") long current,
+                                                               @RequestParam(defaultValue = "20") long size) {
+        return ApiResponse.ok(fundService.valuations(fundCode, current, size));
     }
 
     @GetMapping("/{fundCode}/features")

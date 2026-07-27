@@ -13,6 +13,12 @@
             android:name=".ProductDetailActivity"
             android:exported="false" />
         <activity
+            android:name=".PortfolioHoldingActivity"
+            android:exported="false" />
+        <activity
+            android:name=".StockDetailActivity"
+            android:exported="false" />
+        <activity
             android:name=".MainTabActivity"
             android:exported="false" />
         <activity

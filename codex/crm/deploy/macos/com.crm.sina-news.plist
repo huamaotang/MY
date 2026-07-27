@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.crm.sina-news</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/thm/MY/codex/crm/fund_spider/.venv/bin/python</string>
+    <string>/Users/thm/MY/codex/crm/fund_spider/cli.py</string>
+    <string>sina-news</string>
+    <string>--max-pages</string>
+    <string>1</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/thm/MY/codex/crm/fund_spider</string>
+  <key>StartInterval</key>
+  <integer>120</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/thm/MY/codex/crm/fund_spider/logs/sina-news-launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/thm/MY/codex/crm/fund_spider/logs/sina-news-launchd-error.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
