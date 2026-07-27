@@ -75,6 +75,8 @@ struct FundHolding: Decodable, Hashable {
     let rankNo: Int?
     let stockCode: String
     let stockName: String?
+    let latestPrice: Decimal?
+    let changeRate: Decimal?
     let netValueRatio: Decimal?
     let holdingShares10k: Decimal?
     let holdingMarketValue10k: Decimal?

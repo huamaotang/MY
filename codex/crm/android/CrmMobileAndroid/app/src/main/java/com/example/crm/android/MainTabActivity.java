@@ -367,7 +367,9 @@ public class MainTabActivity extends Activity {
             card.addView(ProductDetailActivity.signedPercentView(
                     this, "当日预估", fund.latestValuation.estimatedChangeRate));
             card.addView(Ui.text(this,
-                    "估值日：" + Ui.value(fund.latestValuation.valuationDate)
+                    "估值日期：" + Ui.value(ProductDetailActivity.preciseValuationDate(
+                            fund.latestValuation.quoteUpdatedAt,
+                            fund.latestValuation.valuationDate))
                             + "    行情覆盖：" + percent(fund.latestValuation.quoteCoverageRate),
                     12, Ui.MUTED, Typeface.NORMAL));
         }

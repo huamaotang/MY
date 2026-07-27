@@ -115,7 +115,8 @@ public class ProductDetailActivity extends Activity {
 
         section("每日估值");
         FundDailyValuation valuation = detail == null ? null : detail.latestValuation;
-        row("估值日期", valuation == null ? null : valuation.valuationDate);
+        row("估值日期", valuation == null ? null
+                : preciseValuationDate(valuation.quoteUpdatedAt, valuation.valuationDate));
         signedPercentRow("预估涨跌幅", valuation == null ? null : valuation.estimatedChangeRate);
         row("预估单位净值", valuation == null ? null : valuation.estimatedUnitNav);
         row("基准净值日期", valuation == null ? null : valuation.baseNavDate);
@@ -275,20 +276,20 @@ public class ProductDetailActivity extends Activity {
         return params;
     }
 
-    private List<FundTrendChartView.TrendSeries> navSeries() {
+    static List<FundTrendChartView.TrendSeries> navSeries() {
         List<FundTrendChartView.TrendSeries> series = new ArrayList<>();
         series.add(new FundTrendChartView.TrendSeries("unitNav", "单位净值", Ui.BLUE, ""));
         series.add(new FundTrendChartView.TrendSeries("accumulatedNav", "累计净值", Color.rgb(22, 163, 74), ""));
         return series;
     }
 
-    private List<FundTrendChartView.TrendSeries> returnSeries() {
+    static List<FundTrendChartView.TrendSeries> returnSeries() {
         List<FundTrendChartView.TrendSeries> series = new ArrayList<>();
         series.add(new FundTrendChartView.TrendSeries("returnRate", "累计收益率", Color.rgb(234, 88, 12), "%"));
         return series;
     }
 
-    private List<FundTrendChartView.TrendRow> buildTrendRows(List<FundNav> navs, String period) {
+    static List<FundTrendChartView.TrendRow> buildTrendRows(List<FundNav> navs, String period) {
         List<FundNav> sorted = new ArrayList<>();
         for (FundNav nav : navs) {
             if (nav != null && nav.navDate != null && (toDouble(nav.unitNav) != null || toDouble(nav.accumulatedNav) != null)) {
@@ -322,7 +323,7 @@ public class ProductDetailActivity extends Activity {
         return rows;
     }
 
-    private List<FundNav> filterTrendPeriod(List<FundNav> navs, String period) {
+    private static List<FundNav> filterTrendPeriod(List<FundNav> navs, String period) {
         if ("ALL".equals(period) || navs.isEmpty()) {
             return navs;
         }
@@ -360,7 +361,7 @@ public class ProductDetailActivity extends Activity {
         return filtered;
     }
 
-    private int shiftMonth(int yyyymmdd, int monthDelta) {
+    private static int shiftMonth(int yyyymmdd, int monthDelta) {
         int year = yyyymmdd / 10000;
         int month = (yyyymmdd / 100) % 100;
         int day = yyyymmdd % 100;
@@ -371,7 +372,7 @@ public class ProductDetailActivity extends Activity {
         return newYear * 10000 + newMonth * 100 + newDay;
     }
 
-    private int dateToInt(String value) {
+    private static int dateToInt(String value) {
         if (value == null || value.length() != 8) {
             return 0;
         }
@@ -382,7 +383,7 @@ public class ProductDetailActivity extends Activity {
         }
     }
 
-    private Double toDouble(String value) {
+    private static Double toDouble(String value) {
         if (value == null || value.trim().isEmpty()) {
             return null;
         }
@@ -391,5 +392,10 @@ public class ProductDetailActivity extends Activity {
         } catch (NumberFormatException ex) {
             return null;
         }
+    }
+
+    static String preciseValuationDate(String timestamp, String fallbackDate) {
+        String formatted = PortfolioHoldingActivity.formatDateTimeSeconds(timestamp);
+        return "-".equals(formatted) ? fallbackDate : formatted;
     }
 }

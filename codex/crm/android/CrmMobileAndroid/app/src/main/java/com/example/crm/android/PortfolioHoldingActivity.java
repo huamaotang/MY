@@ -4,12 +4,15 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -101,8 +104,11 @@ public class PortfolioHoldingActivity extends Activity {
         section.setOrientation(LinearLayout.VERTICAL);
         section.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 12));
         section.addView(Ui.text(this, title, 18, Ui.TEXT, android.graphics.Typeface.BOLD));
+        LinearLayout sectionContent = new LinearLayout(this);
+        sectionContent.setOrientation(LinearLayout.VERTICAL);
+        section.addView(sectionContent);
         parent.addView(section);
-        return section;
+        return sectionContent;
     }
 
     private void pickImages() {
@@ -293,28 +299,138 @@ public class PortfolioHoldingActivity extends Activity {
 
     private void renderHoldings() {
         holdingsContainer.removeAllViews();
-        for (UserFundHolding holding : holdings) {
-            LinearLayout card = card();
-            card.addView(Ui.text(this, Ui.value(holding.fundName), 16, Ui.TEXT, android.graphics.Typeface.BOLD));
-            card.addView(Ui.text(this, holding.fundCode + " · 金额 " + format(holding.holdingAmount), 12, Ui.MUTED, android.graphics.Typeface.NORMAL));
-            card.addView(Ui.text(this, "当日预估 " + formatPercent(holding.estimatedChangeRate), 12, signedColor(holding.estimatedChangeRate), android.graphics.Typeface.BOLD));
-            card.addView(Ui.text(this, "预估盈亏 " + format(holding.estimatedDailyProfit)
-                    + " · 估值后金额 " + format(holding.estimatedHoldingAmount), 12,
-                    signedColor(holding.estimatedDailyProfit), android.graphics.Typeface.NORMAL));
-            card.addView(Ui.text(this,
-                    "累计预估 " + formatPercent(holding.estimatedCumulativeChangeRate)
-                            + " · 累计盈亏 " + format(holding.estimatedCumulativeProfit),
-                    12, signedColor(holding.estimatedCumulativeProfit),
-                    android.graphics.Typeface.BOLD));
-            card.addView(Ui.text(this, "估值日 " + Ui.value(holding.valuationDate)
-                    + " · 行情覆盖 " + formatPercent(holding.valuationCoverageRate), 12,
-                    Ui.MUTED, android.graphics.Typeface.NORMAL));
-            card.addView(Ui.text(this, "持有收益 " + format(holding.holdingProfit), 12, signedColor(holding.holdingProfit), android.graphics.Typeface.NORMAL));
-            card.addView(Ui.text(this, "持有收益率 " + formatPercent(holding.holdingReturnRate), 12, signedColor(holding.holdingReturnRate), android.graphics.Typeface.NORMAL));
-            card.addView(Ui.text(this, "净值成本 " + format(holding.costNav), 12, Ui.MUTED, android.graphics.Typeface.NORMAL));
-            card.addView(Ui.text(this, "昨日收益 " + format(holding.yesterdayProfit), 12, signedColor(holding.yesterdayProfit), android.graphics.Typeface.NORMAL));
-            holdingsContainer.addView(card);
+        TextView hint = Ui.text(this, "左右滑动查看全部数据，点击一行查看持仓详情", 12, Ui.MUTED, Typeface.NORMAL);
+        hint.setPadding(0, Ui.dp(this, 6), 0, Ui.dp(this, 10));
+        holdingsContainer.addView(hint);
+        if (holdings.isEmpty()) {
+            TextView empty = Ui.text(this, "暂无持仓", 14, Ui.MUTED, Typeface.NORMAL);
+            empty.setGravity(Gravity.CENTER);
+            holdingsContainer.addView(empty, new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 96)));
+            return;
         }
+
+        HorizontalScrollView horizontalScroll = new HorizontalScrollView(this);
+        horizontalScroll.setFillViewport(true);
+        horizontalScroll.setHorizontalScrollBarEnabled(true);
+        LinearLayout table = new LinearLayout(this);
+        table.setOrientation(LinearLayout.VERTICAL);
+        table.addView(holdingHeaderRow());
+        for (int index = 0; index < holdings.size(); index++) {
+            table.addView(holdingTableRow(holdings.get(index), index));
+        }
+        horizontalScroll.addView(table);
+        holdingsContainer.addView(horizontalScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    private LinearLayout holdingHeaderRow() {
+        LinearLayout row = tableRow(Color.rgb(243, 244, 246));
+        row.addView(tableCell("基金", 124, Ui.TEXT, Typeface.BOLD, Gravity.START));
+        row.addView(tableCell("持有金额", 100, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("当日预估", 96, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("预估盈亏", 96, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("估值后金额", 108, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("累计预估", 96, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("累计盈亏", 96, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("持有收益", 96, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("持有收益率", 100, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("持有成本", 96, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("持有份额", 96, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("净值成本", 92, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("昨日收益", 92, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("今日收益", 92, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("行情覆盖", 92, Ui.TEXT, Typeface.BOLD, Gravity.END));
+        row.addView(tableCell("估值日期", 148, Ui.TEXT, Typeface.BOLD, Gravity.CENTER));
+        return row;
+    }
+
+    private LinearLayout holdingTableRow(UserFundHolding holding, int index) {
+        LinearLayout row = tableRow(index % 2 == 0 ? Color.WHITE : Color.rgb(249, 250, 251));
+        row.setClickable(true);
+        row.setOnClickListener(view -> openHoldingDetail(holding));
+        row.addView(tableCell(shortFundName(holding.fundName) + "\n" + Ui.value(holding.fundCode),
+                124, Ui.BLUE, Typeface.BOLD, Gravity.START));
+        row.addView(tableCell(format(holding.holdingAmount), 100, Ui.TEXT, Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(formatPercent(holding.estimatedChangeRate), 96,
+                signedColor(holding.estimatedChangeRate), Typeface.BOLD, Gravity.END));
+        row.addView(tableCell(format(holding.estimatedDailyProfit), 96,
+                signedColor(holding.estimatedDailyProfit), Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(format(holding.estimatedHoldingAmount), 108, Ui.TEXT, Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(formatPercent(holding.estimatedCumulativeChangeRate), 96,
+                signedColor(holding.estimatedCumulativeChangeRate), Typeface.BOLD, Gravity.END));
+        row.addView(tableCell(format(holding.estimatedCumulativeProfit), 96,
+                signedColor(holding.estimatedCumulativeProfit), Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(format(holding.holdingProfit), 96,
+                signedColor(holding.holdingProfit), Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(formatPercent(holding.holdingReturnRate), 100,
+                signedColor(holding.holdingReturnRate), Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(format(holding.holdingCost), 96, Ui.TEXT, Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(format(holding.holdingShares), 96, Ui.TEXT, Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(format(holding.costNav), 92, Ui.TEXT, Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(format(holding.yesterdayProfit), 92,
+                signedColor(holding.yesterdayProfit), Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(format(holding.todayProfit), 92,
+                signedColor(holding.todayProfit), Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(formatPercent(holding.valuationCoverageRate), 92,
+                Ui.MUTED, Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(valuationDateTime(holding), 148,
+                Ui.MUTED, Typeface.NORMAL, Gravity.CENTER));
+        return row;
+    }
+
+    private LinearLayout tableRow(int backgroundColor) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setMinimumHeight(Ui.dp(this, 58));
+        row.setBackgroundColor(backgroundColor);
+        return row;
+    }
+
+    private TextView tableCell(String value, int widthDp, int color, int style, int gravity) {
+        TextView cell = Ui.text(this, value, 12, color, style);
+        cell.setGravity(Gravity.CENTER_VERTICAL | gravity);
+        cell.setPadding(Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8), Ui.dp(this, 8));
+        cell.setMaxLines(2);
+        cell.setMinHeight(Ui.dp(this, 58));
+        cell.setLayoutParams(new LinearLayout.LayoutParams(Ui.dp(this, widthDp), ViewGroup.LayoutParams.MATCH_PARENT));
+        return cell;
+    }
+
+    private void openHoldingDetail(UserFundHolding holding) {
+        Intent intent = new Intent(this, PortfolioHoldingDetailActivity.class);
+        intent.putExtra("holding", holding);
+        startActivity(intent);
+    }
+
+    static String shortFundName(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "-";
+        }
+        String normalized = value.trim();
+        int count = normalized.codePointCount(0, normalized.length());
+        if (count <= 6) {
+            return normalized;
+        }
+        int end = normalized.offsetByCodePoints(0, 6);
+        return normalized.substring(0, end) + "...";
+    }
+
+    static String valuationDateTime(UserFundHolding holding) {
+        if (holding == null) {
+            return "-";
+        }
+        String timestamp = formatDateTimeSeconds(holding.valuationUpdatedAt);
+        return "-".equals(timestamp) ? Ui.value(holding.valuationDate) : timestamp;
+    }
+
+    static String formatDateTimeSeconds(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "-";
+        }
+        String normalized = value.trim().replace('T', ' ');
+        return normalized.length() > 19 ? normalized.substring(0, 19) : normalized;
     }
 
     private void renderImports() {

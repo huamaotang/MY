@@ -13,6 +13,9 @@
             android:name=".ProductDetailActivity"
             android:exported="false" />
         <activity
+            android:name=".PortfolioHoldingDetailActivity"
+            android:exported="false" />
+        <activity
             android:name=".PortfolioHoldingActivity"
             android:exported="false" />
         <activity

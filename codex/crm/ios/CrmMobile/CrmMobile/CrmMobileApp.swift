@@ -288,48 +288,15 @@ struct PortfolioHoldingView: View {
                 }
 
                 Section("当前持仓") {
-                    ForEach(holdings) { item in
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Text(item.fundName).font(.headline)
-                                Spacer()
-                                Text(item.fundCode).font(.caption).foregroundStyle(.secondary)
-                            }
-                            HStack {
-                                signedPercent(item.holdingReturnRate)
-                                Text("金额 \(decimal(item.holdingAmount))")
-                                Text("净值成本 \(decimal(item.costNav))")
-                                Text("收益")
-                                signedValue(item.holdingProfit)
-                                Spacer()
-                                Text(item.screenshotDate ?? "-").font(.caption).foregroundStyle(.secondary)
-                            }
-                            .font(.caption)
-                            HStack {
-                                Text("当日预估")
-                                signedPercent(item.estimatedChangeRate)
-                                Text("预估盈亏")
-                                signedValue(item.estimatedDailyProfit)
-                                Text("估值后 \(decimal(item.estimatedHoldingAmount))")
-                            }
-                            .font(.caption)
-                            HStack {
-                                Text("累计预估")
-                                signedPercent(item.estimatedCumulativeChangeRate)
-                                Text("累计盈亏")
-                                signedValue(item.estimatedCumulativeProfit)
-                            }
-                            .font(.caption)
-                            HStack {
-                                Text("估值日 \(item.valuationDate ?? "-")")
-                                Text("行情覆盖 \(percent(item.valuationCoverageRate) ?? "-")")
-                                Spacer()
-                                Text(item.valuationUpdatedAt ?? "-")
-                            }
-                            .font(.caption2)
+                    Text("左右滑动查看全部数据，点击一行查看持仓详情")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    if holdings.isEmpty && !loading {
+                        Label("暂无持仓", systemImage: "tray")
                             .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 3)
+                    } else {
+                        PortfolioHoldingsTable(holdings: holdings)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                     }
                 }
 
@@ -535,6 +502,374 @@ struct PortfolioHoldingRowEditor: View {
     }
 }
 
+private struct PortfolioHoldingsTable: View {
+    let holdings: [UserFundHolding]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: true) {
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                    .background(Color(.secondarySystemGroupedBackground))
+                Divider()
+                ForEach(holdings) { holding in
+                    NavigationLink {
+                        PortfolioHoldingDetailView(holding: holding)
+                    } label: {
+                        row(holding)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 0) {
+            cell("基金", width: 124, alignment: .leading, weight: .semibold)
+            cell("持有金额", width: 100, weight: .semibold)
+            cell("当日预估", width: 96, weight: .semibold)
+            cell("预估盈亏", width: 96, weight: .semibold)
+            cell("估值后金额", width: 108, weight: .semibold)
+            cell("累计预估", width: 96, weight: .semibold)
+            cell("累计盈亏", width: 96, weight: .semibold)
+            cell("持有收益", width: 96, weight: .semibold)
+            cell("持有收益率", width: 100, weight: .semibold)
+            cell("持有成本", width: 96, weight: .semibold)
+            cell("持有份额", width: 96, weight: .semibold)
+            cell("净值成本", width: 92, weight: .semibold)
+            cell("昨日收益", width: 92, weight: .semibold)
+            cell("今日收益", width: 92, weight: .semibold)
+            cell("行情覆盖", width: 92, weight: .semibold)
+            cell("估值日期", width: 148, alignment: .center, weight: .semibold)
+        }
+    }
+
+    private func row(_ holding: UserFundHolding) -> some View {
+        HStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(shortFundName(holding.fundName))
+                    .font(.caption.bold())
+                    .foregroundStyle(.blue)
+                Text(holding.fundCode)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 124, alignment: .leading)
+            .frame(minHeight: 58)
+            .padding(.horizontal, 6)
+
+            cell(decimal(holding.holdingAmount), width: 100)
+            cell(percent(holding.estimatedChangeRate) ?? "-", width: 96,
+                 color: holding.estimatedChangeRate.map(signedValueColor) ?? .secondary, weight: .semibold)
+            cell(decimal(holding.estimatedDailyProfit), width: 96,
+                 color: holding.estimatedDailyProfit.map(signedValueColor) ?? .secondary)
+            cell(decimal(holding.estimatedHoldingAmount), width: 108)
+            cell(percent(holding.estimatedCumulativeChangeRate) ?? "-", width: 96,
+                 color: holding.estimatedCumulativeChangeRate.map(signedValueColor) ?? .secondary, weight: .semibold)
+            cell(decimal(holding.estimatedCumulativeProfit), width: 96,
+                 color: holding.estimatedCumulativeProfit.map(signedValueColor) ?? .secondary)
+            cell(decimal(holding.holdingProfit), width: 96,
+                 color: holding.holdingProfit.map(signedValueColor) ?? .secondary)
+            cell(percent(holding.holdingReturnRate) ?? "-", width: 100,
+                 color: holding.holdingReturnRate.map(signedValueColor) ?? .secondary)
+            cell(decimal(holding.holdingCost), width: 96)
+            cell(decimal(holding.holdingShares), width: 96)
+            cell(decimal(holding.costNav), width: 92)
+            cell(decimal(holding.yesterdayProfit), width: 92,
+                 color: holding.yesterdayProfit.map(signedValueColor) ?? .secondary)
+            cell(decimal(holding.todayProfit), width: 92,
+                 color: holding.todayProfit.map(signedValueColor) ?? .secondary)
+            cell(percent(holding.valuationCoverageRate) ?? "-", width: 92, color: .secondary)
+            cell(valuationDateTime(holding), width: 148, alignment: .center, color: .secondary)
+        }
+        .background(Color(.systemBackground))
+    }
+
+    private func cell(
+        _ value: String,
+        width: CGFloat,
+        alignment: Alignment = .trailing,
+        color: Color = .primary,
+        weight: Font.Weight = .regular
+    ) -> some View {
+        Text(value)
+            .font(.caption.weight(weight))
+            .foregroundStyle(color)
+            .lineLimit(2)
+            .frame(width: width, alignment: alignment)
+            .frame(minHeight: 58)
+            .padding(.horizontal, 6)
+    }
+}
+
+struct PortfolioHoldingDetailView: View {
+    @EnvironmentObject private var session: SessionStore
+
+    let holding: UserFundHolding
+
+    @State private var detail: FundDetail?
+    @State private var chartNavs: [FundNav] = []
+    @State private var trendPeriod: TrendPeriod = .oneYear
+    @State private var isLoading = false
+    @State private var errorMessage: String?
+
+    private var displayFund: Fund {
+        detail?.fund ?? Fund(
+            fundCode: holding.fundCode,
+            fundName: holding.fundName,
+            inceptionDate: nil,
+            fundManager: nil,
+            fundType: nil,
+            managementCompany: nil,
+            netAssetScale: nil,
+            scaleDate: nil,
+            canBuy: nil,
+            createdAt: nil,
+            updatedAt: nil,
+            latestPerformance: nil,
+            latestRating: nil,
+            features: nil,
+            latestValuation: nil
+        )
+    }
+
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(holding.fundName)
+                        .font(.title2.bold())
+                    Text(holding.fundCode)
+                        .font(.caption.bold())
+                        .foregroundStyle(.blue)
+                    NavigationLink {
+                        ProductDetailView(fund: displayFund)
+                    } label: {
+                        Label("查看基金详情", systemImage: "arrow.up.right.square")
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+
+            if let errorMessage {
+                Section {
+                    Text(errorMessage)
+                        .foregroundStyle(.red)
+                }
+            }
+
+            Section("持仓数据") {
+                DetailLine(title: "持有金额", value: decimal(holding.holdingAmount))
+                SignedValueLine(title: "持有收益", value: holding.holdingProfit)
+                SignedPercentLine(title: "持有收益率", value: holding.holdingReturnRate)
+                DetailLine(title: "持有成本", value: decimal(holding.holdingCost))
+                SignedValueLine(title: "昨日收益", value: holding.yesterdayProfit)
+                SignedValueLine(title: "今日收益", value: holding.todayProfit)
+                DetailLine(title: "持有份额", value: decimal(holding.holdingShares))
+                DetailLine(title: "净值成本", value: decimal(holding.costNav))
+                DetailLine(title: "估值日期", value: valuationDateTime(holding))
+                DetailLine(title: "重仓报告日", value: holding.holdingReportDate)
+                SignedPercentLine(title: "当日预估涨跌", value: holding.estimatedChangeRate)
+                SignedValueLine(title: "预估当日盈亏", value: holding.estimatedDailyProfit)
+                DetailLine(title: "估值后金额", value: decimal(holding.estimatedHoldingAmount))
+                DetailLine(title: "预估单位净值", value: decimal(holding.estimatedUnitNav))
+                SignedPercentLine(title: "累计预估涨跌", value: holding.estimatedCumulativeChangeRate)
+                SignedValueLine(title: "累计预估盈亏", value: holding.estimatedCumulativeProfit)
+                DetailLine(title: "行情覆盖率", value: percent(holding.valuationCoverageRate))
+                DetailLine(title: "行情更新时间", value: holding.valuationUpdatedAt)
+                DetailLine(title: "截图日期", value: holding.screenshotDate)
+                DetailLine(title: "导入批次", value: holding.latestImportId.map(String.init))
+                DetailLine(title: "导入时间", value: holding.latestImportAt)
+                DetailLine(title: "记录创建时间", value: holding.createdAt)
+                DetailLine(title: "记录更新时间", value: holding.updatedAt)
+            }
+
+            Section("净值与收益走势") {
+                Picker("区间", selection: $trendPeriod) {
+                    ForEach(TrendPeriod.allCases) { period in
+                        Text(period.title).tag(period)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                let rows = buildTrendRows(navs: chartNavs, period: trendPeriod)
+                FundTrendChart(
+                    title: "净值走势图",
+                    rows: rows,
+                    series: [
+                        TrendSeries(keyPath: \.unitNav, title: "单位净值", color: .blue),
+                        TrendSeries(keyPath: \.accumulatedNav, title: "累计净值", color: .green)
+                    ]
+                )
+                FundTrendChart(
+                    title: "收益走势图",
+                    rows: rows,
+                    series: [
+                        TrendSeries(keyPath: \.returnRate, title: "累计收益率", color: .orange, suffix: "%")
+                    ]
+                )
+            }
+
+            Section("基金基础信息") {
+                DetailLine(title: "基金名称", value: displayFund.fundName)
+                DetailLine(title: "基金代码", value: displayFund.fundCode)
+                DetailLine(title: "类型", value: displayFund.fundType)
+                DetailLine(title: "基金经理", value: displayFund.fundManager)
+                DetailLine(title: "管理人", value: displayFund.managementCompany)
+                DetailLine(title: "成立日期", value: displayFund.inceptionDate)
+                DetailLine(title: "净资产规模", value: displayFund.netAssetScale)
+                DetailLine(title: "规模截止", value: displayFund.scaleDate)
+                DetailLine(title: "购买状态", value: displayFund.canBuy.map { $0 ? "可购买" : "不可购买" })
+                DetailLine(title: "基金创建时间", value: displayFund.createdAt)
+                DetailLine(title: "基金更新时间", value: displayFund.updatedAt)
+            }
+
+            Section("最新净值") {
+                DetailLine(title: "净值日期", value: detail?.latestNav?.navDate)
+                DetailLine(title: "单位净值", value: detail?.latestNav?.unitNav.map(String.init))
+                DetailLine(title: "累计净值", value: detail?.latestNav?.accumulatedNav.map(String.init))
+                SignedPercentLine(title: "日增长率", value: detail?.latestNav?.dailyGrowthRate)
+            }
+
+            Section("每日估值") {
+                DetailLine(
+                    title: "估值日期",
+                    value: preciseValuationDate(
+                        timestamp: detail?.latestValuation?.quoteUpdatedAt,
+                        fallbackDate: detail?.latestValuation?.valuationDate
+                    )
+                )
+                SignedPercentLine(title: "预估涨跌幅", value: detail?.latestValuation?.estimatedChangeRate)
+                DetailLine(title: "预估单位净值", value: detail?.latestValuation?.estimatedUnitNav.map(String.init))
+                DetailLine(title: "基准净值日期", value: detail?.latestValuation?.baseNavDate)
+                DetailLine(title: "基准单位净值", value: detail?.latestValuation?.baseUnitNav.map(String.init))
+                DetailLine(title: "重仓报告日", value: detail?.latestValuation?.holdingReportDate)
+                DetailLine(title: "重仓占净值", value: percent(detail?.latestValuation?.holdingWeight))
+                DetailLine(title: "有行情占净值", value: percent(detail?.latestValuation?.quotedHoldingWeight))
+                DetailLine(title: "行情覆盖率", value: percent(detail?.latestValuation?.quoteCoverageRate))
+                DetailLine(title: "重仓数量", value: detail?.latestValuation?.holdingCount.map(String.init))
+                DetailLine(title: "有行情数量", value: detail?.latestValuation?.quotedHoldingCount.map(String.init))
+                DetailLine(title: "行情更新时间", value: detail?.latestValuation?.quoteUpdatedAt)
+            }
+
+            Section("业绩表现") {
+                DetailLine(title: "净值日期", value: detail?.latestPerformance?.navDate)
+                SignedPercentLine(title: "近一周", value: detail?.latestPerformance?.weeklyReturnRate)
+                SignedPercentLine(title: "近一月", value: detail?.latestPerformance?.monthlyReturnRate)
+                SignedPercentLine(title: "近三月", value: detail?.latestPerformance?.threeMonthReturnRate)
+                SignedPercentLine(title: "近六月", value: detail?.latestPerformance?.sixMonthReturnRate)
+                SignedPercentLine(title: "近一年", value: detail?.latestPerformance?.oneYearReturnRate)
+                SignedPercentLine(title: "近两年", value: detail?.latestPerformance?.twoYearReturnRate)
+                SignedPercentLine(title: "近三年", value: detail?.latestPerformance?.threeYearReturnRate)
+                SignedPercentLine(title: "今年以来", value: detail?.latestPerformance?.yearToDateReturnRate)
+                SignedPercentLine(title: "成立以来", value: detail?.latestPerformance?.sinceInceptionReturnRate)
+                DetailLine(title: "自定义区间", value: performanceWindow(detail?.latestPerformance))
+                SignedPercentLine(title: "区间收益", value: detail?.latestPerformance?.customReturnRate)
+                SignedPercentLine(title: "原手续费", value: detail?.latestPerformance?.originalFeeRate)
+                SignedPercentLine(title: "折后手续费", value: detail?.latestPerformance?.discountedFeeRate)
+                SignedPercentLine(title: "活期宝手续费", value: detail?.latestPerformance?.cashManagementFeeRate)
+            }
+
+            Section("最新重仓") {
+                ForEach(detail?.latestHoldings ?? [], id: \.self) { item in
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("\(item.rankNo.map { "\($0). " } ?? "")\(item.stockName ?? item.stockCode) \(item.stockCode)")
+                            .font(.subheadline.bold())
+                        Text("报告 \(item.reportPeriod ?? "-") / \(item.reportDate) · 占净值 \(percent(item.netValueRatio) ?? "-") · 最新价 \(decimal(item.latestPrice)) · 涨跌 \(percent(item.changeRate) ?? "-") · 持股 \(decimal(item.holdingShares10k))万股 · 市值 \(decimal(item.holdingMarketValue10k))万元")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 3)
+                }
+                if detail?.latestHoldings.isEmpty ?? true {
+                    DetailLine(title: "重仓", value: nil)
+                }
+            }
+
+            Section("基金评级") {
+                ForEach(detail?.ratings ?? [], id: \.self) { rating in
+                    DetailLine(title: rating.ratingDate, value: ratingText(rating))
+                }
+                if detail?.ratings.isEmpty ?? true {
+                    DetailLine(title: "评级", value: nil)
+                }
+            }
+
+            Section("特色数据") {
+                ForEach(detail?.features ?? [], id: \.self) { feature in
+                    DetailLine(
+                        title: "\(feature.periodLabel) \(feature.cutoffDate)",
+                        value: "标准差 \(feature.standardDeviation.map(String.init) ?? "-") / 夏普 \(feature.sharpeRatio.map(String.init) ?? "-")"
+                    )
+                }
+                if detail?.features.isEmpty ?? true {
+                    DetailLine(title: "特色数据", value: nil)
+                }
+            }
+        }
+        .navigationTitle("持仓详情")
+        .navigationBarTitleDisplayMode(.inline)
+        .overlay {
+            if isLoading {
+                ProgressView()
+            }
+        }
+        .task {
+            if detail == nil {
+                await loadDetail()
+            }
+        }
+        .refreshable {
+            await loadDetail()
+        }
+    }
+
+    private func loadDetail() async {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            async let detailResult = session.apiClient.fundDetail(fundCode: holding.fundCode)
+            async let navResult = session.apiClient.listFundNavs(
+                fundCode: holding.fundCode,
+                current: 1,
+                size: 1000
+            )
+            detail = try await detailResult
+            let navPage = try await navResult
+            chartNavs = navPage.records
+            errorMessage = nil
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+}
+
+private func shortFundName(_ value: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.count > 6 else {
+        return trimmed.isEmpty ? "-" : trimmed
+    }
+    return String(trimmed.prefix(6)) + "..."
+}
+
+private func valuationDateTime(_ holding: UserFundHolding) -> String {
+    formatDateTimeSeconds(holding.valuationUpdatedAt) ?? holding.valuationDate ?? "-"
+}
+
+private func preciseValuationDate(timestamp: String?, fallbackDate: String?) -> String? {
+    formatDateTimeSeconds(timestamp) ?? fallbackDate
+}
+
+private func formatDateTimeSeconds(_ value: String?) -> String? {
+    guard let value = nonEmpty(value) else {
+        return nil
+    }
+    let normalized = value.replacingOccurrences(of: "T", with: " ")
+    return String(normalized.prefix(19))
+}
+
 struct ProductListView: View {
     @EnvironmentObject private var session: SessionStore
 
@@ -716,7 +1051,7 @@ private struct ProductRow: View {
                 .font(.caption).foregroundStyle(.secondary)
             if let valuation = fund.latestValuation {
                 SignedPercentLine(title: "当日预估", value: valuation.estimatedChangeRate)
-                Text("估值日 \(valuation.valuationDate) · 行情覆盖 \(percent(valuation.quoteCoverageRate) ?? "-")")
+                Text("估值日期 \(preciseValuationDate(timestamp: valuation.quoteUpdatedAt, fallbackDate: valuation.valuationDate) ?? "-") · 行情覆盖 \(percent(valuation.quoteCoverageRate) ?? "-")")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -788,7 +1123,13 @@ struct ProductDetailView: View {
             }
 
             Section("每日估值") {
-                DetailLine(title: "估值日期", value: detail?.latestValuation?.valuationDate)
+                DetailLine(
+                    title: "估值日期",
+                    value: preciseValuationDate(
+                        timestamp: detail?.latestValuation?.quoteUpdatedAt,
+                        fallbackDate: detail?.latestValuation?.valuationDate
+                    )
+                )
                 SignedPercentLine(title: "预估涨跌幅", value: detail?.latestValuation?.estimatedChangeRate)
                 DetailLine(title: "预估单位净值", value: detail?.latestValuation?.estimatedUnitNav.map(String.init))
                 DetailLine(title: "基准净值日期", value: detail?.latestValuation?.baseNavDate)
@@ -1191,6 +1532,21 @@ private struct SignedPercentLine: View {
             Text(title).foregroundStyle(.secondary)
             Spacer()
             Text(percent(value) ?? "-")
+                .multilineTextAlignment(.trailing)
+                .foregroundStyle(value.map(signedValueColor) ?? .secondary)
+        }
+    }
+}
+
+private struct SignedValueLine: View {
+    let title: String
+    let value: Decimal?
+
+    var body: some View {
+        HStack(alignment: .top) {
+            Text(title).foregroundStyle(.secondary)
+            Spacer()
+            Text(decimal(value))
                 .multilineTextAlignment(.trailing)
                 .foregroundStyle(value.map(signedValueColor) ?? .secondary)
         }

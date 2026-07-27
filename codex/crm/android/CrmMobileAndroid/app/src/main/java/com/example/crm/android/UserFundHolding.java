@@ -2,7 +2,9 @@ package com.example.crm.android;
 
 import org.json.JSONObject;
 
-public class UserFundHolding {
+import java.io.Serializable;
+
+public class UserFundHolding implements Serializable {
     public int id;
     public String ownerUsername;
     public String fundCode;
