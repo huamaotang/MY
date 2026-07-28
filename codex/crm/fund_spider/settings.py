@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import datetime
 from pathlib import Path
 
-from spider import RequestConfig
+from spiders.fund_ranking_spider import RequestConfig
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -57,10 +58,16 @@ def normalize_query_date(value: str | None) -> str:
     if not text:
         return ""
     if re.fullmatch(r"\d{8}", text):
-        return f"{text[:4]}-{text[4:6]}-{text[6:]}"
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
-        return text
-    raise ValueError(f"invalid date format: {value}; expected YYYYMMDD or YYYY-MM-DD")
+        normalized = f"{text[:4]}-{text[4:6]}-{text[6:]}"
+    elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        normalized = text
+    else:
+        raise ValueError(f"invalid date format: {value}; expected YYYYMMDD or YYYY-MM-DD")
+    try:
+        datetime.strptime(normalized, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError(f"invalid calendar date: {value}") from exc
+    return normalized
 
 
 def apply_env_overrides(values: dict[str, str | None]) -> None:

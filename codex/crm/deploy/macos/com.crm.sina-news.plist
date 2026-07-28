@@ -6,11 +6,9 @@
   <string>com.crm.sina-news</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/thm/MY/codex/crm/fund_spider/.venv/bin/python</string>
-    <string>/Users/thm/MY/codex/crm/fund_spider/cli.py</string>
-    <string>sina-news</string>
-    <string>--max-pages</string>
-    <string>1</string>
+    <string>/bin/bash</string>
+    <string>/Users/thm/MY/codex/crm/fund_spider/bin/run_sina_news.sh</string>
+    <string>--foreground</string>
   </array>
   <key>WorkingDirectory</key>
   <string>/Users/thm/MY/codex/crm/fund_spider</string>

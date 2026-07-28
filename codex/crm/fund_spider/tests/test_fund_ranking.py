@@ -9,8 +9,8 @@ from urllib.parse import parse_qs, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from db import upsert_fund_rankings  # noqa: E402
-from spider import (  # noqa: E402
+from db import upsert_fund_rankings, upsert_fund_summaries  # noqa: E402
+from spiders.fund_ranking_spider import (  # noqa: E402
     EastMoneyFundSpider,
     FUND_LIST_URL,
     PURCHASABLE_SALE_STATUSES,
@@ -139,6 +139,14 @@ class _FakeConnection:
 
 
 class FundRankingDatabaseTest(unittest.TestCase):
+    def test_summary_refresh_only_writes_fund_detail(self) -> None:
+        connection = _FakeConnection()
+        rows = parse_funds(SAMPLE_RESPONSE, "2025-07-22", "2026-07-22")
+
+        self.assertEqual(2, upsert_fund_summaries(connection, rows))
+        self.assertEqual(1, len(connection.fake_cursor.calls))
+        self.assertEqual(1, connection.commits)
+
     def test_writes_three_tables_in_one_transaction(self) -> None:
         connection = _FakeConnection()
         rows = parse_funds(SAMPLE_RESPONSE, "2025-07-22", "2026-07-22")

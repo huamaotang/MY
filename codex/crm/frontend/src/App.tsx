@@ -93,9 +93,28 @@ const { Header, Sider, Content } = Layout;
 
 type ViewKey = 'dashboard' | 'customers' | 'contacts' | 'follows' | 'funds' | 'portfolio' | 'stocks' | 'news' | 'users' | 'roles' | 'menus';
 
+type WorkspaceState = {
+  activeView: ViewKey;
+  openViews: ViewKey[];
+};
+
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const CHART_NAV_SIZE = 1000;
+const WORKSPACE_STORAGE_KEY = 'crm_workspace_tabs';
+const VIEW_KEYS: ViewKey[] = [
+  'dashboard',
+  'customers',
+  'contacts',
+  'follows',
+  'funds',
+  'portfolio',
+  'stocks',
+  'news',
+  'users',
+  'roles',
+  'menus'
+];
 
 type TrendPeriod = '1M' | '3M' | '6M' | '1Y' | '3Y' | 'ALL';
 
@@ -145,7 +164,35 @@ const menuItems = [
 
 export default function App() {
   const [token, setToken] = useState(localStorage.getItem('crm_token'));
-  const [view, setView] = useState<ViewKey>('dashboard');
+  const [workspace, setWorkspace] = useState<WorkspaceState>(loadWorkspaceState);
+  const { activeView, openViews } = workspace;
+
+  useEffect(() => {
+    sessionStorage.setItem(WORKSPACE_STORAGE_KEY, JSON.stringify(workspace));
+  }, [workspace]);
+
+  const openView = (view: ViewKey) => {
+    setWorkspace((current) => ({
+      activeView: view,
+      openViews: current.openViews.includes(view) ? current.openViews : [...current.openViews, view]
+    }));
+  };
+
+  const closeView = (view: ViewKey) => {
+    if (view === 'dashboard') {
+      return;
+    }
+    setWorkspace((current) => {
+      const closingIndex = current.openViews.indexOf(view);
+      const nextViews = current.openViews.filter((item) => item !== view);
+      return {
+        activeView: current.activeView === view
+          ? nextViews[Math.max(0, closingIndex - 1)] || 'dashboard'
+          : current.activeView,
+        openViews: nextViews
+      };
+    });
+  };
 
   if (!token) {
     return (
@@ -162,10 +209,14 @@ export default function App() {
           <div className="brand">CRM</div>
           <Menu
             mode="inline"
-            selectedKeys={[view]}
+            selectedKeys={[activeView]}
             defaultOpenKeys={['crm', 'products', 'system']}
             items={menuItems}
-            onClick={(item) => setView(item.key as ViewKey)}
+            onClick={(item) => {
+              if (isViewKey(item.key)) {
+                openView(item.key);
+              }
+            }}
           />
         </Sider>
         <Layout>
@@ -175,30 +226,95 @@ export default function App() {
               icon={<LogoutOutlined />}
               onClick={() => {
                 localStorage.removeItem('crm_token');
+                sessionStorage.removeItem(WORKSPACE_STORAGE_KEY);
+                setWorkspace(defaultWorkspaceState());
                 setToken(null);
               }}
             >
               退出
             </Button>
           </Header>
-          <Content className="content">
-            {view === 'dashboard' && <Dashboard />}
-            {view === 'customers' && <CustomerList />}
-            {view === 'funds' && <FundList />}
-            {view === 'portfolio' && <PortfolioAdmin />}
-            {view === 'stocks' && <StockMarket />}
-            {view === 'news' && <NewsAdmin />}
-            {view === 'users' && <UserAdmin />}
-            {view === 'roles' && <RoleAdmin />}
-            {view === 'menus' && <MenuAdmin />}
-            {view !== 'dashboard' && view !== 'customers' && view !== 'funds' && view !== 'stocks' && view !== 'news' && view !== 'users' && view !== 'roles' && view !== 'menus' && (
-              <Placeholder title={labelOf(view)} />
-            )}
+          <Content className="content workspace-content">
+            <Tabs
+              className="workspace-tabs"
+              type="editable-card"
+              hideAdd
+              destroyInactiveTabPane={false}
+              activeKey={activeView}
+              onChange={(key) => {
+                if (isViewKey(key)) {
+                  setWorkspace((current) => ({ ...current, activeView: key }));
+                }
+              }}
+              onEdit={(targetKey, action) => {
+                if (action === 'remove' && isViewKey(targetKey)) {
+                  closeView(targetKey);
+                }
+              }}
+              items={openViews.map((view) => ({
+                key: view,
+                label: labelOf(view),
+                closable: view !== 'dashboard',
+                children: <WorkspaceView view={view} />
+              }))}
+            />
           </Content>
         </Layout>
       </Layout>
     </AntApp>
   );
+}
+
+function defaultWorkspaceState(): WorkspaceState {
+  return { activeView: 'dashboard', openViews: ['dashboard'] };
+}
+
+function loadWorkspaceState(): WorkspaceState {
+  try {
+    const stored = sessionStorage.getItem(WORKSPACE_STORAGE_KEY);
+    if (!stored) {
+      return defaultWorkspaceState();
+    }
+    const saved = JSON.parse(stored) as Partial<WorkspaceState>;
+    const savedViews = Array.isArray(saved.openViews) ? saved.openViews.filter(isViewKey) : [];
+    const openViews = Array.from(new Set<ViewKey>(['dashboard', ...savedViews]));
+    const activeView = isViewKey(saved.activeView) && openViews.includes(saved.activeView)
+      ? saved.activeView
+      : 'dashboard';
+    return { activeView, openViews };
+  } catch {
+    return defaultWorkspaceState();
+  }
+}
+
+function isViewKey(value: unknown): value is ViewKey {
+  return typeof value === 'string' && VIEW_KEYS.includes(value as ViewKey);
+}
+
+function WorkspaceView({ view }: { view: ViewKey }) {
+  switch (view) {
+    case 'dashboard':
+      return <Dashboard />;
+    case 'customers':
+      return <CustomerList />;
+    case 'funds':
+      return <FundList />;
+    case 'portfolio':
+      return <PortfolioAdmin />;
+    case 'stocks':
+      return <StockMarket />;
+    case 'news':
+      return <NewsAdmin />;
+    case 'users':
+      return <UserAdmin />;
+    case 'roles':
+      return <RoleAdmin />;
+    case 'menus':
+      return <MenuAdmin />;
+    case 'contacts':
+    case 'follows':
+      return <Placeholder title={labelOf(view)} />;
+  }
 }
 
 function LoginPage({ onLogin }: { onLogin: (token: string) => void }) {
@@ -644,7 +760,8 @@ function PortfolioAdmin() {
     { title: '预估净值', dataIndex: 'estimatedUnitNav', width: 110, render: formatValue },
     { title: '估值日期', dataIndex: 'valuationDate', width: 110 },
     { title: '行情覆盖率', dataIndex: 'valuationCoverageRate', width: 120, render: formatPercent },
-    { title: '重仓报告日', dataIndex: 'holdingReportDate', width: 115 },
+    { title: '重仓报告日', dataIndex: 'holdingReportDate', width: 115, render: formatNavDate },
+    { title: '持仓截止日', dataIndex: 'holdingCutoffDate', width: 115, render: formatNavDate },
     { title: '估值更新时间', dataIndex: 'valuationUpdatedAt', width: 170 },
     { title: '持有收益', dataIndex: 'holdingProfit', width: 110, render: renderSignedValue },
     { title: '持有收益率', dataIndex: 'holdingReturnRate', width: 110, render: renderSignedPercent },
@@ -786,7 +903,7 @@ function PortfolioAdmin() {
                   loading={loading}
                   columns={holdingColumns}
                   dataSource={holdings}
-                  scroll={{ x: 2500 }}
+                  scroll={{ x: 2620 }}
                   pagination={{ current, pageSize, total, showSizeChanger: true, onChange: (page, size) => loadHoldings(page, size) }}
                 />
               </Space>
@@ -853,7 +970,7 @@ function StockMarket() {
   ];
   return <div className="page">
     <div className="page-header"><Typography.Title level={3}>股票行情</Typography.Title>
-      <Space><Select allowClear placeholder="市场" style={{ width: 110 }} value={marketCode} onChange={setMarketCode} options={[{ value: 1, label: '上海' }, { value: 0, label: '深圳/北京' }]}/><Input value={keyword} onChange={e => setKeyword(e.target.value)} onPressEnter={() => load(1)} placeholder="代码或名称"/><Button icon={<SearchOutlined/>} onClick={() => load(1)}>查询</Button></Space>
+      <Space><Select allowClear placeholder="市场" style={{ width: 110 }} value={marketCode} onChange={setMarketCode} options={[{ value: 1, label: '上海' }, { value: 0, label: '深圳/北京' }, { value: 116, label: '香港' }]}/><Input value={keyword} onChange={e => setKeyword(e.target.value)} onPressEnter={() => load(1)} placeholder="代码或名称"/><Button icon={<SearchOutlined/>} onClick={() => load(1)}>查询</Button></Space>
     </div>
     <Table rowKey="stockCode" scroll={{ x: 1680 }} loading={loading} columns={columns} dataSource={rows}
       pagination={{ current, pageSize, total, showSizeChanger: true, pageSizeOptions: PAGE_SIZE_OPTIONS }}
@@ -1204,10 +1321,14 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
   ];
 
   const holdingColumns: ColumnsType<FundHolding> = [
-    { title: '报告日期', dataIndex: 'reportDate', width: 110 },
+    { title: '报告日期', dataIndex: 'reportDate', width: 110, render: formatNavDate },
+    { title: '截止日', dataIndex: 'cutoffDate', width: 110, render: formatNavDate },
     { title: '排名', dataIndex: 'rankNo', width: 80 },
     { title: '股票代码', dataIndex: 'stockCode', width: 110 },
     { title: '股票名称', dataIndex: 'stockName', width: 140 },
+    { title: '实时价格', dataIndex: 'latestPrice', width: 110, render: formatValue },
+    { title: '当日涨跌幅', dataIndex: 'changeRate', width: 125, render: renderSignedPercent },
+    { title: '行情时间', dataIndex: 'quoteTime', width: 170, render: formatDateTime },
     { title: '占净值比例', dataIndex: 'netValueRatio', width: 120, render: renderSignedPercent },
     { title: '持股数(万股)', dataIndex: 'holdingShares10k', width: 130, render: formatValue },
     { title: '持仓市值(万元)', dataIndex: 'holdingMarketValue10k', width: 150, render: formatValue }
@@ -1219,7 +1340,8 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
     { title: '预估单位净值', dataIndex: 'estimatedUnitNav', width: 130, render: formatValue },
     { title: '基准净值日期', dataIndex: 'baseNavDate', width: 125 },
     { title: '基准单位净值', dataIndex: 'baseUnitNav', width: 130, render: formatValue },
-    { title: '重仓报告日', dataIndex: 'holdingReportDate', width: 115 },
+    { title: '重仓报告日', dataIndex: 'holdingReportDate', width: 115, render: formatNavDate },
+    { title: '持仓截止日', dataIndex: 'holdingCutoffDate', width: 115, render: formatNavDate },
     { title: '重仓占净值', dataIndex: 'holdingWeight', width: 120, render: formatPercent },
     { title: '有行情占净值', dataIndex: 'quotedHoldingWeight', width: 130, render: formatPercent },
     { title: '行情覆盖率', dataIndex: 'quoteCoverageRate', width: 120, render: formatPercent },
@@ -1278,7 +1400,16 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
                 <Descriptions.Item label="预估单位净值">{formatValue(detail?.latestValuation?.estimatedUnitNav)}</Descriptions.Item>
                 <Descriptions.Item label="估值日期">{detail?.latestValuation?.valuationDate || '-'}</Descriptions.Item>
                 <Descriptions.Item label="行情覆盖率">{formatPercent(detail?.latestValuation?.quoteCoverageRate)}</Descriptions.Item>
-                <Descriptions.Item label="重仓报告日">{detail?.latestValuation?.holdingReportDate || '-'}</Descriptions.Item>
+                <Descriptions.Item label="重仓报告日">
+                  {detail?.latestValuation?.holdingReportDate
+                    ? formatNavDate(detail.latestValuation.holdingReportDate)
+                    : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="持仓截止日">
+                  {detail?.latestValuation?.holdingCutoffDate
+                    ? formatNavDate(detail.latestValuation.holdingCutoffDate)
+                    : '-'}
+                </Descriptions.Item>
                 <Descriptions.Item label="行情更新时间">{detail?.latestValuation?.quoteUpdatedAt || '-'}</Descriptions.Item>
               </Descriptions>
             )
@@ -1351,7 +1482,7 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
                 columns={valuationColumns}
                 dataSource={valuations}
                 loading={loading}
-                scroll={{ x: 1380 }}
+                scroll={{ x: 1500 }}
                 pagination={{
                   total: valuationTotal,
                   current: valuationCurrent,
@@ -1372,7 +1503,7 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
                 columns={holdingColumns}
                 dataSource={holdings}
                 loading={loading}
-                scroll={{ x: 900 }}
+                scroll={{ x: 1370 }}
                 pagination={{
                   total: holdingTotal,
                   current: holdingCurrent,
@@ -2025,6 +2156,13 @@ function formatNavDate(value: string) {
     return value;
   }
   return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return '-';
+  }
+  return value.replace('T', ' ').slice(0, 19);
 }
 
 function formatChartNumber(value: number, unit?: string) {

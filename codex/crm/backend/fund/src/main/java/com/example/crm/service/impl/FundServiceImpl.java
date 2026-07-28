@@ -18,11 +18,17 @@ import com.example.crm.mapper.FundPerformanceHistoryMapper;
 import com.example.crm.mapper.FundRatingMapper;
 import com.example.crm.mapper.FundStockHoldingMapper;
 import com.example.crm.service.IFundService;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
-import java.util.List;
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 public class FundServiceImpl implements IFundService {
@@ -37,6 +43,7 @@ public class FundServiceImpl implements IFundService {
     private final FundFeatureDataMapper featureDataMapper;
     private final FundRatingMapper ratingMapper;
     private final FundValuationService valuationService;
+    private final JdbcTemplate jdbcTemplate;
 
     public FundServiceImpl(CfgFundMapper fundMapper,
                            FundNavHistoryMapper navHistoryMapper,
@@ -44,7 +51,8 @@ public class FundServiceImpl implements IFundService {
                            FundStockHoldingMapper stockHoldingMapper,
                            FundFeatureDataMapper featureDataMapper,
                            FundRatingMapper ratingMapper,
-                           FundValuationService valuationService) {
+                           FundValuationService valuationService,
+                           JdbcTemplate jdbcTemplate) {
         this.fundMapper = fundMapper;
         this.navHistoryMapper = navHistoryMapper;
         this.performanceHistoryMapper = performanceHistoryMapper;
@@ -52,6 +60,7 @@ public class FundServiceImpl implements IFundService {
         this.featureDataMapper = featureDataMapper;
         this.ratingMapper = ratingMapper;
         this.valuationService = valuationService;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @Override
@@ -141,9 +150,12 @@ public class FundServiceImpl implements IFundService {
         LambdaQueryWrapper<FundStockHolding> query = new LambdaQueryWrapper<FundStockHolding>()
                 .eq(FundStockHolding::getFundCode, fundCode)
                 .eq(hasText(reportDate), FundStockHolding::getReportDate, reportDate)
+                .orderByDesc(FundStockHolding::getCutoffDate)
                 .orderByDesc(FundStockHolding::getReportDate)
                 .orderByAsc(FundStockHolding::getRankNo);
-        return stockHoldingMapper.selectPage(new Page<>(current, size), query);
+        Page<FundStockHolding> page = stockHoldingMapper.selectPage(new Page<>(current, size), query);
+        enrichLatestStockQuotes(page.getRecords());
+        return page;
     }
 
     @Override
@@ -212,15 +224,56 @@ public class FundServiceImpl implements IFundService {
     private List<FundStockHolding> latestHoldings(String fundCode) {
         FundStockHolding latest = stockHoldingMapper.selectOne(new LambdaQueryWrapper<FundStockHolding>()
                 .eq(FundStockHolding::getFundCode, fundCode)
+                .orderByDesc(FundStockHolding::getCutoffDate)
                 .orderByDesc(FundStockHolding::getReportDate)
                 .last("limit 1"));
-        if (latest == null || !hasText(latest.getReportDate())) {
+        if (latest == null || !hasText(latest.getReportDate()) || !hasText(latest.getCutoffDate())) {
             return java.util.Collections.emptyList();
         }
-        return stockHoldingMapper.selectPage(new Page<>(1, DEFAULT_DETAIL_HOLDING_SIZE), new LambdaQueryWrapper<FundStockHolding>()
+        List<FundStockHolding> holdings = stockHoldingMapper.selectPage(new Page<>(1, DEFAULT_DETAIL_HOLDING_SIZE), new LambdaQueryWrapper<FundStockHolding>()
                 .eq(FundStockHolding::getFundCode, fundCode)
                 .eq(FundStockHolding::getReportDate, latest.getReportDate())
+                .eq(FundStockHolding::getCutoffDate, latest.getCutoffDate())
                 .orderByAsc(FundStockHolding::getRankNo)).getRecords();
+        enrichLatestStockQuotes(holdings);
+        return holdings;
+    }
+
+    private void enrichLatestStockQuotes(List<FundStockHolding> holdings) {
+        if (holdings == null || holdings.isEmpty()) {
+            return;
+        }
+        List<String> stockCodes = holdings.stream()
+                .map(FundStockHolding::getStockCode)
+                .filter(this::hasText)
+                .distinct()
+                .collect(Collectors.toList());
+        if (stockCodes.isEmpty()) {
+            return;
+        }
+
+        String placeholders = String.join(",", Collections.nCopies(stockCodes.size(), "?"));
+        String sql = "SELECT h.stock_code,h.latest_price,h.change_rate," +
+                "COALESCE(h.quote_time,h.updated_at) AS quote_time " +
+                "FROM stock_daily_history h " +
+                "JOIN (SELECT stock_code,MAX(trade_date) AS trade_date FROM stock_daily_history " +
+                "WHERE stock_code IN (" + placeholders + ") GROUP BY stock_code) latest " +
+                "ON latest.stock_code=h.stock_code AND latest.trade_date=h.trade_date";
+        Map<String, LatestStockQuote> quotes = new HashMap<>();
+        jdbcTemplate.query(sql, resultSet -> {
+            Timestamp quoteTime = resultSet.getTimestamp("quote_time");
+            quotes.put(resultSet.getString("stock_code"), new LatestStockQuote(
+                    resultSet.getBigDecimal("latest_price"),
+                    resultSet.getBigDecimal("change_rate"),
+                    quoteTime == null ? null : quoteTime.toLocalDateTime()));
+        }, stockCodes.toArray());
+
+        holdings.forEach(holding -> {
+            LatestStockQuote quote = quotes.get(holding.getStockCode());
+            holding.setLatestPrice(quote == null ? null : quote.latestPrice);
+            holding.setChangeRate(quote == null ? null : quote.changeRate);
+            holding.setQuoteTime(quote == null ? null : quote.quoteTime);
+        });
     }
 
     private void validateFund(CfgFund fund) {
@@ -234,5 +287,17 @@ public class FundServiceImpl implements IFundService {
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private static final class LatestStockQuote {
+        private final BigDecimal latestPrice;
+        private final BigDecimal changeRate;
+        private final LocalDateTime quoteTime;
+
+        private LatestStockQuote(BigDecimal latestPrice, BigDecimal changeRate, LocalDateTime quoteTime) {
+            this.latestPrice = latestPrice;
+            this.changeRate = changeRate;
+            this.quoteTime = quoteTime;
+        }
     }
 }

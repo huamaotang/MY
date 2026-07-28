@@ -39,12 +39,12 @@ public class FundValuationService {
     public Page<FundDailyValuationDto> history(String fundCode, long current, long size) {
         long safeCurrent = Math.max(current, 1);
         long safeSize = Math.min(Math.max(size, 1), 200);
-        String earliestReportDate = reportDate(fundCode, null, false);
-        if (earliestReportDate == null) {
+        HoldingSnapshot earliestSnapshot = holdingSnapshot(fundCode, null, false);
+        if (earliestSnapshot == null) {
             return new Page<>(safeCurrent, safeSize, 0);
         }
 
-        LocalDate earliestDate = LocalDate.parse(earliestReportDate, COMPACT_DATE);
+        LocalDate earliestDate = LocalDate.parse(earliestSnapshot.cutoffDate, COMPACT_DATE);
         Long total = jdbcTemplate.queryForObject(
                 "SELECT COUNT(DISTINCT trade_date) FROM stock_daily_history WHERE trade_date>=?",
                 Long.class,
@@ -70,8 +70,8 @@ public class FundValuationService {
     }
 
     private FundDailyValuationDto valuation(String fundCode, LocalDate valuationDate) {
-        String holdingReportDate = reportDate(fundCode, valuationDate, true);
-        if (holdingReportDate == null) {
+        HoldingSnapshot snapshot = holdingSnapshot(fundCode, valuationDate, true);
+        if (snapshot == null) {
             return null;
         }
 
@@ -81,7 +81,8 @@ public class FundValuationService {
                 "SELECT f.net_value_ratio,s.change_rate,s.updated_at " +
                         "FROM fund_stock_holding f " +
                         "LEFT JOIN stock_daily_history s ON s.stock_code=f.stock_code AND s.trade_date=? " +
-                        "WHERE f.fund_code=? AND f.report_date=? ORDER BY f.rank_no ASC,f.stock_code ASC",
+                        "WHERE f.fund_code=? AND f.report_date=? AND f.cutoff_date=? " +
+                        "ORDER BY f.rank_no ASC,f.stock_code ASC",
                 resultSet -> {
                     BigDecimal weight = resultSet.getBigDecimal("net_value_ratio");
                     BigDecimal changeRate = resultSet.getBigDecimal("change_rate");
@@ -95,7 +96,8 @@ public class FundValuationService {
                 },
                 Date.valueOf(valuationDate),
                 fundCode,
-                holdingReportDate);
+                snapshot.reportDate,
+                snapshot.cutoffDate);
         if (components.isEmpty()) {
             return null;
         }
@@ -105,7 +107,8 @@ public class FundValuationService {
         FundDailyValuationDto dto = new FundDailyValuationDto();
         dto.setFundCode(fundCode);
         dto.setValuationDate(valuationDate);
-        dto.setHoldingReportDate(holdingReportDate);
+        dto.setHoldingReportDate(snapshot.reportDate);
+        dto.setHoldingCutoffDate(snapshot.cutoffDate);
         dto.setBaseNavDate(baseNav == null ? null : baseNav.navDate);
         dto.setBaseUnitNav(baseNav == null ? null : baseNav.unitNav);
         dto.setEstimatedChangeRate(calculated.getEstimatedChangeRate());
@@ -120,21 +123,23 @@ public class FundValuationService {
         return dto;
     }
 
-    private String reportDate(String fundCode, LocalDate valuationDate, boolean latest) {
-        String function = latest ? "MAX" : "MIN";
-        String sql = "SELECT " + function + "(report_date) FROM fund_stock_holding WHERE fund_code=?";
+    private HoldingSnapshot holdingSnapshot(String fundCode, LocalDate valuationDate, boolean latest) {
+        String direction = latest ? "DESC" : "ASC";
+        String sql = "SELECT report_date,cutoff_date FROM fund_stock_holding WHERE fund_code=?";
         List<Object> args = new ArrayList<>();
         args.add(fundCode);
         if (valuationDate != null) {
-            sql += " AND report_date<=?";
+            sql += " AND cutoff_date<=?";
             args.add(valuationDate.format(COMPACT_DATE));
         }
-        return jdbcTemplate.query(sql, resultSet -> {
-            if (!resultSet.next()) {
-                return null;
-            }
-            return resultSet.getString(1);
-        }, args.toArray());
+        sql += " ORDER BY cutoff_date " + direction + ",report_date " + direction + " LIMIT 1";
+        List<HoldingSnapshot> rows = jdbcTemplate.query(
+                sql,
+                (resultSet, rowNum) -> new HoldingSnapshot(
+                        resultSet.getString("report_date"),
+                        resultSet.getString("cutoff_date")),
+                args.toArray());
+        return rows.isEmpty() ? null : rows.get(0);
     }
 
     private BaseNav baseNav(String fundCode, LocalDate valuationDate) {
@@ -157,6 +162,16 @@ public class FundValuationService {
         private BaseNav(String navDate, BigDecimal unitNav) {
             this.navDate = navDate;
             this.unitNav = unitNav;
+        }
+    }
+
+    private static final class HoldingSnapshot {
+        private final String reportDate;
+        private final String cutoffDate;
+
+        private HoldingSnapshot(String reportDate, String cutoffDate) {
+            this.reportDate = reportDate;
+            this.cutoffDate = cutoffDate;
         }
     }
 }

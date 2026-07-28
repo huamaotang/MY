@@ -11,8 +11,8 @@ import pymysql
 from pymysql.connections import Connection
 
 if TYPE_CHECKING:
-    from spider import FundRankingRow
-    from stock_spider import StockQuote
+    from spiders.fund_ranking_spider import FundRankingRow
+    from spiders.stock_spider import StockQuote
 
 
 logger = logging.getLogger(__name__)
@@ -82,6 +82,7 @@ class FundStockHolding:
     fund_code: str
     report_period: str | None
     report_date: str
+    cutoff_date: str
     rank_no: int | None
     stock_code: str
     stock_name: str | None
@@ -182,6 +183,7 @@ def ensure_schema(config: DatabaseConfig) -> None:
             cursor.execute(_fund_nav_history_ddl(database))
             cursor.execute(_fund_performance_history_ddl(database))
             cursor.execute(_fund_stock_holding_ddl(database))
+            _ensure_fund_stock_holding_columns(cursor, config.database)
             cursor.execute(_fund_holding_import_ddl(database))
             cursor.execute(_fund_holding_import_item_ddl(database))
             cursor.execute(_user_fund_holding_ddl(database))
@@ -218,6 +220,29 @@ def upsert_funds(connection: Connection, funds: Iterable[tuple[str, str]]) -> in
         cursor.executemany(sql, rows)
     connection.commit()
     return len(rows)
+
+
+def upsert_fund_summaries(connection: Connection, rows: Iterable[FundRankingRow]) -> int:
+    values = [
+        (row.fund_code, row.fund_name, int(row.can_buy))
+        for row in rows
+    ]
+    if not values:
+        return 0
+
+    sql = """
+        INSERT INTO fund_detail (fund_code, fund_name, can_buy)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE
+          fund_name = VALUES(fund_name),
+          can_buy = VALUES(can_buy),
+          updated_at = CURRENT_TIMESTAMP
+    """
+    log_write_sql("upsert_fund_summaries", sql, values)
+    with connection.cursor() as cursor:
+        cursor.executemany(sql, values)
+    connection.commit()
+    return len(values)
 
 
 def upsert_fund_rankings(connection: Connection, rows: Iterable[FundRankingRow]) -> int:
@@ -618,6 +643,7 @@ def upsert_stock_holdings(connection: Connection, rows: Iterable[FundStockHoldin
             row.fund_code,
             row.report_period,
             row.report_date,
+            row.cutoff_date,
             row.rank_no,
             row.stock_code,
             row.stock_name,
@@ -638,6 +664,7 @@ def upsert_stock_holdings(connection: Connection, rows: Iterable[FundStockHoldin
           fund_code,
           report_period,
           report_date,
+          cutoff_date,
           rank_no,
           stock_code,
           stock_name,
@@ -648,9 +675,10 @@ def upsert_stock_holdings(connection: Connection, rows: Iterable[FundStockHoldin
           holding_shares_10k,
           holding_market_value_10k
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
           report_period = VALUES(report_period),
+          cutoff_date = VALUES(cutoff_date),
           rank_no = VALUES(rank_no),
           stock_name = VALUES(stock_name),
           latest_price = VALUES(latest_price),
@@ -890,6 +918,51 @@ def _ensure_fund_detail_columns(cursor, database: str) -> None:
             cursor.execute(f"ALTER TABLE {_quote_identifier(database)}.fund_detail ADD COLUMN {column} {definition}")
 
 
+def _ensure_fund_stock_holding_columns(cursor, database: str) -> None:
+    database_name = _quote_identifier(database)
+    cursor.execute(
+        """
+        SELECT IS_NULLABLE AS is_nullable
+        FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA = %s
+          AND TABLE_NAME = 'fund_stock_holding'
+          AND COLUMN_NAME = 'cutoff_date'
+        """,
+        (database,),
+    )
+    column = cursor.fetchone()
+    if column is None:
+        cursor.execute(
+            f"ALTER TABLE {database_name}.fund_stock_holding "
+            "ADD COLUMN cutoff_date VARCHAR(8) NULL COMMENT '页面截止至日期' AFTER report_date"
+        )
+    if column is None or str(column["is_nullable"]).upper() == "YES":
+        cursor.execute(
+            f"UPDATE {database_name}.fund_stock_holding "
+            "SET cutoff_date = report_date WHERE cutoff_date IS NULL OR cutoff_date = ''"
+        )
+        cursor.execute(
+            f"ALTER TABLE {database_name}.fund_stock_holding "
+            "MODIFY COLUMN cutoff_date VARCHAR(8) NOT NULL COMMENT '页面截止至日期'"
+        )
+
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS cnt
+        FROM information_schema.STATISTICS
+        WHERE TABLE_SCHEMA = %s
+          AND TABLE_NAME = 'fund_stock_holding'
+          AND INDEX_NAME = 'idx_fund_stock_cutoff_date'
+        """,
+        (database,),
+    )
+    if cursor.fetchone()["cnt"] == 0:
+        cursor.execute(
+            f"ALTER TABLE {database_name}.fund_stock_holding "
+            "ADD KEY idx_fund_stock_cutoff_date (fund_code, cutoff_date)"
+        )
+
+
 def _ensure_portfolio_holding_columns(cursor, database: str) -> None:
     database_name = _quote_identifier(database)
     for table_name in ("fund_holding_import_item", "user_fund_holding"):
@@ -998,6 +1071,7 @@ def _fund_stock_holding_ddl(database: str) -> str:
           fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
           report_period VARCHAR(50) NULL COMMENT '报告期',
           report_date VARCHAR(8) NOT NULL COMMENT '报告期截止日期',
+          cutoff_date VARCHAR(8) NOT NULL COMMENT '页面截止至日期',
           rank_no INT NULL COMMENT '序号',
           stock_code VARCHAR(20) NOT NULL COMMENT '股票代码',
           stock_name VARCHAR(100) NULL COMMENT '股票名称',
@@ -1012,6 +1086,7 @@ def _fund_stock_holding_ddl(database: str) -> str:
           PRIMARY KEY (id),
           UNIQUE KEY uk_fund_stock_holding (fund_code, report_date, stock_code),
           KEY idx_fund_stock_report_date (report_date),
+          KEY idx_fund_stock_cutoff_date (fund_code, cutoff_date),
           KEY idx_fund_stock_code (stock_code)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金持仓表'
     """

@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from rating_spider import parse_rating_list
+from spiders.rating_spider import parse_rating_list
 
 
 class RatingListParserTest(unittest.TestCase):

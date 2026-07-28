@@ -22,6 +22,7 @@ public class UserFundHoldingDto {
     private BigDecimal costNav;
     private LocalDate valuationDate;
     private String holdingReportDate;
+    private String holdingCutoffDate;
     private BigDecimal estimatedChangeRate;
     private BigDecimal estimatedDailyProfit;
     private BigDecimal estimatedHoldingAmount;

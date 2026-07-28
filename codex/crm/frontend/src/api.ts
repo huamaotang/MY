@@ -85,11 +85,13 @@ export type FundHolding = {
   fundCode: string;
   reportPeriod?: string;
   reportDate: string;
+  cutoffDate: string;
   rankNo?: number;
   stockCode: string;
   stockName?: string;
   latestPrice?: number;
   changeRate?: number;
+  quoteTime?: string;
   netValueRatio?: number;
   holdingShares10k?: number;
   holdingMarketValue10k?: number;
@@ -142,6 +144,7 @@ export type FundDailyValuation = {
   fundCode: string;
   valuationDate: string;
   holdingReportDate?: string;
+  holdingCutoffDate?: string;
   baseNavDate?: string;
   baseUnitNav?: number;
   estimatedUnitNav?: number;
@@ -228,6 +231,7 @@ export type UserFundHolding = {
   costNav?: number;
   valuationDate?: string;
   holdingReportDate?: string;
+  holdingCutoffDate?: string;
   estimatedChangeRate?: number;
   estimatedDailyProfit?: number;
   estimatedHoldingAmount?: number;

@@ -24,4 +24,4 @@ spring:
 
 crm:
   python-executable: ${CRM_PYTHON_EXECUTABLE:python3}
-  python-ocr-script: ${CRM_PYTHON_OCR_SCRIPT:fund_spider/portfolio_holding_ocr.py}
+  python-ocr-script: ${CRM_PYTHON_OCR_SCRIPT:fund_spider/tools/portfolio_holding_ocr.py}

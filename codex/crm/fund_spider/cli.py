@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import argparse
 import logging
-from typing import Any
 
 import jobs
-import scheduler
-import scheduler_web
+from runtime import scheduler, scheduler_web
 from settings import apply_env_overrides, load_project_env
 
 
@@ -16,7 +14,6 @@ def main(argv: list[str] | None = None) -> None:
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s - %(message)s",
     )
-
     parser = build_parser()
     args = parser.parse_args(argv)
     apply_env_overrides(build_env_overrides(args))
@@ -46,40 +43,64 @@ def build_parser() -> argparse.ArgumentParser:
     batch_parent.add_argument("--fund-limit", dest="FUND_LIMIT")
     batch_parent.add_argument("--fund-offset", dest="FUND_OFFSET")
 
-    nav_parent = argparse.ArgumentParser(add_help=False)
-    nav_parent.add_argument("--nav-page-size", dest="NAV_PAGE_SIZE")
-    nav_parent.add_argument("--nav-start-page", dest="NAV_START_PAGE")
-    nav_parent.add_argument("--nav-max-pages", dest="NAV_MAX_PAGES")
-    nav_parent.add_argument("--nav-start-date", dest="NAV_START_DATE")
-    nav_parent.add_argument("--nav-end-date", dest="NAV_END_DATE")
+    ranking_parent = argparse.ArgumentParser(add_help=False)
+    ranking_parent.add_argument("--page-size", dest="PAGE_SIZE")
+    ranking_parent.add_argument("--start-page", dest="START_PAGE")
+    ranking_parent.add_argument("--max-pages", dest="MAX_PAGES")
 
     parser = argparse.ArgumentParser(description="EastMoney fund crawler")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    fund_list = subparsers.add_parser("fund-list", parents=[request_parent, db_parent])
-    fund_list.add_argument("--page-size", dest="PAGE_SIZE")
-    fund_list.add_argument("--start-page", dest="START_PAGE")
-    fund_list.add_argument("--max-pages", dest="MAX_PAGES")
+    basic = subparsers.add_parser(
+        "basic",
+        parents=[request_parent, db_parent, batch_parent, ranking_parent],
+        help="manually refresh fund summaries and basic profiles",
+    )
+    basic.add_argument(
+        "--refresh-list",
+        dest="BASIC_REFRESH_LIST",
+        choices=["0", "1"],
+        default=None,
+        help="refresh fund code/name/purchase status before profiles",
+    )
 
-    nav = subparsers.add_parser("nav", parents=[request_parent, db_parent, nav_parent])
-    nav.add_argument("--fund-code", dest="NAV_FUND_CODE")
+    subparsers.add_parser(
+        "nav-performance",
+        parents=[request_parent, db_parent, ranking_parent],
+        help="refresh current NAV and performance snapshots",
+    )
 
-    profile_nav = subparsers.add_parser("profile-nav", parents=[request_parent, db_parent, batch_parent, nav_parent])
-    profile_nav.add_argument("--crawl-profile", dest="CRAWL_PROFILE", choices=["0", "1"], default=None)
-    profile_nav.add_argument("--crawl-nav", dest="CRAWL_NAV", choices=["0", "1"], default=None)
+    nav_history = subparsers.add_parser(
+        "nav-history",
+        parents=[request_parent, db_parent, batch_parent],
+        help="manually crawl historical NAV for selected funds",
+    )
+    nav_history.add_argument("--nav-page-size", dest="NAV_PAGE_SIZE")
+    nav_history.add_argument("--nav-start-page", dest="NAV_START_PAGE")
+    nav_history.add_argument("--nav-max-pages", dest="NAV_MAX_PAGES")
+    nav_history.add_argument("--start-date", dest="NAV_START_DATE")
+    nav_history.add_argument("--end-date", dest="NAV_END_DATE")
 
-    feature = subparsers.add_parser("feature", parents=[request_parent, db_parent, batch_parent])
-    feature.add_argument("--feature-fund-code", dest="FEATURE_FUND_CODE")
+    subparsers.add_parser(
+        "feature",
+        parents=[request_parent, db_parent, batch_parent],
+        help="refresh feature data for selected funds",
+    )
 
-    rating = subparsers.add_parser("rating", parents=[request_parent, db_parent, batch_parent])
-    rating.add_argument("--rating-fund-code", dest="RATING_FUND_CODE")
+    rating = subparsers.add_parser(
+        "rating",
+        parents=[request_parent, db_parent, batch_parent],
+        help="manually refresh current or historical ratings",
+    )
+    rating.add_argument("--mode", choices=["current", "history"], default="current")
     rating.add_argument("--rating-page-size", dest="RATING_PAGE_SIZE")
     rating.add_argument("--rating-max-pages", dest="RATING_MAX_PAGES")
 
-    subparsers.add_parser("rating-list", parents=[request_parent, db_parent])
-
-    holdings = subparsers.add_parser("holdings", parents=[request_parent, db_parent, batch_parent])
-    holdings.add_argument("--holding-fund-code", dest="HOLDING_FUND_CODE")
+    holdings = subparsers.add_parser(
+        "holdings",
+        parents=[request_parent, db_parent, batch_parent],
+        help="manually refresh fund holdings",
+    )
     holdings.add_argument("--top-line", dest="HOLDING_TOP_LINE")
     holdings.add_argument("--year", dest="HOLDING_YEAR")
     holdings.add_argument("--month", dest="HOLDING_MONTH")
@@ -90,53 +111,20 @@ def build_parser() -> argparse.ArgumentParser:
     sina_news.add_argument("--max-pages", dest="SINA_NEWS_MAX_PAGES")
     stock = subparsers.add_parser("stock", parents=[request_parent, db_parent])
     stock.add_argument("--page-size", dest="STOCK_PAGE_SIZE")
-
-    all_jobs = subparsers.add_parser("all", parents=[request_parent, db_parent, batch_parent, nav_parent])
-    all_jobs.add_argument(
-        "--jobs",
-        default="fund-list,profile-nav,feature,rating-list,holdings",
-        help="Comma-separated jobs: fund-list,profile-nav,feature,rating-list,rating,holdings",
-    )
-    all_jobs.add_argument("--crawl-profile", dest="CRAWL_PROFILE", choices=["0", "1"], default=None)
-    all_jobs.add_argument("--crawl-nav", dest="CRAWL_NAV", choices=["0", "1"], default=None)
-    all_jobs.add_argument("--top-line", dest="HOLDING_TOP_LINE")
-    all_jobs.add_argument("--year", dest="HOLDING_YEAR")
-    all_jobs.add_argument("--month", dest="HOLDING_MONTH")
-    all_jobs.add_argument("--page-size", dest="PAGE_SIZE")
-    all_jobs.add_argument("--start-page", dest="START_PAGE")
-    all_jobs.add_argument("--max-pages", dest="MAX_PAGES")
-
-    daily = subparsers.add_parser("daily", parents=[request_parent, db_parent, batch_parent, nav_parent])
-    daily.add_argument("--refresh-fund-list", dest="DAILY_CRAWL_FUND_LIST", choices=["0", "1"], default=None)
-    daily.add_argument("--crawl-profile", dest="DAILY_CRAWL_PROFILE", choices=["0", "1"], default=None)
-    daily.add_argument("--crawl-nav", dest="DAILY_CRAWL_NAV", choices=["0", "1"], default=None)
-    daily.add_argument("--crawl-feature", dest="DAILY_CRAWL_FEATURE", choices=["0", "1"], default=None)
-    daily.add_argument("--crawl-rating", dest="DAILY_CRAWL_RATING", choices=["0", "1"], default=None)
-    daily.add_argument("--crawl-holdings", dest="DAILY_CRAWL_HOLDINGS", choices=["0", "1"], default=None)
-    daily.add_argument("--crawl-news", dest="DAILY_CRAWL_NEWS", choices=["0", "1"], default=None)
-    daily.add_argument("--crawl-sina-news", dest="DAILY_CRAWL_SINA_NEWS", choices=["0", "1"], default=None)
-    daily.add_argument("--use-cursor", dest="DAILY_USE_CURSOR", choices=["0", "1"], default=None)
-    daily.add_argument("--cursor-date", dest="DAILY_CURSOR_DATE")
-    daily.add_argument("--cursor-job-name", dest="DAILY_CURSOR_JOB_NAME")
-    daily.add_argument("--nav-refresh-days", dest="DAILY_NAV_REFRESH_DAYS")
-    daily.add_argument("--profile-refresh-days", dest="DAILY_PROFILE_REFRESH_DAYS")
-    daily.add_argument("--feature-refresh-days", dest="DAILY_FEATURE_REFRESH_DAYS")
-    daily.add_argument("--rating-refresh-days", dest="DAILY_RATING_REFRESH_DAYS")
-    daily.add_argument("--holding-refresh-days", dest="DAILY_HOLDING_REFRESH_DAYS")
-    daily.add_argument("--top-line", dest="HOLDING_TOP_LINE")
-    daily.add_argument("--year", dest="HOLDING_YEAR")
-    daily.add_argument("--month", dest="HOLDING_MONTH")
-    daily.add_argument("--rating-page-size", dest="RATING_PAGE_SIZE")
-    daily.add_argument("--rating-max-pages", dest="DAILY_RATING_MAX_PAGES")
-    daily.add_argument("--page-size", dest="PAGE_SIZE")
-    daily.add_argument("--start-page", dest="START_PAGE")
-    daily.add_argument("--max-pages", dest="MAX_PAGES")
+    stock.add_argument("--market", dest="STOCK_MARKET", choices=["cn", "hk", "all"], default=None)
 
     schedule = subparsers.add_parser("schedule")
-    schedule.add_argument("--time", dest="SCHEDULE_TIME")
+    schedule.add_argument("--nav-times", dest="NAV_PERFORMANCE_SCHEDULE_TIMES")
+    schedule.add_argument("--feature-time", dest="FEATURE_SCHEDULE_TIME")
     schedule.add_argument("--run-on-start", dest="SCHEDULER_RUN_ON_START", choices=["0", "1"], default=None)
     schedule.add_argument("--once", dest="SCHEDULER_ONCE", choices=["0", "1"], default=None)
     schedule.add_argument("--dry-run", dest="SCHEDULER_DRY_RUN", choices=["0", "1"], default=None)
+    schedule.add_argument(
+        "--trigger",
+        dest="SCHEDULER_TRIGGER",
+        choices=["morning", "evening", "all"],
+        default=None,
+    )
 
     web = subparsers.add_parser("web")
     web.add_argument("--host", dest="SCHEDULER_WEB_HOST")
@@ -146,73 +134,51 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def build_env_overrides(args: argparse.Namespace) -> dict[str, str | None]:
-    overrides: dict[str, str | None] = {}
-    for key, value in vars(args).items():
-        if key.isupper():
-            overrides[key] = None if value is None else str(value)
-
-    if getattr(args, "FEATURE_FUND_CODE", None):
-        overrides["FUND_CODE"] = args.FEATURE_FUND_CODE
-    if getattr(args, "RATING_FUND_CODE", None):
-        overrides["FUND_CODE"] = args.RATING_FUND_CODE
-    if getattr(args, "HOLDING_FUND_CODE", None):
-        overrides["FUND_CODE"] = args.HOLDING_FUND_CODE
-    return overrides
+    return {
+        key: None if value is None else str(value)
+        for key, value in vars(args).items()
+        if key.isupper()
+    }
 
 
 def run_command(args: argparse.Namespace) -> None:
-    command = args.command
-    if command == "fund-list":
-        jobs.crawl_fund_list()
-    elif command == "nav":
-        jobs.crawl_nav()
-    elif command == "profile-nav":
-        jobs.crawl_profile_nav()
-    elif command == "feature":
-        jobs.crawl_feature_data()
-    elif command == "rating":
-        jobs.crawl_ratings()
-    elif command == "rating-list":
-        jobs.crawl_rating_list()
-    elif command == "holdings":
-        jobs.crawl_holdings()
-    elif command == "news":
+    if args.command == "basic":
+        result = jobs.crawl_basic()
+        ensure_no_failures("basic", result[2])
+    elif args.command == "nav-performance":
+        jobs.crawl_nav_performance()
+    elif args.command == "nav-history":
+        result = jobs.crawl_nav_history()
+        ensure_no_failures("nav-history", result[1])
+    elif args.command == "feature":
+        result = jobs.crawl_feature_data()
+        ensure_no_failures("feature", result[1])
+    elif args.command == "rating":
+        if args.mode == "current":
+            jobs.crawl_rating_list()
+        else:
+            result = jobs.crawl_ratings()
+            ensure_no_failures("rating history", result[1])
+    elif args.command == "holdings":
+        result = jobs.crawl_holdings()
+        ensure_no_failures("holdings", result[1])
+    elif args.command == "news":
         jobs.crawl_yangjibao_news()
-    elif command == "sina-news":
+    elif args.command == "sina-news":
         jobs.crawl_sina_news()
-    elif command == "stock":
+    elif args.command == "stock":
         jobs.crawl_stocks()
-    elif command == "all":
-        run_job_chain(args.jobs)
-    elif command == "daily":
-        jobs.crawl_daily_update()
-    elif command == "schedule":
+    elif args.command == "schedule":
         scheduler.main()
-    elif command == "web":
+    elif args.command == "web":
         scheduler_web.main()
     else:
-        raise ValueError(f"unsupported command: {command}")
+        raise ValueError(f"unsupported command: {args.command}")
 
 
-def run_job_chain(job_names: str) -> None:
-    dispatch: dict[str, Any] = {
-        "fund-list": jobs.crawl_fund_list,
-        "profile-nav": jobs.crawl_profile_nav,
-        "feature": jobs.crawl_feature_data,
-        "rating": jobs.crawl_ratings,
-        "rating-list": jobs.crawl_rating_list,
-        "holdings": jobs.crawl_holdings,
-        "news": jobs.crawl_yangjibao_news,
-        "sina-news": jobs.crawl_sina_news,
-        "stock": jobs.crawl_stocks,
-    }
-    for raw_name in job_names.split(","):
-        name = raw_name.strip()
-        if not name:
-            continue
-        if name not in dispatch:
-            raise ValueError(f"unsupported job: {name}")
-        dispatch[name]()
+def ensure_no_failures(job_name: str, failed: int) -> None:
+    if failed:
+        raise RuntimeError(f"{job_name} completed with {failed} failed fund(s)")
 
 
 if __name__ == "__main__":

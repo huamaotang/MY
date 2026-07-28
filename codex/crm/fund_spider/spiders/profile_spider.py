@@ -9,7 +9,7 @@ import time
 import requests
 
 from db import FundProfile
-from spider import RequestConfig
+from spiders.fund_ranking_spider import RequestConfig
 
 
 logger = logging.getLogger(__name__)

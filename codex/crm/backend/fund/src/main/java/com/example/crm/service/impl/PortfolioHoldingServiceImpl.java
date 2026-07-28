@@ -67,7 +67,7 @@ public class PortfolioHoldingServiceImpl implements IPortfolioHoldingService {
                                        CfgFundMapper fundMapper,
                                        ObjectMapper objectMapper,
                                        FundValuationService valuationService,
-                                       @Value("${crm.python-ocr-script:fund_spider/portfolio_holding_ocr.py}") String ocrScriptPath,
+                                       @Value("${crm.python-ocr-script:fund_spider/tools/portfolio_holding_ocr.py}") String ocrScriptPath,
                                        @Value("${crm.python-executable:python3}") String pythonExecutable) {
         this.importMapper = importMapper;
         this.itemMapper = itemMapper;
@@ -421,6 +421,7 @@ public class PortfolioHoldingServiceImpl implements IPortfolioHoldingService {
                     valuation.getEstimatedChangeRate());
             dto.setValuationDate(valuation.getValuationDate());
             dto.setHoldingReportDate(valuation.getHoldingReportDate());
+            dto.setHoldingCutoffDate(valuation.getHoldingCutoffDate());
             dto.setEstimatedChangeRate(valuation.getEstimatedChangeRate());
             dto.setEstimatedDailyProfit(estimatedDailyProfit);
             dto.setEstimatedHoldingAmount(PortfolioValuationCalculator.estimatedHoldingAmount(

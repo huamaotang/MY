@@ -10,8 +10,8 @@ from typing import Any
 import requests
 
 from db import FundFeatureData
-from nav_spider import clean_decimal
-from spider import RequestConfig
+from spiders.fund_ranking_spider import RequestConfig
+from spiders.nav_spider import clean_decimal
 
 
 logger = logging.getLogger(__name__)

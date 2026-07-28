@@ -14,11 +14,14 @@ public class FundStockHolding {
     private String fundCode;
     private String reportPeriod;
     private String reportDate;
+    private String cutoffDate;
     private Integer rankNo;
     private String stockCode;
     private String stockName;
     private BigDecimal latestPrice;
     private BigDecimal changeRate;
+    @TableField(exist = false)
+    private LocalDateTime quoteTime;
     private String relatedInfoUrl;
     private BigDecimal netValueRatio;
     @TableField("holding_shares_10k")

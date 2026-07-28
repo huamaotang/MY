@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 import requests
 
 from db import FundRating
-from spider import RequestConfig
+from spiders.fund_ranking_spider import RequestConfig
 
 
 logger = logging.getLogger(__name__)

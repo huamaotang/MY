@@ -11,6 +11,7 @@ public class FundDailyValuationDto {
     private String fundCode;
     private LocalDate valuationDate;
     private String holdingReportDate;
+    private String holdingCutoffDate;
     private String baseNavDate;
     private BigDecimal baseUnitNav;
     private BigDecimal estimatedUnitNav;

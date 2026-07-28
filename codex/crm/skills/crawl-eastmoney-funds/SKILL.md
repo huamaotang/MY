@@ -30,9 +30,9 @@ Supported data areas:
 4. Use upsert semantics with unique keys, so reruns are idempotent.
 5. Validate with one fund first, usually `519674`, before batch execution.
 6. For long batch crawls, expose `FUND_LIMIT`, `FUND_OFFSET`, and a single-fund override.
-7. Prefer `fund_spider/cli.py` as the unified entrypoint. The older `main.py` and `crawl_*.py` files are compatibility wrappers.
-8. For daily incremental execution, prefer `fund_spider/cli.py daily`; it scans selected fund codes once and updates profile, recent NAV, feature data, and holdings in one pass.
-9. Daily execution processes funds in ascending `fund_code` order and uses `fund_crawl_cursor` by default, so same-day reruns resume after the last successful fund code. Use `--use-cursor 0` to force a rerun from the beginning.
+7. Use `fund_spider/cli.py` as the only command entrypoint.
+8. Use `nav-performance` for the twice-daily NAV/performance snapshot and `feature` for the 08:00 feature refresh.
+9. Keep full basic profiles, holdings, ratings, and historical NAV as manual commands.
 10. For scheduled execution, use `fund_spider/cli.py schedule`, or `fund_spider/cli.py web` when a Web configuration service is needed.
 
 ## Commands
@@ -46,15 +46,15 @@ fund_spider/.venv/bin/python fund_spider/cli.py <command>
 Common examples:
 
 ```bash
+DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py basic --fund-code 519674
+```
+
+```bash
+DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py nav-history --fund-code 519674 --start-date 20250101
+```
+
+```bash
 DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py feature --fund-code 519674
-```
-
-```bash
-DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py nav --fund-code 519674 --nav-start-date 20250101
-```
-
-```bash
-DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py profile-nav --fund-code 519674 --nav-max-pages 1
 ```
 
 ```bash
@@ -62,11 +62,11 @@ DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py holdings --
 ```
 
 ```bash
-DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py daily --fund-code 519674 --nav-start-date 20260701
+DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py rating --mode history --fund-code 519674
 ```
 
 ```bash
-DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py daily --fund-limit 100 --cursor-date 20260717
+DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py nav-performance
 ```
 
 ```bash
@@ -76,6 +76,10 @@ fund_spider/.venv/bin/python fund_spider/cli.py schedule --run-on-start 1 --once
 ```bash
 fund_spider/.venv/bin/python fund_spider/cli.py web --host 127.0.0.1 --port 8088
 ```
+
+Shell entrypoints are organized under `fund_spider/bin/`, collectors under
+`fund_spider/spiders/`, schedulers under `fund_spider/runtime/`, and standalone
+tools under `fund_spider/tools/`.
 
 ## Detailed Reference
 

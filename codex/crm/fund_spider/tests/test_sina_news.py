@@ -2,7 +2,7 @@ from __future__ import annotations
 import sys, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from sina_news_spider import parse_sina_news
+from spiders.sina_news_spider import parse_sina_news
 
 class SinaNewsParserTest(unittest.TestCase):
     def test_parse(self):

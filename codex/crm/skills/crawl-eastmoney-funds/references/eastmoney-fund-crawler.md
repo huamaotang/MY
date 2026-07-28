@@ -6,14 +6,15 @@ Work in `fund_spider/`.
 
 Important files:
 
-- `main.py`: fund list crawler into `fund_detail`
-- `crawl_all_funds.py`: batch profile + NAV crawler from `fund_detail`
-- `crawl_nav.py`: single-fund historical NAV crawler
-- `crawl_feature_data.py`: feature data crawler
-- `profile_spider.py`: basic profile parser
-- `nav_spider.py`: historical NAV parser
-- `feature_spider.py`: feature data parser
+- `cli.py`: the only supported command entrypoint
+- `jobs.py`: reusable command implementations
+- `spiders/profile_spider.py`: basic profile parser
+- `spiders/nav_spider.py`: historical NAV parser
+- `spiders/feature_spider.py`: feature data parser
 - `db.py`: MySQL schema and upsert helpers
+- `bin/`: executable manual and scheduled Shell scripts
+- `runtime/`: Python CLI and Web schedulers
+- `tools/portfolio_holding_ocr.py`: portfolio screenshot OCR tool
 - `sql/init.sql`: full schema bootstrap
 
 ## Database
@@ -96,23 +97,25 @@ The table columns are:
 - 持仓市值（万元）
 
 Report metadata appears in the HTML title text, for example `2026年1季度股票投资明细`, and cutoff date appears as `截止至：YYYY-MM-DD`.
+Store the explicit cutoff date in `fund_stock_holding.cutoff_date`; valuation
+uses the latest cutoff-date snapshot available on or before the quote date.
 
 ## Validation Pattern
 
 Before batch work, validate one fund:
 
 ```bash
-DB_PASSWORD=qwer8989 FEATURE_FUND_CODE=519674 fund_spider/.venv/bin/python fund_spider/crawl_feature_data.py
+DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py feature --fund-code 519674
 ```
 
 ```bash
-DB_PASSWORD=qwer8989 NAV_FUND_CODE=519674 NAV_START_DATE=20250101 fund_spider/.venv/bin/python fund_spider/crawl_nav.py
+DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py nav-history --fund-code 519674 --start-date 20250101
 ```
 
 For batch work:
 
 ```bash
-DB_PASSWORD=qwer8989 FUND_LIMIT=100 FUND_OFFSET=0 fund_spider/.venv/bin/python fund_spider/crawl_feature_data.py
+DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py feature --fund-limit 100 --fund-offset 0
 ```
 
 Use `screen` for long-running full crawls only when the user explicitly asks for background execution.

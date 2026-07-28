@@ -10,7 +10,7 @@ from typing import Any
 import requests
 
 from db import YangjibaoNews
-from spider import RequestConfig
+from spiders.fund_ranking_spider import RequestConfig
 
 
 logger = logging.getLogger(__name__)

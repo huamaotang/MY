@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from yangjibao_news_spider import parse_news_rows
+from spiders.yangjibao_news_spider import parse_news_rows
 
 
 class YangjibaoNewsParserTest(unittest.TestCase):

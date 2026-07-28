@@ -6,7 +6,7 @@ from typing import Any
 import requests
 
 from db import SinaFinanceNews
-from spider import RequestConfig
+from spiders.fund_ranking_spider import RequestConfig
 
 
 API_URL = "https://app.cj.sina.com.cn/api/news/pc"

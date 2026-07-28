@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS fund_stock_holding (
   fund_code VARCHAR(20) NOT NULL COMMENT '基金代码',
   report_period VARCHAR(50) NULL COMMENT '报告期',
   report_date VARCHAR(8) NOT NULL COMMENT '报告期截止日期',
+  cutoff_date VARCHAR(8) NOT NULL COMMENT '页面截止至日期',
   rank_no INT NULL COMMENT '序号',
   stock_code VARCHAR(20) NOT NULL COMMENT '股票代码',
   stock_name VARCHAR(100) NULL COMMENT '股票名称',
@@ -19,5 +20,6 @@ CREATE TABLE IF NOT EXISTS fund_stock_holding (
   PRIMARY KEY (id),
   UNIQUE KEY uk_fund_stock_holding (fund_code, report_date, stock_code),
   KEY idx_fund_stock_report_date (report_date),
+  KEY idx_fund_stock_cutoff_date (fund_code, cutoff_date),
   KEY idx_fund_stock_code (stock_code)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金持仓表';

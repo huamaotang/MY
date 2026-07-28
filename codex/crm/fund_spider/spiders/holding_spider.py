@@ -11,8 +11,8 @@ from urllib.parse import urljoin, urlencode
 import requests
 
 from db import FundStockHolding
-from nav_spider import clean_decimal
-from spider import RequestConfig
+from spiders.fund_ranking_spider import RequestConfig
+from spiders.nav_spider import clean_decimal
 
 
 logger = logging.getLogger(__name__)
@@ -103,6 +103,7 @@ def parse_holding_rows(fund_code: str, text: str) -> list[FundStockHolding]:
         if not report_date:
             logger.warning("skip holding table without report date, fund=%s period=%s", fund_code, report_period)
             continue
+        cutoff_date = _extract_cutoff_date(report_period, table_html) or report_date
         normalized_report_period = _extract_report_period(report_period) or report_period[:50]
 
         for row_html in re.findall(r"<tr[^>]*>([\s\S]*?)</tr>", table_html, re.I):
@@ -119,6 +120,7 @@ def parse_holding_rows(fund_code: str, text: str) -> list[FundStockHolding]:
                     fund_code=fund_code,
                     report_period=normalized_report_period or None,
                     report_date=report_date,
+                    cutoff_date=cutoff_date,
                     rank_no=int(cells[0]) if cells[0].isdigit() else None,
                     stock_code=stock_code,
                     stock_name=cells[2] or None,
@@ -165,24 +167,33 @@ def _split_report_tables(content: str) -> list[tuple[str, str]]:
 
 def _extract_report_date(report_period: str, table_html: str) -> str | None:
     text = f"{report_period} {_html_to_text(table_html)}"
+    year_match = re.search(r"(20\d{2})", text)
+    if year_match:
+        year = year_match.group(1)
+        if "1季度" in text or "一季度" in text:
+            return f"{year}0331"
+        if "2季度" in text or "二季度" in text or "中报" in text:
+            return f"{year}0630"
+        if "3季度" in text or "三季度" in text:
+            return f"{year}0930"
+        if "4季度" in text or "四季度" in text or "年报" in text:
+            return f"{year}1231"
+
     exact_date = re.search(r"(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})", text)
     if exact_date:
         return f"{exact_date.group(1)}{int(exact_date.group(2)):02d}{int(exact_date.group(3)):02d}"
-
-    year_match = re.search(r"(20\d{2})", text)
-    if not year_match:
-        return None
-    year = year_match.group(1)
-
-    if "1季度" in text or "一季度" in text:
-        return f"{year}0331"
-    if "2季度" in text or "二季度" in text or "中报" in text:
-        return f"{year}0630"
-    if "3季度" in text or "三季度" in text:
-        return f"{year}0930"
-    if "4季度" in text or "四季度" in text or "年报" in text:
-        return f"{year}1231"
     return None
+
+
+def _extract_cutoff_date(report_period: str, table_html: str) -> str | None:
+    text = f"{report_period} {_html_to_text(table_html)}"
+    match = re.search(
+        r"截止(?:至|日期)?\s*[:：]?\s*(20\d{2})[-/年](\d{1,2})[-/月](\d{1,2})",
+        text,
+    )
+    if not match:
+        return None
+    return f"{match.group(1)}{int(match.group(2)):02d}{int(match.group(3)):02d}"
 
 
 def _extract_report_period(report_period: str) -> str | None:
