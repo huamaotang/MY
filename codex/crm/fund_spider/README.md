@@ -15,9 +15,9 @@ and writes idempotently to MySQL.
 fund_spider/
 ├── cli.py, jobs.py, db.py, settings.py   # entrypoint and application layer
 ├── spiders/                               # source-specific collectors/parsers
-├── runtime/                               # CLI and Web schedulers
+├── runtime/                               # Prefect business-task runner
 ├── bin/                                   # executable Shell scripts
-├── config/                                # persisted scheduler configuration
+├── prefect_flows.py, prefect.yaml         # flows, deployments, schedules
 ├── tools/                                 # standalone support tools such as OCR
 ├── sql/                                   # schema and migrations
 └── tests/                                 # unit tests
@@ -32,6 +32,7 @@ source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env
 mysql -uroot -p < sql/init.sql
+mysql -uroot -p < sql/20260731_add_fund_scoring.sql
 ```
 
 Common request controls:
@@ -53,11 +54,13 @@ timestamped logs under `logs/`. Arguments are passed through unchanged to
 ```bash
 ./bin/run_basic.sh
 ./bin/run_nav_history.sh --fund-code 519674 --start-date 20260701 --end-date 20260728
+./bin/run_nav_history.sh 519674 --start-date 20260701 --end-date 20260728
 ./bin/run_nav_performance.sh
 ./bin/run_feature.sh --fund-code 519674
 ./bin/run_holdings.sh --fund-code 519674
 ./bin/run_rating.sh
 ./bin/run_rating.sh --mode history --fund-code 519674
+./bin/run_score.sh
 ```
 
 Set `PYTHON_EXECUTABLE` to override the interpreter. If the project virtual
@@ -115,6 +118,10 @@ python cli.py nav-history \
   --end-date 2026-07-28
 ```
 
+`--fund_code` is accepted as an alias for `--fund-code`. The shell wrapper also
+accepts the fund code as its first positional argument. Historical NAV enables
+SQL and bound-parameter logging by default; use `--log-sql 0` to disable it.
+
 The date bounds are independently optional:
 
 - neither bound: all available history;
@@ -123,7 +130,10 @@ The date bounds are independently optional:
 - both bounds: closed date interval.
 
 Use `--fund-limit` and `--fund-offset` for a bounded batch. Rows are upserted
-into `fund_nav_history` by `(fund_code, nav_date)`.
+into `fund_nav_history` by `(fund_code, nav_date)`. Remaining pages are fetched
+concurrently and multiple pages are committed together. Tune this with
+`--nav-page-workers` (default `4`) and `--nav-write-batch-size` (default `200`);
+set workers to `1` for sequential requests.
 
 ### Feature data
 
@@ -163,30 +173,101 @@ python cli.py rating --mode history --fund-limit 100 --fund-offset 0
 
 Neither rating mode is automatically scheduled.
 
-## Scheduler
+### Fund scoring
 
-The scheduler uses `Asia/Shanghai` on every machine. Its defaults are:
+The 0–100 score compares a fund only with funds in the same detailed type
+(groups with fewer than 30 funds fall back to the parent type). The default
+weights total 100:
 
-```env
-NAV_PERFORMANCE_SCHEDULE_TIMES=08:00,21:00
-FEATURE_SCHEDULE_TIME=08:00
-FEATURE_SCHEDULE_ENABLED=1
-```
+- returns 25%;
+- standard deviation 15%;
+- Sharpe ratio 25%;
+- maximum drawdown 20%;
+- agency ratings 10%;
+- fund scale 5%.
 
-At 08:00 it executes `bin/run_nav_performance.sh` followed by
-`bin/run_feature.sh`. At 21:00 it executes only
-`bin/run_nav_performance.sh`. Jobs share one global lock. If a previous trigger
-is still running, the new trigger is logged as
-`skipped_overlap`.
-
-A failed morning NAV job does not prevent the feature job from running. The
-trigger is reported failed when either subprocess fails.
-
-Dry-run both unique scheduled jobs:
+Apply the scoring schema once on an existing database, then calculate current
+scores:
 
 ```bash
-python cli.py schedule --once 1 --dry-run 1 --trigger all
+mysql -uroot -p < sql/20260731_add_fund_scoring.sql
+python cli.py score --mode current
 ```
+
+For a real future-12-month profitability backtest, first populate historical
+NAV/rating/scale data, then build monthly point-in-time snapshots. Historical
+snapshots use only data available on each snapshot date and attach the return
+observed 365 days later:
+
+```bash
+python cli.py nav-history --start-date 20180101
+python cli.py rating --mode history
+python cli.py score --mode history --start-date 20180101 --step-months 1
+```
+
+Weight backtests and recommendation requests are submitted from the Web scoring
+configuration dialog. `python cli.py score --mode jobs` processes those queued
+requests. A profile can be activated only after it passes three rolling
+chronological folds with a 12-month train/test embargo. The seed profile is
+deliberately marked `UNVERIFIED`; until a profile passes the configured AUC,
+Brier score, and top-20% win-rate-lift gates, clients show no profitability
+probability.
+
+The scheduled pipeline labels newly matured snapshots, calculates current
+scores, and processes queued work in that order:
+
+```bash
+./bin/run_score.sh --foreground
+```
+
+## Prefect task platform
+
+Recurring execution is managed by the self-hosted `Prefect==3.7.7` Server and
+Process Worker. The built-in dashboard at `http://127.0.0.1:4200/` provides
+deployment management, pause/resume, manual runs, parameters, run history,
+task states, logs, retries, cancellation, and work-pool health. The previous
+custom scheduler page and APScheduler runtime are not used.
+
+Version-controlled defaults live in `prefect.yaml`:
+
+| Deployment | Default schedule |
+| --- | --- |
+| `morning-fund-refresh` | Daily 08:00; NAV/performance then feature data |
+| `evening-nav-performance` | Daily 21:00 |
+| `feature-refresh-manual` | Manual only |
+| `score-pipeline` | Daily 22:30 |
+| `sina-news` | Every 120 seconds |
+| `stock-cn` | Weekdays every 5 minutes during configured A-share windows |
+| `stock-hk` | Weekdays every 5 minutes during configured HK windows |
+
+All schedules use `Asia/Shanghai`. The Process Worker is limited to one
+concurrent flow and the task runner adds a cross-process lock.
+
+Start and register the local platform:
+
+```bash
+./bin/run_prefect_server.sh
+./bin/deploy_prefect.sh
+./bin/run_prefect_worker.sh
+```
+
+The Server and Worker are long-lived commands and should be run in separate
+terminals or installed as services. A deployment can also be triggered from
+the CLI; `dry_run=true` validates command selection without writing business
+data:
+
+```bash
+PREFECT_API_URL=http://127.0.0.1:4200/api \
+.venv/bin/prefect deployment run \
+  'fund-feature-refresh/feature-refresh-manual' \
+  --param dry_run=true --watch
+```
+
+Edit schedules in the Prefect UI for immediate operational changes. Update
+`prefect.yaml` and rerun `bin/deploy_prefect.sh` when the change must remain in
+source control. CentOS service installation is documented in
+`deploy/centos/README.md`; macOS uses the two
+`deploy/macos/com.crm.prefect-*.plist` files.
 
 ## Portfolio screenshot OCR
 
@@ -218,53 +299,6 @@ For real-image OCR, install `requirements.txt` into a compatible virtual
 environment and point backend configuration `CRM_PYTHON_EXECUTABLE` to that
 environment's Python executable.
 
-Run only the morning or evening plan immediately:
-
-```bash
-python cli.py schedule --once 1 --trigger morning
-python cli.py schedule --once 1 --trigger evening
-```
-
-Start the long-lived scheduler:
-
-```bash
-python cli.py schedule
-```
-
-### Web scheduler
-
-```bash
-python cli.py web --host 127.0.0.1 --port 8088
-```
-
-Open `http://127.0.0.1:8088/`. The page configures the two NAV times, feature
-time, request pacing, and optional feature batch limits. Useful APIs:
-
-```bash
-curl http://127.0.0.1:8088/api/status
-curl -X POST http://127.0.0.1:8088/api/run \
-  -H 'Content-Type: application/json' \
-  -d '{"trigger":"morning","dry_run":true}'
-curl -X POST http://127.0.0.1:8088/api/config \
-  -H 'Content-Type: application/json' \
-  -d '{"nav_performance_schedule_times":"08:00,21:00","feature_schedule_time":"08:00"}'
-```
-
-Configuration is persisted in `config/scheduler_config.json`. Trigger logs are
-stored under `logs/fund_scheduler_*.log`.
-
-### macOS LaunchAgent
-
-The production-style local schedule uses
-`deploy/macos/com.crm.fund-scheduler.plist`. Launchd executes
-`bin/run_fund_scheduled.sh` at 08:00 and 21:00. The script applies one shared
-lock, runs both morning jobs independently, aggregates their exit status, and
-writes separate `nav_performance_scheduled_*.log` and
-`feature_scheduled_*.log` files.
-
-`com.crm.sina-news.plist` remains an independent 120-second news schedule, but
-now executes `bin/run_sina_news.sh` instead of invoking Python directly.
-
 ## Other data commands
 
 Fund data uses the unified CLI, while the existing stock and news capabilities
@@ -279,8 +313,7 @@ python cli.py news --score 2
 ```
 
 Hong Kong real-time market `116` is preferred; the stock crawler falls back to
-delayed market `128` and normalizes it to market code `116`. The existing
-macOS stock LaunchAgent continues to call `bin/run_stock_market_update.sh`.
+delayed market `128` and normalizes it to market code `116`.
 
 Yangjibao credentials must be supplied through `YJB_AUTHORIZATION`,
 `YJB_REQUEST_SIGN`, and `YJB_REQUEST_TIME`; they are not stored in source
@@ -290,5 +323,6 @@ control.
 
 ```bash
 python -m unittest discover -s tests -p 'test_*.py'
-python cli.py schedule --once 1 --dry-run 1 --trigger all
+./bin/deploy_prefect.sh
+.venv/bin/prefect deployment ls
 ```

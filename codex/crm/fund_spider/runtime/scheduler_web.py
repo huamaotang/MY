@@ -14,14 +14,21 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
+from apscheduler.executors.pool import ThreadPoolExecutor as APSchedulerThreadPool
+from apscheduler.schedulers.background import BackgroundScheduler
+
 from runtime.scheduler import (
+    JOB_DEFAULTS,
     LOG_DIR,
+    SCHEDULER_ENGINE,
     TIMEZONE,
+    configure_apscheduler_jobs,
     jobs_for_manual_trigger,
-    next_scheduled_trigger,
+    next_jobs_from_snapshot,
     parse_schedule_time,
     parse_schedule_times,
     run_scheduled_jobs,
+    scheduled_jobs_snapshot,
 )
 from settings import load_env_file, parse_bool
 
@@ -36,6 +43,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "nav_performance_schedule_times": "08:00,21:00",
     "feature_schedule_time": "08:00",
     "feature_enabled": True,
+    "score_schedule_time": "22:30",
+    "sina_news_enabled": True,
+    "sina_news_interval_seconds": "120",
+    "stock_market_enabled": True,
+    "stock_market_interval_seconds": "300",
     "fund_limit": "",
     "fund_offset": "0",
     "request_min_delay_seconds": "1.5",
@@ -51,8 +63,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
 @dataclass
 class SchedulerState:
     config: dict[str, Any]
-    next_run_time: datetime | None = None
-    next_jobs: tuple[str, ...] = ()
     running: bool = False
     last_run_started_at: str | None = None
     last_run_finished_at: str | None = None
@@ -62,17 +72,20 @@ class SchedulerState:
         default_factory=lambda: {
             "nav-performance": "never",
             "feature": "never",
+            "score": "never",
+            "sina-news": "never",
+            "stock-cn": "never",
+            "stock-hk": "never",
         }
     )
     lock: threading.Lock = field(default_factory=threading.Lock)
-    wake_event: threading.Event = field(default_factory=threading.Event)
+    apscheduler: BackgroundScheduler | None = field(default=None, repr=False)
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
-            return {
+            snapshot = {
+                "engine": SCHEDULER_ENGINE,
                 "config": dict(self.config),
-                "next_run_time": self.next_run_time.isoformat() if self.next_run_time else None,
-                "next_jobs": list(self.next_jobs),
                 "running": self.running,
                 "last_run_started_at": self.last_run_started_at,
                 "last_run_finished_at": self.last_run_finished_at,
@@ -81,6 +94,21 @@ class SchedulerState:
                 "job_statuses": dict(self.job_statuses),
                 "logs": list_log_files(),
             }
+            apscheduler = self.apscheduler
+        scheduled_jobs = scheduled_jobs_snapshot(apscheduler)
+        next_run_time, next_jobs = next_jobs_from_snapshot(scheduled_jobs)
+        snapshot.update(
+            {
+                "next_run_time": next_run_time,
+                "next_jobs": next_jobs,
+                "scheduled_jobs": scheduled_jobs,
+            }
+        )
+        return snapshot
+
+    def attach_scheduler(self, apscheduler: BackgroundScheduler) -> None:
+        with self.lock:
+            self.apscheduler = apscheduler
 
     def update_config(self, updates: dict[str, Any]) -> dict[str, Any]:
         with self.lock:
@@ -89,24 +117,19 @@ class SchedulerState:
             validate_config(config)
             self.config = config
             save_config(config)
-            self.wake_event.set()
-            return dict(config)
+            apscheduler = self.apscheduler
+        if apscheduler is not None:
+            configure_apscheduler_jobs(apscheduler, config, self.run_job_sync)
+        return dict(config)
 
     def start_job(
         self,
         job_names: tuple[str, ...],
         dry_run: bool | None = None,
     ) -> tuple[bool, str]:
-        with self.lock:
-            if self.running:
-                return False, "job is already running"
-            self.running = True
-            self.last_run_status = "running"
-            self.last_error = None
-            self.last_run_started_at = datetime.now(TIMEZONE).isoformat()
-            for name in job_names:
-                self.job_statuses[name] = "running"
-            config = dict(self.config)
+        config = self._claim_job(job_names)
+        if config is None:
+            return False, "job is already running"
         thread = threading.Thread(
             target=self._run_job,
             args=(job_names, config, dry_run),
@@ -114,6 +137,34 @@ class SchedulerState:
         )
         thread.start()
         return True, "job started"
+
+    def run_job_sync(self, job_names: tuple[str, ...]) -> bool:
+        config = self._claim_job(job_names)
+        if config is None:
+            logger.warning(
+                "APScheduler job skipped because another job is running: %s",
+                ",".join(job_names),
+            )
+            return False
+        self._run_job(job_names, config, None)
+        with self.lock:
+            succeeded = self.last_run_status == "success"
+            error = self.last_error
+        if not succeeded:
+            raise RuntimeError(error or f"scheduled job failed: {','.join(job_names)}")
+        return True
+
+    def _claim_job(self, job_names: tuple[str, ...]) -> dict[str, Any] | None:
+        with self.lock:
+            if self.running:
+                return None
+            self.running = True
+            self.last_run_status = "running"
+            self.last_error = None
+            self.last_run_started_at = datetime.now(TIMEZONE).isoformat()
+            for name in job_names:
+                self.job_statuses[name] = "running"
+            return dict(self.config)
 
     def _run_job(
         self,
@@ -165,47 +216,28 @@ def main() -> None:
     load_env_file(BASE_DIR / ".env")
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     state = SchedulerState(config=load_config())
-    threading.Thread(target=scheduler_loop, args=(state,), daemon=True).start()
+    apscheduler = BackgroundScheduler(
+        timezone=TIMEZONE,
+        executors={"default": APSchedulerThreadPool(max_workers=1)},
+        job_defaults=JOB_DEFAULTS,
+        daemon=True,
+    )
+    state.attach_scheduler(apscheduler)
+    configure_apscheduler_jobs(apscheduler, state.config, state.run_job_sync)
+    apscheduler.start()
     host = os.getenv("SCHEDULER_WEB_HOST", "127.0.0.1")
     port = int(os.getenv("SCHEDULER_WEB_PORT", "8088"))
     server = ThreadingHTTPServer((host, port), make_handler(state))
-    logger.info("scheduler web service started at http://%s:%s", host, port)
-    server.serve_forever()
-
-
-def scheduler_loop(state: SchedulerState) -> None:
-    while True:
-        with state.lock:
-            config = dict(state.config)
-        if not config["enabled"]:
-            with state.lock:
-                state.next_run_time = None
-                state.next_jobs = ()
-            state.wake_event.wait(60)
-            state.wake_event.clear()
-            continue
-
-        nav_times = parse_schedule_times(config["nav_performance_schedule_times"])
-        feature_time = parse_schedule_time(config["feature_schedule_time"])
-        trigger = next_scheduled_trigger(nav_times, feature_time)
-        jobs = tuple(
-            name
-            for name in trigger.jobs
-            if name != "feature" or config["feature_enabled"]
-        )
-        with state.lock:
-            state.next_run_time = trigger.run_at
-            state.next_jobs = jobs
-        timeout = max(
-            0.0,
-            (trigger.run_at - datetime.now(TIMEZONE)).total_seconds(),
-        )
-        woke = state.wake_event.wait(timeout)
-        state.wake_event.clear()
-        if woke:
-            continue
-        if jobs:
-            state.start_job(jobs)
+    logger.info(
+        "%s web service started at http://%s:%s",
+        SCHEDULER_ENGINE,
+        host,
+        port,
+    )
+    try:
+        server.serve_forever()
+    finally:
+        apscheduler.shutdown(wait=False)
 
 
 def make_handler(state: SchedulerState):
@@ -341,6 +373,8 @@ def sanitize_config(updates: dict[str, Any]) -> dict[str, Any]:
         "enabled",
         "dry_run",
         "feature_enabled",
+        "sina_news_enabled",
+        "stock_market_enabled",
         "log_sql",
         "log_sql_params",
     }
@@ -356,6 +390,10 @@ def sanitize_config(updates: dict[str, Any]) -> dict[str, Any]:
 def validate_config(config: dict[str, Any]) -> None:
     parse_schedule_times(config["nav_performance_schedule_times"])
     parse_schedule_time(config["feature_schedule_time"])
+    parse_schedule_time(config["score_schedule_time"])
+    for field_name in ("sina_news_interval_seconds", "stock_market_interval_seconds"):
+        if int(config[field_name]) < 1:
+            raise ValueError(f"{field_name} must be greater than or equal to 1")
     if config["fund_limit"] and int(config["fund_limit"]) < 1:
         raise ValueError("fund_limit must be greater than or equal to 1")
     if int(config["fund_offset"]) < 0:
@@ -367,6 +405,11 @@ def env_config_overrides() -> dict[str, Any]:
         "NAV_PERFORMANCE_SCHEDULE_TIMES": "nav_performance_schedule_times",
         "FEATURE_SCHEDULE_TIME": "feature_schedule_time",
         "FEATURE_SCHEDULE_ENABLED": "feature_enabled",
+        "SCORE_SCHEDULE_TIME": "score_schedule_time",
+        "SINA_NEWS_SCHEDULE_ENABLED": "sina_news_enabled",
+        "SINA_NEWS_INTERVAL_SECONDS": "sina_news_interval_seconds",
+        "STOCK_MARKET_SCHEDULE_ENABLED": "stock_market_enabled",
+        "STOCK_MARKET_INTERVAL_SECONDS": "stock_market_interval_seconds",
         "SCHEDULER_DRY_RUN": "dry_run",
         "FUND_LIMIT": "fund_limit",
         "FUND_OFFSET": "fund_offset",
@@ -434,7 +477,7 @@ def render_index(snapshot: dict[str, Any]) -> str:
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>Fund Scheduler</title>
+  <title>CRM APScheduler</title>
   <style>
     body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #f5f7fb; color: #1f2937; }}
     main {{ max-width: 900px; margin: 32px auto; padding: 0 20px; }}
@@ -451,19 +494,27 @@ def render_index(snapshot: dict[str, Any]) -> str:
   </style>
 </head>
 <body><main>
-  <h1>Fund Scheduler</h1>
+  <h1>CRM APScheduler 任务调度</h1>
   <section><h2>状态</h2><div class="status">
+    <div><strong>调度引擎</strong>{escape(snapshot["engine"])}</div>
     <div><strong>时区</strong>Asia/Shanghai</div>
     <div><strong>下次执行</strong>{escape(snapshot["next_run_time"] or "-")}</div>
     <div><strong>下次任务</strong>{escape(",".join(snapshot["next_jobs"]) or "-")}</div>
     <div><strong>总体状态</strong>{escape(snapshot["last_run_status"])}</div>
     <div><strong>净值/业绩</strong>{escape(job_statuses["nav-performance"])}</div>
     <div><strong>特色数据</strong>{escape(job_statuses["feature"])}</div>
+    <div><strong>基金评分</strong>{escape(job_statuses["score"])}</div>
+    <div><strong>新浪资讯</strong>{escape(job_statuses["sina-news"])}</div>
+    <div><strong>A股行情</strong>{escape(job_statuses["stock-cn"])}</div>
+    <div><strong>港股行情</strong>{escape(job_statuses["stock-hk"])}</div>
   </div></section>
   <section><h2>配置</h2><form id="configForm">
     <div class="grid">
       <label>净值/业绩执行时间（逗号分隔）<input name="nav_performance_schedule_times" value="{escape(config["nav_performance_schedule_times"])}"></label>
       <label>特色数据执行时间<input type="time" name="feature_schedule_time" value="{escape(config["feature_schedule_time"])}"></label>
+      <label>基金评分执行时间<input type="time" name="score_schedule_time" value="{escape(config["score_schedule_time"])}"></label>
+      <label>新浪资讯间隔秒<input type="number" min="1" name="sina_news_interval_seconds" value="{escape(config["sina_news_interval_seconds"])}"></label>
+      <label>股票行情间隔秒<input type="number" min="1" name="stock_market_interval_seconds" value="{escape(config["stock_market_interval_seconds"])}"></label>
       <label>基金数量限制<input name="fund_limit" value="{escape(config["fund_limit"])}"></label>
       <label>基金偏移量<input type="number" min="0" name="fund_offset" value="{escape(config["fund_offset"])}"></label>
       <label>最小请求间隔秒<input name="request_min_delay_seconds" value="{escape(config["request_min_delay_seconds"])}"></label>
@@ -472,6 +523,8 @@ def render_index(snapshot: dict[str, Any]) -> str:
     <div class="checks">
       {checkbox("enabled", "启用调度", config["enabled"])}
       {checkbox("feature_enabled", "启用特色数据日更", config["feature_enabled"])}
+      {checkbox("sina_news_enabled", "启用新浪资讯任务", config["sina_news_enabled"])}
+      {checkbox("stock_market_enabled", "启用交易时段行情任务", config["stock_market_enabled"])}
       {checkbox("dry_run", "Dry-run", config["dry_run"])}
       {checkbox("log_sql", "打印 SQL", config["log_sql"])}
       {checkbox("log_sql_params", "打印 SQL 参数", config["log_sql_params"])}
@@ -479,6 +532,8 @@ def render_index(snapshot: dict[str, Any]) -> str:
     <button type="submit">保存配置</button>
     <button type="button" class="secondary" onclick="runJob('morning')">立即执行早间任务</button>
     <button type="button" class="secondary" onclick="runJob('evening')">立即执行晚间任务</button>
+    <button type="button" class="secondary" onclick="runJob('news')">立即执行新浪资讯</button>
+    <button type="button" class="secondary" onclick="runJob('stock')">立即执行全部行情</button>
   </form></section>
   <section><h2>日志</h2><ul>{log_items or "<li>暂无日志</li>"}</ul></section>
 </main>

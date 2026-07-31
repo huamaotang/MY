@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 
 import jobs
-from runtime import scheduler, scheduler_web
+import scoring
 from settings import apply_env_overrides, load_project_env
 
 
@@ -38,7 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     db_parent.add_argument("--db-name", dest="DB_NAME")
 
     batch_parent = argparse.ArgumentParser(add_help=False)
-    batch_parent.add_argument("--fund-code", dest="FUND_CODE")
+    batch_parent.add_argument("--fund-code", "--fund_code", dest="FUND_CODE")
     batch_parent.add_argument("--fund-start-code", dest="FUND_START_CODE")
     batch_parent.add_argument("--fund-limit", dest="FUND_LIMIT")
     batch_parent.add_argument("--fund-offset", dest="FUND_OFFSET")
@@ -78,6 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
     nav_history.add_argument("--nav-page-size", dest="NAV_PAGE_SIZE")
     nav_history.add_argument("--nav-start-page", dest="NAV_START_PAGE")
     nav_history.add_argument("--nav-max-pages", dest="NAV_MAX_PAGES")
+    nav_history.add_argument("--nav-page-workers", dest="NAV_PAGE_WORKERS")
+    nav_history.add_argument("--nav-write-batch-size", dest="NAV_WRITE_BATCH_SIZE")
     nav_history.add_argument("--start-date", dest="NAV_START_DATE")
     nav_history.add_argument("--end-date", dest="NAV_END_DATE")
 
@@ -113,22 +116,21 @@ def build_parser() -> argparse.ArgumentParser:
     stock.add_argument("--page-size", dest="STOCK_PAGE_SIZE")
     stock.add_argument("--market", dest="STOCK_MARKET", choices=["cn", "hk", "all"], default=None)
 
-    schedule = subparsers.add_parser("schedule")
-    schedule.add_argument("--nav-times", dest="NAV_PERFORMANCE_SCHEDULE_TIMES")
-    schedule.add_argument("--feature-time", dest="FEATURE_SCHEDULE_TIME")
-    schedule.add_argument("--run-on-start", dest="SCHEDULER_RUN_ON_START", choices=["0", "1"], default=None)
-    schedule.add_argument("--once", dest="SCHEDULER_ONCE", choices=["0", "1"], default=None)
-    schedule.add_argument("--dry-run", dest="SCHEDULER_DRY_RUN", choices=["0", "1"], default=None)
-    schedule.add_argument(
-        "--trigger",
-        dest="SCHEDULER_TRIGGER",
-        choices=["morning", "evening", "all"],
-        default=None,
+    score = subparsers.add_parser(
+        "score",
+        parents=[db_parent],
+        help="calculate scores, run backtests, or process queued score jobs",
     )
-
-    web = subparsers.add_parser("web")
-    web.add_argument("--host", dest="SCHEDULER_WEB_HOST")
-    web.add_argument("--port", dest="SCHEDULER_WEB_PORT")
+    score.add_argument(
+        "--mode",
+        choices=["current", "history", "jobs", "backtest", "recommend", "pipeline"],
+        default="current",
+    )
+    score.add_argument("--profile-id", type=int)
+    score.add_argument("--job-limit", type=int, default=10)
+    score.add_argument("--start-date", default="20180101")
+    score.add_argument("--end-date")
+    score.add_argument("--step-months", type=int, default=1)
 
     return parser
 
@@ -148,6 +150,12 @@ def run_command(args: argparse.Namespace) -> None:
     elif args.command == "nav-performance":
         jobs.crawl_nav_performance()
     elif args.command == "nav-history":
+        if args.LOG_SQL is None:
+            os.environ["LOG_SQL"] = "1"
+        if args.LOG_SQL_PARAMS is None:
+            os.environ["LOG_SQL_PARAMS"] = "1"
+        if args.LOG_SQL_MAX_PARAMS is None:
+            os.environ["LOG_SQL_MAX_PARAMS"] = os.getenv("NAV_WRITE_BATCH_SIZE", "200")
         result = jobs.crawl_nav_history()
         ensure_no_failures("nav-history", result[1])
     elif args.command == "feature":
@@ -168,10 +176,27 @@ def run_command(args: argparse.Namespace) -> None:
         jobs.crawl_sina_news()
     elif args.command == "stock":
         jobs.crawl_stocks()
-    elif args.command == "schedule":
-        scheduler.main()
-    elif args.command == "web":
-        scheduler_web.main()
+    elif args.command == "score":
+        if args.mode == "current":
+            scoring.calculate_current_scores(args.profile_id)
+        elif args.mode == "history":
+            scoring.build_historical_factor_snapshots(
+                args.start_date.replace("-", ""),
+                None if args.end_date is None else args.end_date.replace("-", ""),
+                args.step_months,
+            )
+        elif args.mode == "jobs":
+            scoring.process_pending_jobs(limit=args.job_limit)
+        elif args.mode == "backtest":
+            if args.profile_id is None:
+                raise ValueError("--profile-id is required for score --mode backtest")
+            scoring.backtest_profile(args.profile_id)
+        elif args.mode == "recommend":
+            scoring.recommend_weights()
+        else:
+            scoring.label_matured_snapshots()
+            scoring.calculate_current_scores(args.profile_id)
+            scoring.process_pending_jobs(limit=args.job_limit)
     else:
         raise ValueError(f"unsupported command: {args.command}")
 

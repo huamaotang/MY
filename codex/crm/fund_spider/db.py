@@ -158,6 +158,7 @@ def ensure_schema(config: DatabaseConfig) -> None:
                 f"CREATE DATABASE IF NOT EXISTS {database} "
                 "DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
             )
+            cursor.execute(f"USE {database}")
             cursor.execute(
                 f"""
                 CREATE TABLE IF NOT EXISTS {database}.fund_detail (
@@ -190,6 +191,13 @@ def ensure_schema(config: DatabaseConfig) -> None:
             _ensure_portfolio_holding_columns(cursor, config.database)
             cursor.execute(_fund_feature_data_ddl(database))
             cursor.execute(_fund_rating_ddl(database))
+            cursor.execute(_fund_scale_history_ddl(database))
+            cursor.execute(_fund_score_profile_ddl(database))
+            cursor.execute(_fund_score_factor_snapshot_ddl(database))
+            cursor.execute(_fund_score_result_ddl(database))
+            cursor.execute(_fund_score_backtest_ddl(database))
+            cursor.execute(_fund_score_job_ddl(database))
+            _ensure_default_score_profile(cursor)
             cursor.execute(_fund_refresh_state_ddl(database))
             cursor.execute(_fund_crawl_cursor_ddl(database))
             cursor.execute(_yangjibao_news_ddl(database))
@@ -404,6 +412,7 @@ def list_fund_codes(
     if limit is not None:
         sql += " LIMIT %s OFFSET %s"
         params.extend([limit, offset])
+    log_write_sql("list_fund_codes", sql, tuple(params))
     with connection.cursor() as cursor:
         cursor.execute(sql, tuple(params))
         rows = cursor.fetchall()
@@ -434,10 +443,52 @@ def update_fund_profile(connection: Connection, profile: FundProfile) -> int:
         profile.fund_code,
     )
     log_write_sql("update_fund_profile", sql, values)
-    with connection.cursor() as cursor:
-        affected = cursor.execute(sql, values)
-    connection.commit()
+    try:
+        with connection.cursor() as cursor:
+            affected = cursor.execute(sql, values)
+            scale_value = _parse_scale_yi(profile.net_asset_scale)
+            scale_date = re.sub(r"\D", "", profile.scale_date or "")
+            if scale_date:
+                cursor.execute(
+                    """
+                    INSERT INTO fund_scale_history (
+                      fund_code, scale_date, net_asset_scale_yi, source_text
+                    )
+                    VALUES (%s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                      net_asset_scale_yi = VALUES(net_asset_scale_yi),
+                      source_text = VALUES(source_text),
+                      updated_at = CURRENT_TIMESTAMP
+                    """,
+                    (
+                        profile.fund_code,
+                        scale_date,
+                        scale_value,
+                        profile.net_asset_scale,
+                    ),
+                )
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
     return affected
+
+
+def _parse_scale_yi(value: str | None) -> str | None:
+    if not value:
+        return None
+    match = re.search(r"(-?\d+(?:\.\d+)?)\s*(万亿元|亿元|万元|元)?", value.replace(",", ""))
+    if not match:
+        return None
+    number = float(match.group(1))
+    unit = match.group(2) or "亿元"
+    if unit == "万亿元":
+        number *= 10000
+    elif unit == "万元":
+        number /= 10000
+    elif unit == "元":
+        number /= 100000000
+    return f"{number:.4f}"
 
 
 def upsert_nav_history(connection: Connection, rows: Iterable[FundNavHistory]) -> int:
@@ -470,9 +521,13 @@ def upsert_nav_history(connection: Connection, rows: Iterable[FundNavHistory]) -
           updated_at = CURRENT_TIMESTAMP
     """
     log_write_sql("upsert_nav_history", sql, values)
-    with connection.cursor() as cursor:
-        cursor.executemany(sql, values)
-    connection.commit()
+    try:
+        with connection.cursor() as cursor:
+            cursor.executemany(sql, values)
+        connection.commit()
+    except Exception:
+        connection.rollback()
+        raise
     return len(values)
 
 
@@ -832,7 +887,14 @@ def log_write_sql(operation: str, sql: str, params: Sequence[Any] | Sequence[Seq
 
     if _env_bool("LOG_SQL_PARAMS", False):
         max_params = int(os.getenv("LOG_SQL_MAX_PARAMS", "3"))
-        logger.info("sql operation=%s params_sample=%r", operation, _sample_sql_params(params, max_params))
+        sampled_params = _sample_sql_params(params, max_params)
+        omitted = max(0, row_count - len(sampled_params)) if row_count > 1 else 0
+        logger.info(
+            "sql operation=%s params=%r omitted_rows=%s",
+            operation,
+            sampled_params,
+            omitted,
+        )
 
 
 def _compact_sql(sql: str) -> str:
@@ -1207,6 +1269,170 @@ def _fund_rating_ddl(database: str) -> str:
           KEY idx_fund_rating_date (rating_date)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='基金评级表'
     """
+
+
+def _fund_scale_history_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_scale_history (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          fund_code VARCHAR(20) NOT NULL,
+          scale_date VARCHAR(8) NOT NULL,
+          net_asset_scale_yi DECIMAL(20,4) NULL,
+          source_text VARCHAR(100) NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_fund_scale_code_date (fund_code, scale_date),
+          KEY idx_fund_scale_date (scale_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """
+
+
+def _fund_score_profile_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_score_profile (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          profile_name VARCHAR(100) NOT NULL,
+          version_no INT NOT NULL DEFAULT 1,
+          status VARCHAR(32) NOT NULL DEFAULT 'DRAFT',
+          source_type VARCHAR(32) NOT NULL DEFAULT 'MANUAL',
+          target_months INT NOT NULL DEFAULT 12,
+          weights_json JSON NOT NULL,
+          calibration_json JSON NULL,
+          validation_status VARCHAR(32) NOT NULL DEFAULT 'UNVERIFIED',
+          is_active TINYINT(1) NOT NULL DEFAULT 0,
+          created_by VARCHAR(64) NULL,
+          approved_by VARCHAR(64) NULL,
+          approved_at DATETIME NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_fund_score_profile_name_version (profile_name, version_no),
+          KEY idx_fund_score_profile_active (is_active, status)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """
+
+
+def _fund_score_factor_snapshot_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_score_factor_snapshot (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          as_of_date VARCHAR(8) NOT NULL,
+          fund_code VARCHAR(20) NOT NULL,
+          fund_type VARCHAR(100) NULL,
+          comparison_group VARCHAR(100) NULL,
+          factors_json JSON NOT NULL,
+          normalized_json JSON NULL,
+          data_coverage DECIMAL(8,6) NOT NULL DEFAULT 0,
+          forward_return DECIMAL(18,8) NULL,
+          profitable TINYINT(1) NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_fund_score_factor_date_code (as_of_date, fund_code),
+          KEY idx_fund_score_factor_code_date (fund_code, as_of_date),
+          KEY idx_fund_score_factor_group_date (comparison_group, as_of_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """
+
+
+def _fund_score_result_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_score_result (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          profile_id BIGINT UNSIGNED NOT NULL,
+          fund_code VARCHAR(20) NOT NULL,
+          as_of_date VARCHAR(8) NOT NULL,
+          total_score DECIMAL(8,4) NULL,
+          profit_probability DECIMAL(8,6) NULL,
+          confidence VARCHAR(16) NOT NULL DEFAULT 'LOW',
+          data_coverage DECIMAL(8,6) NOT NULL DEFAULT 0,
+          comparison_group VARCHAR(100) NULL,
+          category_rank INT NULL,
+          category_count INT NULL,
+          components_json JSON NULL,
+          methodology_version VARCHAR(32) NOT NULL DEFAULT 'fund-score-v1',
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY uk_fund_score_result_profile_code_date (profile_id, fund_code, as_of_date),
+          KEY idx_fund_score_result_active_list (profile_id, as_of_date, total_score),
+          KEY idx_fund_score_result_code_date (fund_code, as_of_date)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """
+
+
+def _fund_score_backtest_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_score_backtest (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          profile_id BIGINT UNSIGNED NOT NULL,
+          train_start_date VARCHAR(8) NULL,
+          train_end_date VARCHAR(8) NULL,
+          test_start_date VARCHAR(8) NULL,
+          test_end_date VARCHAR(8) NULL,
+          sample_count INT NOT NULL DEFAULT 0,
+          fold_count INT NOT NULL DEFAULT 0,
+          auc DECIMAL(10,6) NULL,
+          brier_score DECIMAL(10,6) NULL,
+          baseline_brier_score DECIMAL(10,6) NULL,
+          top20_win_rate DECIMAL(10,6) NULL,
+          baseline_win_rate DECIMAL(10,6) NULL,
+          win_rate_lift DECIMAL(10,6) NULL,
+          passed TINYINT(1) NOT NULL DEFAULT 0,
+          limitations_json JSON NULL,
+          metrics_json JSON NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          KEY idx_fund_score_backtest_profile_time (profile_id, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """
+
+
+def _fund_score_job_ddl(database: str) -> str:
+    return f"""
+        CREATE TABLE IF NOT EXISTS {database}.fund_score_job (
+          id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+          job_type VARCHAR(32) NOT NULL,
+          profile_id BIGINT UNSIGNED NULL,
+          status VARCHAR(32) NOT NULL DEFAULT 'PENDING',
+          requested_by VARCHAR(64) NULL,
+          message VARCHAR(1000) NULL,
+          started_at DATETIME NULL,
+          finished_at DATETIME NULL,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          KEY idx_fund_score_job_status_time (status, created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    """
+
+
+def _ensure_default_score_profile(cursor: Any) -> None:
+    cursor.execute("SELECT COUNT(*) AS count_value FROM fund_score_profile")
+    row = cursor.fetchone()
+    if row and int(row["count_value"]) > 0:
+        return
+    weights = (
+        '{"return_1m":1,"return_3m":3,"return_6m":5,'
+        '"return_1y":7,"return_2y":5,"return_3y":4,'
+        '"volatility_1y":5,"volatility_3y":10,'
+        '"sharpe_1y":10,"sharpe_3y":15,'
+        '"drawdown_1y":8,"drawdown_3y":12,'
+        '"rating_zhaoshang":2,"rating_shanghai_3y":2,'
+        '"rating_shanghai_5y":1,"rating_jian":2,'
+        '"rating_morningstar":3,"scale":5}'
+    )
+    cursor.execute(
+        """
+        INSERT INTO fund_score_profile (
+          profile_name, version_no, status, source_type, target_months,
+          weights_json, validation_status, is_active, created_by
+        )
+        VALUES ('保守初始权重', 1, 'ACTIVE', 'SEED', 12, %s, 'UNVERIFIED', 1, 'system')
+        """,
+        (weights,),
+    )
 
 
 def _fund_refresh_state_ddl(database: str) -> str:

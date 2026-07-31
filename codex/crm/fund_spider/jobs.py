@@ -75,6 +75,8 @@ class NavHistoryOptions:
     max_pages: int | None = None
     start_date: str = ""
     end_date: str = ""
+    page_workers: int = 4
+    write_batch_size: int = 200
 
 
 @dataclass(frozen=True)
@@ -215,13 +217,48 @@ def crawl_nav_history(
 ) -> tuple[int, int, int]:
     options = options or nav_history_options_from_env()
     validate_date_range(options.start_date, options.end_date)
+    if options.page_workers < 1:
+        raise ValueError("NAV_PAGE_WORKERS must be greater than or equal to 1")
+    if options.write_batch_size < 1:
+        raise ValueError("NAV_WRITE_BATCH_SIZE must be greater than or equal to 1")
     db_config = db_config or database_config_from_env()
     request_config = request_config or request_config_from_env()
 
+    logger.info(
+        "step=nav_history status=started fund_code=%s fund_start_code=%s "
+        "fund_limit=%s fund_offset=%s page_size=%s start_page=%s max_pages=%s "
+        "start_date=%s end_date=%s page_workers=%s write_batch_size=%s "
+        "request_min_delay=%s request_max_delay=%s request_timeout=%s request_retries=%s "
+        "db_host=%s db_port=%s db_name=%s",
+        options.selector.fund_code or "-",
+        options.selector.fund_start_code or "-",
+        options.selector.fund_limit,
+        options.selector.fund_offset,
+        options.page_size,
+        options.start_page,
+        options.max_pages,
+        options.start_date or "-",
+        options.end_date or "-",
+        options.page_workers,
+        options.write_batch_size,
+        request_config.min_delay_seconds,
+        request_config.max_delay_seconds,
+        request_config.timeout_seconds,
+        request_config.max_retries,
+        db_config.host,
+        db_config.port,
+        db_config.database,
+    )
     ensure_schema(db_config)
     fund_codes = load_selected_fund_codes(db_config, options.selector, require_existing=True)
     if options.selector.fund_code and not fund_codes:
         raise ValueError(f"fund {options.selector.fund_code} does not exist in fund_detail")
+    logger.info(
+        "step=nav_history action=select_funds selected=%s first=%s last=%s",
+        len(fund_codes),
+        fund_codes[0] if fund_codes else "-",
+        fund_codes[-1] if fund_codes else "-",
+    )
 
     spider = EastMoneyNavSpider(request_config)
     succeeded = 0
@@ -231,6 +268,7 @@ def crawl_nav_history(
         connection = connect(db_config)
         try:
             fund_saved = 0
+            pending_rows = []
             for page in spider.iter_pages(
                 fund_code=fund_code,
                 page_size=options.page_size,
@@ -238,16 +276,37 @@ def crawl_nav_history(
                 max_pages=options.max_pages,
                 start_date=options.start_date,
                 end_date=options.end_date,
+                page_workers=options.page_workers,
             ):
-                saved = upsert_nav_history(connection, page.rows)
-                fund_saved += saved
-                total_saved += saved
+                pending_rows.extend(page.rows)
                 logger.info(
-                    "step=nav_history fund=%s page=%s/%s parsed=%s saved=%s",
+                    "step=nav_history fund=%s page=%s/%s parsed=%s pending=%s",
                     fund_code,
                     page.page_index,
                     page.total_pages,
                     len(page.rows),
+                    len(pending_rows),
+                )
+                while len(pending_rows) >= options.write_batch_size:
+                    batch_rows = pending_rows[: options.write_batch_size]
+                    del pending_rows[: options.write_batch_size]
+                    saved = upsert_nav_history(connection, batch_rows)
+                    fund_saved += saved
+                    total_saved += saved
+                    logger.info(
+                        "step=nav_history fund=%s action=upsert rows=%s saved=%s",
+                        fund_code,
+                        len(batch_rows),
+                        saved,
+                    )
+            if pending_rows:
+                saved = upsert_nav_history(connection, pending_rows)
+                fund_saved += saved
+                total_saved += saved
+                logger.info(
+                    "step=nav_history fund=%s action=upsert rows=%s saved=%s",
+                    fund_code,
+                    len(pending_rows),
                     saved,
                 )
             succeeded += 1
@@ -571,6 +630,8 @@ def nav_history_options_from_env() -> NavHistoryOptions:
         max_pages=parse_optional_int(os.getenv("NAV_MAX_PAGES"), "NAV_MAX_PAGES"),
         start_date=start_date,
         end_date=end_date,
+        page_workers=int(os.getenv("NAV_PAGE_WORKERS", "4")),
+        write_batch_size=int(os.getenv("NAV_WRITE_BATCH_SIZE", "200")),
     )
 
 

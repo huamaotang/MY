@@ -98,7 +98,7 @@ def parse_profile(fund_code: str, text: str) -> FundProfile:
         fund_code=fund_code,
         inception_date=_normalize_date(values["成立日期"]),
         fund_manager=values["基金经理"],
-        fund_type=values["类型"],
+        fund_type=_normalize_fund_type(values["类型"]),
         management_company=values["管理人"],
         net_asset_scale=net_asset_scale,
         scale_date=_normalize_date(scale_date),
@@ -145,3 +145,9 @@ def _normalize_date(text: str | None) -> str | None:
         return None
     match = re.search(r"\d{4}-\d{2}-\d{2}", text)
     return match.group(0) if match else None
+
+
+def _normalize_fund_type(text: str | None) -> str | None:
+    if not text:
+        return None
+    return text.split("-", 1)[0].strip() or None

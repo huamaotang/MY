@@ -1,0 +1,167 @@
+prefect-version: 3.7.7
+name: crm-fund-tasks
+
+build: null
+push: null
+pull:
+  - prefect.deployments.steps.set_working_directory:
+      directory: "{{ $CRM_FUND_SPIDER_DIR }}"
+
+deployments:
+  - name: morning-fund-refresh
+    version: "1"
+    paused: true
+    description: 每天 08:00 依次刷新基金净值/阶段收益和基金特征数据。
+    tags: [crm, fund, daily]
+    entrypoint: prefect_flows.py:morning_fund_refresh_flow
+    schedules:
+      - cron: "0 8 * * *"
+        timezone: Asia/Shanghai
+        slug: morning-0800
+    concurrency_limit:
+      limit: 1
+      collision_strategy: ENQUEUE
+    work_pool:
+      name: crm-process-pool
+      work_queue_name: default
+      job_variables:
+        working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
+
+  - name: evening-nav-performance
+    version: "1"
+    paused: true
+    description: 每天 21:00 刷新基金净值和阶段收益快照。
+    tags: [crm, fund, daily]
+    entrypoint: prefect_flows.py:nav_performance_flow
+    schedules:
+      - cron: "0 21 * * *"
+        timezone: Asia/Shanghai
+        slug: evening-2100
+    concurrency_limit:
+      limit: 1
+      collision_strategy: ENQUEUE
+    work_pool:
+      name: crm-process-pool
+      work_queue_name: default
+      job_variables:
+        working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
+
+  - name: feature-refresh-manual
+    version: "1"
+    description: 独立手动刷新基金特征数据；日常自动刷新由早间流程串行执行。
+    tags: [crm, fund, manual]
+    entrypoint: prefect_flows.py:feature_refresh_flow
+    concurrency_limit:
+      limit: 1
+      collision_strategy: ENQUEUE
+    work_pool:
+      name: crm-process-pool
+      work_queue_name: default
+      job_variables:
+        working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
+
+  - name: score-pipeline
+    version: "1"
+    paused: true
+    description: 每天 22:30 标注历史样本、计算基金评分并处理待执行评分任务。
+    tags: [crm, fund, score, daily]
+    entrypoint: prefect_flows.py:score_pipeline_flow
+    schedules:
+      - cron: "30 22 * * *"
+        timezone: Asia/Shanghai
+        slug: daily-2230
+    concurrency_limit:
+      limit: 1
+      collision_strategy: ENQUEUE
+    work_pool:
+      name: crm-process-pool
+      work_queue_name: default
+      job_variables:
+        working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
+
+  - name: sina-news
+    version: "1"
+    paused: true
+    description: 每 120 秒抓取一次新浪财经新闻。
+    tags: [crm, news, interval]
+    entrypoint: prefect_flows.py:sina_news_flow
+    schedules:
+      - interval: 120
+        timezone: Asia/Shanghai
+        slug: every-120-seconds
+    concurrency_limit:
+      limit: 1
+      collision_strategy: ENQUEUE
+    work_pool:
+      name: crm-process-pool
+      work_queue_name: default
+      job_variables:
+        working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
+
+  - name: stock-cn
+    version: "1"
+    paused: true
+    description: 工作日在 A 股交易窗口内每 5 分钟刷新一次行情。
+    tags: [crm, stock, cn]
+    entrypoint: prefect_flows.py:stock_cn_flow
+    schedules:
+      - cron: "15-55/5 9 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: cn-0915-0955
+      - cron: "*/5 10 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: cn-1000-1055
+      - cron: "0-35/5 11 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: cn-1100-1135
+      - cron: "55 12 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: cn-1255
+      - cron: "*/5 13-14 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: cn-1300-1455
+      - cron: "0-30/5 15 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: cn-1500-1530
+    concurrency_limit:
+      limit: 1
+      collision_strategy: ENQUEUE
+    work_pool:
+      name: crm-process-pool
+      work_queue_name: default
+      job_variables:
+        working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
+
+  - name: stock-hk
+    version: "1"
+    paused: true
+    description: 工作日在港股交易窗口内每 5 分钟刷新一次行情。
+    tags: [crm, stock, hk]
+    entrypoint: prefect_flows.py:stock_hk_flow
+    schedules:
+      - cron: "25-55/5 9 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: hk-0925-0955
+      - cron: "*/5 10-11 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: hk-1000-1155
+      - cron: "0-5/5 12 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: hk-1200-1205
+      - cron: "55 12 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: hk-1255
+      - cron: "*/5 13-15 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: hk-1300-1555
+      - cron: "0-10/5 16 * * 1-5"
+        timezone: Asia/Shanghai
+        slug: hk-1600-1610
+    concurrency_limit:
+      limit: 1
+      collision_strategy: ENQUEUE
+    work_pool:
+      name: crm-process-pool
+      work_queue_name: default
+      job_variables:
+        working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"

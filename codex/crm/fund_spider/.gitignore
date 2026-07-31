@@ -1,5 +1,6 @@
 .env
 .venv/
+.prefect/
 .idea/
 logs/
 __pycache__/

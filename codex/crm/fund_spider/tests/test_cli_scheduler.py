@@ -3,21 +3,20 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
-from datetime import datetime
 from pathlib import Path
+from unittest.mock import call
 from unittest.mock import patch
-from zoneinfo import ZoneInfo
+
+import yaml
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import cli  # noqa: E402
 import jobs  # noqa: E402
-from runtime import scheduler  # noqa: E402
+import prefect_flows  # noqa: E402
+from runtime import task_runner  # noqa: E402
 from settings import normalize_query_date  # noqa: E402
-
-
-TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 
 class CliTest(unittest.TestCase):
@@ -29,6 +28,7 @@ class CliTest(unittest.TestCase):
             "nav-performance",
             parser.parse_args(["nav-performance"]).command,
         )
+        self.assertEqual("current", parser.parse_args(["score"]).mode)
         history = parser.parse_args(
             [
                 "nav-history",
@@ -43,10 +43,33 @@ class CliTest(unittest.TestCase):
         self.assertEqual("519674", history.FUND_CODE)
         self.assertEqual("20260701", history.NAV_START_DATE)
         self.assertEqual("2026-07-28", history.NAV_END_DATE)
+        history_alias = parser.parse_args(
+            [
+                "nav-history",
+                "--fund_code",
+                "000001",
+                "--nav-page-workers",
+                "8",
+                "--nav-write-batch-size",
+                "500",
+            ]
+        )
+        self.assertEqual("000001", history_alias.FUND_CODE)
+        self.assertEqual("8", history_alias.NAV_PAGE_WORKERS)
+        self.assertEqual("500", history_alias.NAV_WRITE_BATCH_SIZE)
 
     def test_old_commands_are_removed(self) -> None:
         parser = cli.build_parser()
-        for command in ("fund-list", "nav", "profile-nav", "rating-list", "all", "daily"):
+        for command in (
+            "fund-list",
+            "nav",
+            "profile-nav",
+            "rating-list",
+            "all",
+            "daily",
+            "schedule",
+            "web",
+        ):
             with self.subTest(command=command), self.assertRaises(SystemExit):
                 parser.parse_args([command])
 
@@ -79,32 +102,56 @@ class DateRangeTest(unittest.TestCase):
             normalize_query_date("20260230")
 
 
-class SchedulerTest(unittest.TestCase):
-    def test_morning_trigger_combines_nav_and_feature(self) -> None:
-        trigger = scheduler.next_scheduled_trigger(
-            [(8, 0), (21, 0)],
-            (8, 0),
-            datetime(2026, 7, 28, 7, 30, tzinfo=TIMEZONE),
+class PrefectTaskTest(unittest.TestCase):
+    def prefect_config(self) -> dict:
+        path = Path(__file__).resolve().parents[1] / "prefect.yaml"
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    def test_prefect_deployments_cover_all_business_jobs(self) -> None:
+        config = self.prefect_config()
+        deployments = {row["name"]: row for row in config["deployments"]}
+
+        self.assertEqual(
+            {
+                "morning-fund-refresh",
+                "evening-nav-performance",
+                "feature-refresh-manual",
+                "score-pipeline",
+                "sina-news",
+                "stock-cn",
+                "stock-hk",
+            },
+            set(deployments),
+        )
+        self.assertEqual(
+            120,
+            deployments["sina-news"]["schedules"][0]["interval"],
+        )
+        self.assertTrue(
+            all(
+                schedule["timezone"] == "Asia/Shanghai"
+                for deployment in deployments.values()
+                for schedule in deployment.get("schedules", [])
+            )
+        )
+        self.assertTrue(
+            all(
+                deployment["concurrency_limit"]["limit"] == 1
+                for deployment in deployments.values()
+            )
         )
 
-        self.assertEqual(datetime(2026, 7, 28, 8, 0, tzinfo=TIMEZONE), trigger.run_at)
-        self.assertEqual(("nav-performance", "feature"), trigger.jobs)
+    def test_morning_flow_runs_nav_before_feature(self) -> None:
+        with patch.object(prefect_flows, "run_business_job") as run_job:
+            prefect_flows.morning_fund_refresh_flow.fn(dry_run=True)
 
-    def test_evening_and_cross_day_triggers(self) -> None:
-        evening = scheduler.next_scheduled_trigger(
-            [(8, 0), (21, 0)],
-            (8, 0),
-            datetime(2026, 7, 28, 10, 0, tzinfo=TIMEZONE),
+        self.assertEqual(
+            [
+                call("nav-performance", dry_run=True),
+                call("feature", dry_run=True),
+            ],
+            run_job.call_args_list,
         )
-        next_day = scheduler.next_scheduled_trigger(
-            [(8, 0), (21, 0)],
-            (8, 0),
-            datetime(2026, 7, 28, 22, 0, tzinfo=TIMEZONE),
-        )
-
-        self.assertEqual(("nav-performance",), evening.jobs)
-        self.assertEqual(datetime(2026, 7, 28, 21, 0, tzinfo=TIMEZONE), evening.run_at)
-        self.assertEqual(datetime(2026, 7, 29, 8, 0, tzinfo=TIMEZONE), next_day.run_at)
 
     def test_job_failure_does_not_stop_following_job(self) -> None:
         statuses: list[tuple[str, str]] = []
@@ -112,15 +159,15 @@ class SchedulerTest(unittest.TestCase):
             log_dir = Path(temp_dir)
             lock_file = log_dir / "scheduler.lock"
             with (
-                patch.object(scheduler, "LOG_DIR", log_dir),
-                patch.object(scheduler, "LOCK_FILE", lock_file),
+                patch.object(task_runner, "LOG_DIR", log_dir),
+                patch.object(task_runner, "LOCK_FILE", lock_file),
                 patch.object(
-                    scheduler,
+                    task_runner,
                     "run_subprocess_job",
                     side_effect=[1, 0],
                 ) as run_job,
             ):
-                succeeded = scheduler.run_scheduled_jobs(
+                succeeded = task_runner.run_scheduled_jobs(
                     ("nav-performance", "feature"),
                     status_callback=lambda name, status: statuses.append((name, status)),
                 )
@@ -133,14 +180,38 @@ class SchedulerTest(unittest.TestCase):
         )
 
     def test_duplicate_manual_jobs_are_deduplicated(self) -> None:
-        built = scheduler.build_jobs(
-            ("nav-performance", "feature", "nav-performance")
+        built = task_runner.build_jobs(
+            ("nav-performance", "feature", "score", "nav-performance")
         )
-        self.assertEqual(["nav-performance", "feature"], [job.name for job in built])
+        self.assertEqual(["nav-performance", "feature", "score"], [job.name for job in built])
         self.assertEqual(
-            ["./bin/run_nav_performance.sh", "./bin/run_feature.sh"],
+            ["./bin/run_nav_performance.sh", "./bin/run_feature.sh", "./bin/run_score.sh"],
             [job.script for job in built],
         )
+
+    def test_all_migrated_job_commands_are_available(self) -> None:
+        built = task_runner.build_jobs(
+            (
+                "nav-performance",
+                "feature",
+                "score",
+                "sina-news",
+                "stock-cn",
+                "stock-hk",
+            )
+        )
+        self.assertEqual(
+            [
+                "nav-performance",
+                "feature",
+                "score",
+                "sina-news",
+                "stock-cn",
+                "stock-hk",
+            ],
+            [job.name for job in built],
+        )
+        self.assertTrue(all("--foreground" in job.args for job in built))
 
 
 if __name__ == "__main__":

@@ -5,7 +5,9 @@ import logging
 import math
 import random
 import re
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlencode
@@ -59,7 +61,11 @@ class EastMoneyNavSpider:
         max_pages: int | None = None,
         start_date: str = "",
         end_date: str = "",
+        page_workers: int = 1,
     ):
+        if page_workers < 1:
+            raise ValueError("page_workers must be greater than or equal to 1")
+
         first_page = self.fetch_page(fund_code, start_page, page_size, start_date, end_date)
         yield first_page
 
@@ -67,8 +73,42 @@ class EastMoneyNavSpider:
         if max_pages is not None:
             last_page = min(last_page, start_page + max_pages - 1)
 
-        for page_index in range(start_page + 1, last_page + 1):
-            yield self.fetch_page(fund_code, page_index, page_size, start_date, end_date)
+        page_indexes = range(start_page + 1, last_page + 1)
+        if page_workers == 1:
+            for page_index in page_indexes:
+                yield self.fetch_page(fund_code, page_index, page_size, start_date, end_date)
+            return
+
+        worker_state = threading.local()
+
+        def fetch_page(page_index: int) -> NavPage:
+            worker_spider = getattr(worker_state, "spider", None)
+            if worker_spider is None:
+                worker_spider = EastMoneyNavSpider(self.config)
+                worker_state.spider = worker_spider
+            return worker_spider.fetch_page(
+                fund_code,
+                page_index,
+                page_size,
+                start_date,
+                end_date,
+            )
+
+        worker_count = min(page_workers, max(0, last_page - start_page))
+        if worker_count == 0:
+            return
+        logger.info(
+            "step=nav_fetch fund=%s pages=%s-%s workers=%s",
+            fund_code,
+            start_page + 1,
+            last_page,
+            worker_count,
+        )
+        with ThreadPoolExecutor(
+            max_workers=worker_count,
+            thread_name_prefix="nav-page",
+        ) as executor:
+            yield from executor.map(fetch_page, page_indexes)
 
     def fetch_page(
         self,
