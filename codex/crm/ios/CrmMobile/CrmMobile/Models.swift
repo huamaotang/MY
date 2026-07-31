@@ -58,6 +58,39 @@ struct Fund: Decodable, Identifiable, Hashable {
     let latestRating: FundRating?
     let features: [FundFeature]?
     let latestValuation: FundDailyValuation?
+    let latestScore: FundScoreSummary?
+}
+
+struct FundScoreSummary: Decodable, Hashable {
+    let profileId: Int
+    let profileName: String
+    let profileVersion: Int
+    let validationStatus: String
+    let asOfDate: String
+    let totalScore: Decimal?
+    let profitProbability: Decimal?
+    let confidence: String
+    let dataCoverage: Decimal
+    let comparisonGroup: String?
+    let categoryRank: Int?
+    let categoryCount: Int?
+    let methodologyVersion: String
+}
+
+struct FundScoreComponent: Decodable, Hashable {
+    let factorKey: String
+    let label: String
+    let rawValue: Decimal?
+    let normalizedScore: Decimal?
+    let weight: Int
+    let effectiveWeight: Decimal?
+    let contribution: Decimal?
+}
+
+struct FundScoreDetail: Decodable {
+    let summary: FundScoreSummary
+    let components: [FundScoreComponent]
+    let disclaimer: String
 }
 
 struct FundNav: Decodable, Hashable {
@@ -144,6 +177,7 @@ struct FundDetail: Decodable {
     let latestHoldings: [FundHolding]
     let features: [FundFeature]
     let ratings: [FundRating]
+    let scoreDetail: FundScoreDetail?
 
     enum CodingKeys: String, CodingKey {
         case fund
@@ -153,6 +187,7 @@ struct FundDetail: Decodable {
         case latestHoldings
         case features
         case ratings
+        case scoreDetail
     }
 
     init(from decoder: Decoder) throws {
@@ -164,6 +199,7 @@ struct FundDetail: Decodable {
         latestHoldings = try container.decodeIfPresent([FundHolding].self, forKey: .latestHoldings) ?? []
         features = try container.decodeIfPresent([FundFeature].self, forKey: .features) ?? []
         ratings = try container.decodeIfPresent([FundRating].self, forKey: .ratings) ?? []
+        scoreDetail = try container.decodeIfPresent(FundScoreDetail.self, forKey: .scoreDetail)
     }
 }
 

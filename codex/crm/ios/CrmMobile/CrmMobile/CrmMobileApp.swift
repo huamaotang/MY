@@ -1155,7 +1155,8 @@ struct PortfolioHoldingDetailView: View {
             latestPerformance: nil,
             latestRating: nil,
             features: nil,
-            latestValuation: nil
+            latestValuation: nil,
+            latestScore: nil
         )
     }
 
@@ -1417,7 +1418,9 @@ struct ProductListView: View {
     @State private var wasShowingDetail = false
 
     private let pageSize = 20
-    private let fundTypes = ["", "股票型", "混合型", "债券型", "指数型", "货币型"]
+    private let fundTypes = [
+        "", "股票型", "混合型", "债券型", "指数型", "货币型", "FOF", "QDII", "商品"
+    ]
 
     private var querySignature: String {
         "\(fundType)|\(purchaseFilter)|\(sortField)|\(sortOrder)"
@@ -1651,6 +1654,9 @@ private struct FundSpreadsheet: View {
 
     private var metricHeader: some View {
         HStack(spacing: 0) {
+            sortableHeader("基金评分", field: "fundScore", defaultOrder: "descend", width: 96)
+            sortableHeader("1年盈利概率", field: "profitProbability", defaultOrder: "descend", width: 112)
+            plainHeader("置信度", width: 82)
             sortableHeader("可购买", field: "canBuy", defaultOrder: "descend", width: 84)
             plainHeader("当日预估", width: 96)
             plainHeader("估值日期", width: 148, alignment: .center)
@@ -1688,6 +1694,12 @@ private struct FundSpreadsheet: View {
 
     private func metricRow(_ fund: Fund) -> some View {
         HStack(spacing: 0) {
+            cell(fund.latestScore?.totalScore.map { String(format: "%.1f", NSDecimalNumber(decimal: $0).doubleValue) } ?? "数据不足",
+                 width: 96, color: fund.latestScore?.totalScore == nil ? .secondary : .blue, weight: .semibold)
+            cell(fund.latestScore?.profitProbability.map {
+                String(format: "%.1f%%", NSDecimalNumber(decimal: $0).doubleValue * 100)
+            } ?? "未验证", width: 112, color: .secondary, weight: .semibold)
+            cell(scoreConfidence(fund.latestScore?.confidence), width: 82, color: .secondary)
             cell(fund.canBuy == true ? "可购" : "不可购", width: 84,
                  color: fund.canBuy == true ? .green : .secondary, weight: .semibold)
             percentCell(fund.latestValuation?.estimatedChangeRate, width: 96)
@@ -1782,6 +1794,15 @@ private struct FundSpreadsheet: View {
             return "\(feature.periodLabel):\(value)"
         }.joined(separator: " / ")
     }
+
+    private func scoreConfidence(_ value: String?) -> String {
+        switch value {
+        case "HIGH": return "高"
+        case "MEDIUM": return "中"
+        case "LOW": return "低"
+        default: return "数据不足"
+        }
+    }
 }
 
 struct ProductDetailView: View {
@@ -1819,6 +1840,59 @@ struct ProductDetailView: View {
                 Section {
                     Text(errorMessage)
                         .foregroundStyle(.red)
+                }
+            }
+
+            Section("基金评分") {
+                if let score = detail?.scoreDetail {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("综合评分").font(.caption).foregroundStyle(.secondary)
+                            Text(score.summary.totalScore.map {
+                                String(format: "%.1f / 100", NSDecimalNumber(decimal: $0).doubleValue)
+                            } ?? "数据不足")
+                            .font(.title2.bold())
+                            .foregroundStyle(.blue)
+                        }
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("未来1年盈利概率").font(.caption).foregroundStyle(.secondary)
+                            Text(score.summary.profitProbability.map {
+                                String(format: "%.1f%%", NSDecimalNumber(decimal: $0).doubleValue * 100)
+                            } ?? "未验证")
+                            .font(.headline)
+                        }
+                    }
+                    DetailLine(title: "方案", value: "\(score.summary.profileName) v\(score.summary.profileVersion)")
+                    DetailLine(title: "比较组", value: score.summary.comparisonGroup)
+                    DetailLine(
+                        title: "组内排名",
+                        value: score.summary.categoryRank.flatMap { rank in
+                            score.summary.categoryCount.map { "\(rank)/\($0)" }
+                        }
+                    )
+                    DetailLine(
+                        title: "数据覆盖率",
+                        value: String(format: "%.1f%%", NSDecimalNumber(decimal: score.summary.dataCoverage).doubleValue * 100)
+                    )
+                    ForEach(score.components, id: \.factorKey) { component in
+                        let contribution = component.contribution.map {
+                            String(format: "%.2f", NSDecimalNumber(decimal: $0).doubleValue)
+                        } ?? "-"
+                        HStack {
+                            Text(component.label)
+                            Spacer()
+                            Text("权重 \(component.weight) · 贡献 \(contribution)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text(score.disclaimer)
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                } else {
+                    Text("数据不足，暂未生成评分")
+                        .foregroundStyle(.secondary)
                 }
             }
 

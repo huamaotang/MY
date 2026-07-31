@@ -151,6 +151,9 @@ type ApiResponse<T> = {
 | `listCustomers` | `GET /customers` | 客户分页 |
 | `saveCustomer` | `POST/PUT /customers` | 新增或修改客户 |
 | `deleteCustomer` | `DELETE /customers/{id}` | 删除客户 |
+| `listFunds` | `GET /funds` 或 `GET /funds/favorites` | 基金或当前用户自选基金分页 |
+| `addFundFavorite` | `POST /funds/{fundCode}/favorite` | 加入自选 |
+| `removeFundFavorite` | `DELETE /funds/{fundCode}/favorite` | 取消自选 |
 | `listUsers` | `GET /users` | 用户列表 |
 | `saveUser` | `POST/PUT /users` | 新增或修改用户 |
 | `deleteUser` | `DELETE /users/{id}` | 删除用户 |
@@ -168,7 +171,7 @@ type ApiResponse<T> = {
 `App.tsx` 维护整体布局和当前视图：
 
 ```ts
-type ViewKey = 'dashboard' | 'customers' | 'contacts' | 'follows' | 'users' | 'roles' | 'menus';
+type ViewKey = 'dashboard' | 'customers' | 'contacts' | 'follows' | 'funds' | 'fundFavorites' | 'users' | 'roles' | 'menus';
 ```
 
 左侧菜单由 `menuItems` 定义：
@@ -320,3 +323,12 @@ npm run build
 应用数和跳过数。
 
 截图一次最多选择 3 张 JPG/PNG。切换平台或类型后应重新上传，以新的选择创建独立导入批次。
+
+## 18. 基金自选列表
+
+基金管理页在基金名称右侧展示五角星按钮。空心星表示未自选，金色实心星表示已自选；
+点击后调用基金服务保存或删除当前登录用户的自选关系。
+
+产品管理菜单下的“自选列表”复用基金管理页的列、筛选、排序、分页、详情和维护操作，
+数据源切换为 `GET /funds/favorites`。基金管理和自选列表两个标签同时打开时，星标变更会在
+页面间同步；取消自选后，对应基金会立即从自选列表移除。

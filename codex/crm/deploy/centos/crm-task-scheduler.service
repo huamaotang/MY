@@ -1,0 +1,21 @@
+[Unit]
+Description=CRM APScheduler Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=crm
+Group=crm
+WorkingDirectory=/opt/crm/fund_spider
+EnvironmentFile=-/etc/crm/fund-spider.env
+ExecStart=/opt/crm/fund_spider/.venv/bin/python -u cli.py web --host 127.0.0.1 --port 8088
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

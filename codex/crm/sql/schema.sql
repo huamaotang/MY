@@ -257,6 +257,8 @@ INSERT INTO sys_menu (id, parent_id, menu_name, menu_type, path, component, perm
 (22, 21, '新增基金', 'BUTTON', NULL, NULL, 'fund:create', NULL, 22, 1),
 (23, 21, '编辑基金', 'BUTTON', NULL, NULL, 'fund:update', NULL, 23, 1),
 (24, 21, '删除基金', 'BUTTON', NULL, NULL, 'fund:delete', NULL, 24, 1),
+(25, 21, '基金评分配置', 'BUTTON', NULL, NULL, 'fund:score-config', NULL, 25, 1),
+(26, 20, '自选列表', 'MENU', '/products/fund-favorites', 'FundFavoriteList', 'fund:list', 'StarOutlined', 22, 1),
 (30, 0, '系统管理', 'CATALOG', '/system', NULL, 'system:view', 'SettingOutlined', 30, 1),
 (31, 30, '用户管理', 'MENU', '/system/users', 'UserAdmin', 'system:user:list', 'UserSwitchOutlined', 31, 1),
 (32, 30, '角色管理', 'MENU', '/system/roles', 'RoleAdmin', 'system:role:list', 'SafetyCertificateOutlined', 32, 1),

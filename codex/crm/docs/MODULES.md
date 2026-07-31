@@ -329,7 +329,7 @@ mvn -pl gateway -am spring-boot:run
 | 文件 | 说明 |
 | --- | --- |
 | `src/main.tsx` | React 应用入口 |
-| `src/App.tsx` | 页面布局、登录页、工作台、客户、用户、角色、菜单页面 |
+| `src/App.tsx` | 页面布局、登录页、工作台、基金与自选列表、客户、用户、角色、菜单页面 |
 | `src/api.ts` | API 封装、类型声明、token 注入、响应错误处理 |
 | `src/styles.css` | 全局样式 |
 | `vite.config.ts` | Vite 配置 |
@@ -341,6 +341,8 @@ mvn -pl gateway -am spring-boot:run
 | 登录 | 已实现 | `POST /auth/login` |
 | 工作台 | 静态指标 | 无实时接口 |
 | 客户列表 | 已实现 | `/customers` |
+| 基金管理 | 已实现 | `/funds` |
+| 自选列表 | 已实现 | `/funds/favorites`、`/funds/{fundCode}/favorite` |
 | 联系人 | 占位 | 后端已有 `/contacts` |
 | 跟进记录 | 占位 | 后端已有 `/follow-records` |
 | 用户管理 | 已实现 | `/users`、`/roles` |

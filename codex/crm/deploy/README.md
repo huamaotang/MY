@@ -1,5 +1,9 @@
 # Nginx 部署说明
 
+CentOS 上的数据抓取和基金计算任务由自托管 Prefect Server + Process
+Worker 统一管理。安装、验证以及从旧 `crontab`/`systemd timer` 切换的步骤见
+[`centos/README.md`](centos/README.md)。
+
 ## 构建前端
 
 ```bash

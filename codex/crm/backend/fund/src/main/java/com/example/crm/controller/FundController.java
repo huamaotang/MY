@@ -11,6 +11,7 @@ import com.example.crm.entity.FundRating;
 import com.example.crm.entity.FundStockHolding;
 import com.example.crm.service.IFundService;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,14 +35,44 @@ public class FundController {
 
     @GetMapping
     @PreAuthorize("hasAuthority('fund:list')")
-    public ApiResponse<Page<CfgFund>> page(@RequestParam(defaultValue = "1") long current,
+    public ApiResponse<Page<CfgFund>> page(Authentication authentication,
+                                           @RequestParam(defaultValue = "1") long current,
                                            @RequestParam(defaultValue = "10") long size,
                                            @RequestParam(required = false) String keyword,
                                            @RequestParam(required = false) String fundType,
                                            @RequestParam(required = false) Boolean canBuy,
                                            @RequestParam(required = false) String sortField,
                                            @RequestParam(required = false) String sortOrder) {
-        return ApiResponse.ok(fundService.page(current, size, keyword, fundType, canBuy, sortField, sortOrder));
+        return ApiResponse.ok(fundService.page(
+                authentication.getName(), current, size, keyword, fundType, canBuy, false, sortField, sortOrder));
+    }
+
+    @GetMapping("/favorites")
+    @PreAuthorize("hasAuthority('fund:list')")
+    public ApiResponse<Page<CfgFund>> favorites(Authentication authentication,
+                                                @RequestParam(defaultValue = "1") long current,
+                                                @RequestParam(defaultValue = "10") long size,
+                                                @RequestParam(required = false) String keyword,
+                                                @RequestParam(required = false) String fundType,
+                                                @RequestParam(required = false) Boolean canBuy,
+                                                @RequestParam(required = false) String sortField,
+                                                @RequestParam(required = false) String sortOrder) {
+        return ApiResponse.ok(fundService.page(
+                authentication.getName(), current, size, keyword, fundType, canBuy, true, sortField, sortOrder));
+    }
+
+    @PostMapping("/{fundCode}/favorite")
+    @PreAuthorize("hasAuthority('fund:list')")
+    public ApiResponse<Void> addFavorite(Authentication authentication, @PathVariable String fundCode) {
+        fundService.addFavorite(authentication.getName(), fundCode);
+        return ApiResponse.ok();
+    }
+
+    @DeleteMapping("/{fundCode}/favorite")
+    @PreAuthorize("hasAuthority('fund:list')")
+    public ApiResponse<Void> removeFavorite(Authentication authentication, @PathVariable String fundCode) {
+        fundService.removeFavorite(authentication.getName(), fundCode);
+        return ApiResponse.ok();
     }
 
     @GetMapping("/{fundCode}")

@@ -256,6 +256,7 @@ curl -s 'http://127.0.0.1:8780/api/customers?current=1&size=10' \
 | `/api/customers/**` | `customer` | `/customers/**` |
 | `/api/contacts/**` | `customer` | `/contacts/**` |
 | `/api/follow-records/**` | `customer` | `/follow-records/**` |
+| `/api/funds/**` | `fund` | `/funds/**` |
 
 新增接口后，如果路径不在这些谓词内，必须改 `deploy/nacos/gateway-dev.yaml` 并重新发布到 Nacos。
 
@@ -294,6 +295,15 @@ curl -s 'http://127.0.0.1:8780/api/customers?current=1&size=10' \
 | `POST` | `/api/contacts` | 新增联系人 |
 | `GET` | `/api/follow-records` | 跟进记录列表 |
 | `POST` | `/api/follow-records` | 新增跟进记录 |
+
+基金服务：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/funds` | 基金分页，返回当前用户的 `favorite` 状态 |
+| `GET` | `/api/funds/favorites` | 当前用户自选基金分页 |
+| `POST` | `/api/funds/{fundCode}/favorite` | 加入当前用户自选 |
+| `DELETE` | `/api/funds/{fundCode}/favorite` | 取消当前用户自选 |
 
 ## 12. 新增接口流程
 

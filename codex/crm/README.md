@@ -7,7 +7,8 @@
 - 后端：Java 8、Spring Boot 2.7.x、Spring Cloud Gateway、Spring Cloud Alibaba Nacos、Spring Security、MyBatis-Plus、MySQL、Redis、JWT
 - 前端：React、TypeScript、Vite、Ant Design
 - 权限：RBAC，支持菜单权限和按钮权限编码
-- 部署：后端独立 Jar，前端静态资源可由 Nginx 部署
+- 部署：后端独立 Jar，前端静态资源可由 Nginx 部署，Python 定时任务由
+  Prefect Server + Process Worker 统一管理
 
 ## 目录
 
@@ -24,6 +25,7 @@ ios/                           iPhone 原生移动端
 android/                       Android 原生移动端
 sql/                           MySQL 建表和初始化数据
 deploy/                        部署配置
+fund_spider/                   基金/资讯/行情任务与 Prefect Flow
 ```
 
 ## 维护文档
@@ -40,6 +42,17 @@ CREATE DATABASE crm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE crm;
 SOURCE sql/schema.sql;
 ```
+
+已有数据库升级基金评分功能时，执行：
+
+```bash
+mysql -uroot -p fund < fund_spider/sql/20260731_add_fund_scoring.sql
+mysql -uroot -p crm < sql/20260731_add_fund_score_permission.sql
+```
+
+评分总分与未来一年盈利概率是两个独立字段：总分始终用于同类基金比较，
+盈利概率只有在带 12 个月隔离期的历史时序回测通过后才显示。权重配置与
+回测审批入口位于 Web 基金列表的“评分配置”，移动端为只读展示。
 
 2. 启动 Nacos 和 Redis 并导入配置，详见 [deploy/nacos/README.md](/Users/thm/MY/codex/crm/deploy/nacos/README.md)。
 
@@ -93,6 +106,9 @@ VITE_API_BASE=http://127.0.0.1:8780/api
 后端数据库和 JWT 配置由 Nacos 管理，示例配置在 [deploy/nacos](/Users/thm/MY/codex/crm/deploy/nacos)。
 
 Nginx 配置和部署说明在 [deploy/README.md](/Users/thm/MY/codex/crm/deploy/README.md)。
+
+Python 任务控制台默认地址为 `http://127.0.0.1:4200/`，Flow、Deployment、
+调度时间、手动触发和运行日志见 [fund_spider/README.md](/Users/thm/MY/codex/crm/fund_spider/README.md)。
 
 Nacos 配置说明在 [deploy/nacos/README.md](/Users/thm/MY/codex/crm/deploy/nacos/README.md)。
 

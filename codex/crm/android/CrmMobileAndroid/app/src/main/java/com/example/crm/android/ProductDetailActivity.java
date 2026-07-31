@@ -97,6 +97,8 @@ public class ProductDetailActivity extends Activity {
         content.addView(Ui.text(this, Ui.value(fund.fundName), 22, Ui.TEXT, Typeface.BOLD));
         content.addView(Ui.text(this, "代码：" + Ui.value(fund.fundCode), 14, Ui.BLUE, Typeface.BOLD));
 
+        renderScore();
+
         section("基础信息");
         row("类型", fund.fundType);
         row("基金经理", fund.fundManager);
@@ -188,6 +190,41 @@ public class ProductDetailActivity extends Activity {
         }
     }
 
+    private void renderScore() {
+        FundScoreDetail scoreDetail = detail == null ? null : detail.scoreDetail;
+        FundScoreSummary score = scoreDetail == null ? fund.latestScore : scoreDetail.summary;
+        section("基金评分");
+        if (score == null || score.totalScore == null || score.totalScore.trim().isEmpty()) {
+            row("评分", "数据不足");
+            row("未来1年盈利概率", "尚未通过历史回测验证");
+            row("说明", "评分只用于同类基金比较，不构成投资建议");
+            return;
+        }
+        row("总分", decimal(score.totalScore, 1) + " / 100");
+        row("未来1年盈利概率", probability(score.profitProbability));
+        row("置信度", confidence(score.confidence));
+        row("权重方案", Ui.value(score.profileName) + " v" + score.profileVersion);
+        row("同类比较组", score.comparisonGroup);
+        row("同类排名", score.categoryRank == null || score.categoryCount == null
+                ? null : score.categoryRank + " / " + score.categoryCount);
+        row("数据覆盖率", percentage(score.dataCoverage));
+        row("评分日期", score.asOfDate);
+        if (scoreDetail != null && !scoreDetail.components.isEmpty()) {
+            int count = Math.min(scoreDetail.components.size(), 18);
+            for (int index = 0; index < count; index++) {
+                FundScoreComponent component = scoreDetail.components.get(index);
+                row(Ui.value(component.label) + "（权重 " + component.weight + "%）",
+                        component.normalizedScore == null
+                                ? "数据缺失"
+                                : "标准分 " + decimal(component.normalizedScore, 1)
+                                + "，贡献 " + decimal(component.contribution, 2));
+            }
+        }
+        row("说明", scoreDetail == null || scoreDetail.disclaimer == null
+                ? "历史评分不代表未来收益，不构成投资建议"
+                : scoreDetail.disclaimer);
+    }
+
     private void section(String title) {
         TextView view = Ui.text(this, title, 17, Ui.TEXT, Typeface.BOLD);
         view.setPadding(0, Ui.dp(this, 22), 0, Ui.dp(this, 8));
@@ -230,6 +267,48 @@ public class ProductDetailActivity extends Activity {
 
     private static String percent(String value) {
         return value == null || value.isEmpty() ? null : value + "%";
+    }
+
+    private static String decimal(String value, int scale) {
+        if (value == null || value.trim().isEmpty()) {
+            return "-";
+        }
+        try {
+            return new BigDecimal(value).setScale(scale, java.math.RoundingMode.HALF_UP).toPlainString();
+        } catch (NumberFormatException ignored) {
+            return value;
+        }
+    }
+
+    private static String probability(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return "未验证";
+        }
+        try {
+            return new BigDecimal(value).multiply(new BigDecimal("100"))
+                    .setScale(1, java.math.RoundingMode.HALF_UP).toPlainString() + "%";
+        } catch (NumberFormatException ignored) {
+            return "未验证";
+        }
+    }
+
+    private static String percentage(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return new BigDecimal(value).multiply(new BigDecimal("100"))
+                    .setScale(0, java.math.RoundingMode.HALF_UP).toPlainString() + "%";
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private static String confidence(String value) {
+        if ("HIGH".equals(value)) return "高";
+        if ("MEDIUM".equals(value)) return "中";
+        if ("LOW".equals(value)) return "低";
+        return "数据不足";
     }
 
     private String ratingStars(Integer value) {

@@ -9,21 +9,26 @@ import {
   SafetyCertificateOutlined,
   SearchOutlined,
   SettingOutlined,
+  StarFilled,
+  StarOutlined,
   TeamOutlined,
   UserOutlined,
   UserSwitchOutlined
 } from '@ant-design/icons';
 import {
   App as AntApp,
+  Alert,
   Button,
   Descriptions,
   Drawer,
   Form,
   Input,
+  InputNumber,
   Layout,
   Menu,
   Modal,
   Popconfirm,
+  Progress,
   Select,
   Segmented,
   Space,
@@ -31,6 +36,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Tree,
   Upload,
   Typography
@@ -48,6 +54,9 @@ import {
   FundNav,
   FundPerformance,
   FundRating,
+  FundScoreBacktest,
+  FundScoreJob,
+  FundScoreProfile,
   PortfolioHoldingBatch,
   PortfolioHoldingImportPreview,
   PortfolioHoldingImportRow,
@@ -57,12 +66,15 @@ import {
   SysMenu,
   UserFundHolding,
   User,
+  addFundFavorite,
   deleteCustomer,
   deleteFund,
   deleteFinanceNews,
   deleteMenu,
   deleteRole,
   deleteUser,
+  activateFundScoreProfile,
+  backtestFundScoreProfile,
   confirmPortfolioHoldingImport,
   getPortfolioImport,
   getFundDetail,
@@ -73,6 +85,8 @@ import {
   listFundHoldings,
   listFundNavs,
   listFundRatings,
+  listFundScoreJobs,
+  listFundScoreProfiles,
   listFinanceNews,
   listStocks,
   listStockHistory,
@@ -85,30 +99,41 @@ import {
   previewPortfolioHoldings,
   saveCustomer,
   saveFund,
+  saveFundScoreProfile,
   saveMenu,
   saveRole,
-  saveUser
+  saveUser,
+  getFundScoreBacktest,
+  recommendFundScoreProfile,
+  removeFundFavorite
 } from './api';
 
 const { Header, Sider, Content } = Layout;
 
-type ViewKey = 'dashboard' | 'customers' | 'contacts' | 'follows' | 'funds' | 'portfolio' | 'stocks' | 'news' | 'users' | 'roles' | 'menus';
+type ViewKey = 'dashboard' | 'customers' | 'contacts' | 'follows' | 'funds' | 'fundFavorites' | 'portfolio' | 'stocks' | 'news' | 'users' | 'roles' | 'menus';
 
 type WorkspaceState = {
   activeView: ViewKey;
   openViews: ViewKey[];
 };
 
+type FundFavoriteChangedDetail = {
+  fundCode: string;
+  favorite: boolean;
+};
+
 const DEFAULT_PAGE_SIZE = 10;
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const CHART_NAV_SIZE = 1000;
 const WORKSPACE_STORAGE_KEY = 'crm_workspace_tabs';
+const FUND_FAVORITE_CHANGED_EVENT = 'crm:fund-favorite-changed';
 const VIEW_KEYS: ViewKey[] = [
   'dashboard',
   'customers',
   'contacts',
   'follows',
   'funds',
+  'fundFavorites',
   'portfolio',
   'stocks',
   'news',
@@ -128,6 +153,27 @@ const TREND_PERIOD_OPTIONS: { label: string; value: TrendPeriod }[] = [
   { label: '成立以来', value: 'ALL' }
 ];
 
+const SCORE_FACTORS = [
+  { key: 'return_1m', label: '近1月收益', block: '历史收益' },
+  { key: 'return_3m', label: '近3月收益', block: '历史收益' },
+  { key: 'return_6m', label: '近6月收益', block: '历史收益' },
+  { key: 'return_1y', label: '近1年收益', block: '历史收益' },
+  { key: 'return_2y', label: '近2年收益', block: '历史收益' },
+  { key: 'return_3y', label: '近3年收益', block: '历史收益' },
+  { key: 'volatility_1y', label: '近1年标准差', block: '标准差' },
+  { key: 'volatility_3y', label: '近3年标准差', block: '标准差' },
+  { key: 'sharpe_1y', label: '近1年夏普', block: '夏普比率' },
+  { key: 'sharpe_3y', label: '近3年夏普', block: '夏普比率' },
+  { key: 'drawdown_1y', label: '近1年最大回撤', block: '最大回撤' },
+  { key: 'drawdown_3y', label: '近3年最大回撤', block: '最大回撤' },
+  { key: 'rating_zhaoshang', label: '招商评级', block: '基金评级' },
+  { key: 'rating_shanghai_3y', label: '上海3年评级', block: '基金评级' },
+  { key: 'rating_shanghai_5y', label: '上海5年评级', block: '基金评级' },
+  { key: 'rating_jian', label: '济安评级', block: '基金评级' },
+  { key: 'rating_morningstar', label: '晨星评级', block: '基金评级' },
+  { key: 'scale', label: '基金规模', block: '基金规模' }
+] as const;
+
 const menuItems = [
   { key: 'dashboard', icon: <DashboardOutlined />, label: '工作台' },
   {
@@ -146,6 +192,7 @@ const menuItems = [
     label: '产品管理',
     children: [
       { key: 'funds', icon: <FundOutlined />, label: '基金管理' },
+      { key: 'fundFavorites', icon: <StarOutlined />, label: '自选列表' },
       { key: 'portfolio', icon: <InboxOutlined />, label: '持仓导入' },
       { key: 'stocks', icon: <FundOutlined />, label: '股票行情' },
       { key: 'news', icon: <MenuOutlined />, label: '资讯管理' }
@@ -300,6 +347,8 @@ function WorkspaceView({ view }: { view: ViewKey }) {
       return <CustomerList />;
     case 'funds':
       return <FundList />;
+    case 'fundFavorites':
+      return <FundList favoritesOnly />;
     case 'portfolio':
       return <PortfolioAdmin />;
     case 'stocks':
@@ -1125,7 +1174,7 @@ function StockMarket() {
   </div>;
 }
 
-function FundList() {
+function FundList({ favoritesOnly = false }: { favoritesOnly?: boolean }) {
   const { message } = AntApp.useApp();
   const [loading, setLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
@@ -1139,12 +1188,26 @@ function FundList() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Fund | null>(null);
   const [detailFundCode, setDetailFundCode] = useState<string | null>(null);
+  const [scoreConfigOpen, setScoreConfigOpen] = useState(false);
+  const [favoriteUpdatingCodes, setFavoriteUpdatingCodes] = useState<string[]>([]);
   const [form] = Form.useForm<Fund>();
 
   const load = async (page = current, size = pageSize, nextSortField = sortField, nextSortOrder = sortOrder) => {
     setLoading(true);
     try {
-      const result = await listFunds({ current: page, size, keyword, fundType, sortField: nextSortField, sortOrder: nextSortOrder });
+      const result = await listFunds({
+        current: page,
+        size,
+        keyword,
+        fundType,
+        favoritesOnly,
+        sortField: nextSortField,
+        sortOrder: nextSortOrder
+      });
+      if (page > 1 && result.records.length === 0 && result.total > 0) {
+        await load(page - 1, size, nextSortField, nextSortOrder);
+        return;
+      }
       setFunds(result.records);
       setTotal(result.total);
       setCurrent(result.current);
@@ -1160,9 +1223,93 @@ function FundList() {
     load(1);
   }, []);
 
+  useEffect(() => {
+    const handleFavoriteChanged = (event: Event) => {
+      const { fundCode, favorite } = (event as CustomEvent<FundFavoriteChangedDetail>).detail;
+      if (favoritesOnly) {
+        void load(current, pageSize, sortField, sortOrder);
+        return;
+      }
+      setFunds((rows) => rows.map((row) => row.fundCode === fundCode ? { ...row, favorite } : row));
+    };
+    window.addEventListener(FUND_FAVORITE_CHANGED_EVENT, handleFavoriteChanged);
+    return () => window.removeEventListener(FUND_FAVORITE_CHANGED_EVENT, handleFavoriteChanged);
+  }, [favoritesOnly, current, pageSize, keyword, fundType, sortField, sortOrder]);
+
+  const toggleFavorite = async (fund: Fund) => {
+    setFavoriteUpdatingCodes((codes) => [...codes, fund.fundCode]);
+    try {
+      const favorite = !fund.favorite;
+      if (favorite) {
+        await addFundFavorite(fund.fundCode);
+      } else {
+        await removeFundFavorite(fund.fundCode);
+      }
+      window.dispatchEvent(new CustomEvent<FundFavoriteChangedDetail>(FUND_FAVORITE_CHANGED_EVENT, {
+        detail: { fundCode: fund.fundCode, favorite }
+      }));
+      message.success(favorite ? '已加入自选' : '已取消自选');
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setFavoriteUpdatingCodes((codes) => codes.filter((code) => code !== fund.fundCode));
+    }
+  };
+
   const columns: ColumnsType<Fund> = [
     { title: '基金代码', dataIndex: 'fundCode', fixed: 'left', width: 120, sorter: true },
-    { title: '基金名称', dataIndex: 'fundName', fixed: 'left', width: 240, sorter: true },
+    {
+      title: '基金名称',
+      dataIndex: 'fundName',
+      fixed: 'left',
+      width: 260,
+      sorter: true,
+      render: (value, row) => (
+        <span className="fund-name-cell">
+          <span>{value}</span>
+          <Tooltip title={row.favorite ? '取消自选' : '加入自选'}>
+            <Button
+              type="text"
+              size="small"
+              shape="circle"
+              className="fund-favorite-button"
+              aria-label={`${row.favorite ? '取消自选' : '加入自选'}：${value}`}
+              loading={favoriteUpdatingCodes.includes(row.fundCode)}
+              icon={row.favorite
+                ? <StarFilled className="fund-favorite-icon-active" />
+                : <StarOutlined />}
+              onClick={() => toggleFavorite(row)}
+            />
+          </Tooltip>
+        </span>
+      )
+    },
+    {
+      title: '基金评分',
+      key: 'fundScore',
+      width: 115,
+      sorter: true,
+      render: (_, row) => row.latestScore?.totalScore == null
+        ? <Tag>数据不足</Tag>
+        : <Tag color={row.latestScore.totalScore >= 80 ? 'green' : row.latestScore.totalScore >= 60 ? 'blue' : 'orange'}>
+            {row.latestScore.totalScore.toFixed(1)}
+          </Tag>
+    },
+    {
+      title: '未来1年盈利概率',
+      key: 'profitProbability',
+      width: 155,
+      sorter: true,
+      render: (_, row) => row.latestScore?.profitProbability == null
+        ? <Tag color="default">未验证</Tag>
+        : `${(row.latestScore.profitProbability * 100).toFixed(1)}%`
+    },
+    {
+      title: '评分置信度',
+      key: 'scoreConfidence',
+      width: 115,
+      render: (_, row) => renderScoreConfidence(row.latestScore?.confidence)
+    },
     {
       title: '可购买',
       dataIndex: 'canBuy',
@@ -1232,7 +1379,7 @@ function FundList() {
   return (
     <div className="page">
       <div className="page-header">
-        <Typography.Title level={3}>基金管理</Typography.Title>
+        <Typography.Title level={3}>{favoritesOnly ? '自选列表' : '基金管理'}</Typography.Title>
         <Space wrap>
           <Input
             placeholder="搜索代码、名称或经理"
@@ -1252,11 +1399,17 @@ function FundList() {
               { value: '混合型', label: '混合型' },
               { value: '债券型', label: '债券型' },
               { value: '指数型', label: '指数型' },
-              { value: '货币型', label: '货币型' }
+              { value: '货币型', label: '货币型' },
+              { value: 'FOF', label: 'FOF' },
+              { value: 'QDII', label: 'QDII' },
+              { value: '商品', label: '商品' }
             ]}
           />
           <Button icon={<SearchOutlined />} onClick={() => load(1)}>
             查询
+          </Button>
+          <Button onClick={() => setScoreConfigOpen(true)}>
+            评分配置
           </Button>
           <Button
             type="primary"
@@ -1276,7 +1429,7 @@ function FundList() {
         loading={loading}
         columns={columns}
         dataSource={funds}
-        scroll={{ x: 4030 }}
+        scroll={{ x: 4440 }}
         onChange={(pagination, _filters, sorter) => {
           const selected = Array.isArray(sorter) ? sorter[0] : sorter;
           const field = selected?.order ? String(selected.field ?? selected.columnKey ?? '') : undefined;
@@ -1337,7 +1490,287 @@ function FundList() {
         </Form>
       </Modal>
       <FundDetailDrawer fundCode={detailFundCode} open={!!detailFundCode} onClose={() => setDetailFundCode(null)} />
+      <FundScoreConfigModal open={scoreConfigOpen} onClose={() => setScoreConfigOpen(false)} onActivated={() => load(1)} />
     </div>
+  );
+}
+
+function FundScoreConfigModal({
+  open,
+  onClose,
+  onActivated
+}: {
+  open: boolean;
+  onClose: () => void;
+  onActivated: () => void;
+}) {
+  const { message } = AntApp.useApp();
+  const [loading, setLoading] = useState(false);
+  const [profiles, setProfiles] = useState<FundScoreProfile[]>([]);
+  const [jobs, setJobs] = useState<FundScoreJob[]>([]);
+  const [editing, setEditing] = useState<FundScoreProfile | null | undefined>();
+  const [backtest, setBacktest] = useState<FundScoreBacktest>();
+  const [form] = Form.useForm<{ profileName: string; weights: Record<string, number> }>();
+  const watchedWeights = Form.useWatch('weights', form) || {};
+  const totalWeight = SCORE_FACTORS.reduce((sum, factor) => sum + Number(watchedWeights[factor.key] || 0), 0);
+  const blockWeights = useMemo(() => {
+    const values: Record<string, number> = {};
+    SCORE_FACTORS.forEach((factor) => {
+      values[factor.block] = (values[factor.block] || 0) + Number(watchedWeights[factor.key] || 0);
+    });
+    return values;
+  }, [watchedWeights]);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [profileRows, jobRows] = await Promise.all([listFundScoreProfiles(), listFundScoreJobs()]);
+      setProfiles(profileRows);
+      setJobs(jobRows);
+    } catch (error) {
+      message.error((error as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (open) {
+      load();
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !jobs.some((job) => job.status === 'PENDING' || job.status === 'RUNNING')) {
+      return;
+    }
+    const timer = window.setInterval(load, 5000);
+    return () => window.clearInterval(timer);
+  }, [open, jobs]);
+
+  const openEditor = (profile?: FundScoreProfile) => {
+    setEditing(profile || null);
+    form.setFieldsValue({
+      profileName: profile?.profileName || '自定义评分方案',
+      weights: { ...(profile?.weights || profiles.find((item) => item.active)?.weights || {}) }
+    });
+  };
+
+  const profileColumns: ColumnsType<FundScoreProfile> = [
+    {
+      title: '方案',
+      dataIndex: 'profileName',
+      render: (value, row) => (
+        <Space>
+          <span>{value} v{row.versionNo}</span>
+          {row.active && <Tag color="green">当前启用</Tag>}
+          {row.sourceType === 'BACKTEST' && <Tag color="blue">系统推荐</Tag>}
+        </Space>
+      )
+    },
+    { title: '状态', dataIndex: 'status', width: 150 },
+    {
+      title: '回测验证',
+      dataIndex: 'validationStatus',
+      width: 130,
+      render: (value) => (
+        <Tag color={value === 'PASSED' ? 'green' : value === 'FAILED' ? 'red' : 'default'}>{value}</Tag>
+      )
+    },
+    {
+      title: '操作',
+      width: 330,
+      render: (_, row) => (
+        <Space>
+          <Button type="link" onClick={() => openEditor(row)}>编辑</Button>
+          <Button
+            type="link"
+            onClick={async () => {
+              await backtestFundScoreProfile(row.id);
+              message.success('已提交回测任务');
+              load();
+            }}
+          >
+            回测
+          </Button>
+          <Button
+            type="link"
+            onClick={async () => {
+              const result = await getFundScoreBacktest(row.id);
+              if (!result) {
+                message.info('暂无回测结果');
+                return;
+              }
+              setBacktest(result);
+            }}
+          >
+            指标
+          </Button>
+          <Popconfirm
+            title="确认启用该方案？启用后会重新计算全部基金评分。"
+            onConfirm={async () => {
+              await activateFundScoreProfile(row.id);
+              message.success('方案已启用，评分重算任务已入队');
+              await load();
+              onActivated();
+            }}
+          >
+            <Button
+              type="link"
+              disabled={row.active || (row.sourceType !== 'SEED' && row.validationStatus !== 'PASSED')}
+            >
+              启用
+            </Button>
+          </Popconfirm>
+        </Space>
+      )
+    }
+  ];
+
+  return (
+    <>
+      <Modal
+        title="基金评分配置"
+        open={open}
+        onCancel={onClose}
+        footer={null}
+        width={1120}
+        destroyOnClose
+      >
+        <Alert
+          type="warning"
+          showIcon
+          message="评分不是收益承诺"
+          description="100分用于同类基金排序；未来1年盈利概率只有在历史回测通过后才展示。"
+          style={{ marginBottom: 16 }}
+        />
+        <Space style={{ marginBottom: 16 }} wrap>
+          <Button type="primary" onClick={() => openEditor()}>新建方案</Button>
+          <Button
+            onClick={async () => {
+              await recommendFundScoreProfile();
+              message.success('已提交推荐权重生成任务');
+              load();
+            }}
+          >
+            生成推荐权重
+          </Button>
+          <Button onClick={load}>刷新</Button>
+        </Space>
+        <Table
+          rowKey="id"
+          loading={loading}
+          columns={profileColumns}
+          dataSource={profiles}
+          pagination={false}
+          size="small"
+        />
+        <Typography.Title level={5} style={{ marginTop: 20 }}>最近任务</Typography.Title>
+        <Table
+          rowKey="id"
+          size="small"
+          pagination={false}
+          dataSource={jobs.slice(0, 8)}
+          columns={[
+            { title: '任务', dataIndex: 'jobType', width: 140 },
+            { title: '方案ID', dataIndex: 'profileId', width: 90, render: formatValue },
+            {
+              title: '状态',
+              dataIndex: 'status',
+              width: 100,
+              render: (value) => <Tag color={value === 'SUCCESS' ? 'green' : value === 'FAILED' ? 'red' : 'blue'}>{value}</Tag>
+            },
+            { title: '创建时间', dataIndex: 'createdAt', width: 170 },
+            { title: '结果', dataIndex: 'message', ellipsis: true }
+          ]}
+        />
+      </Modal>
+      <Modal
+        title={editing ? `编辑 ${editing.profileName}` : '新建评分方案'}
+        open={editing !== undefined}
+        onCancel={() => setEditing(undefined)}
+        onOk={() => form.submit()}
+        width={900}
+        destroyOnClose
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          onFinish={async (values) => {
+            if (totalWeight !== 100) {
+              message.error('全部权重之和必须等于100');
+              return;
+            }
+            await saveFundScoreProfile({ id: editing?.id, ...values });
+            message.success('权重方案已保存');
+            setEditing(undefined);
+            load();
+          }}
+        >
+          <Form.Item name="profileName" label="方案名称" rules={[{ required: true }]}>
+            <Input />
+          </Form.Item>
+          <div className="score-weight-summary">
+            <Progress
+              type="circle"
+              size={82}
+              percent={Math.min(100, totalWeight)}
+              format={() => `${totalWeight}/100`}
+              status={totalWeight === 100 ? 'success' : 'exception'}
+            />
+            <Space wrap>
+              {Object.entries(blockWeights).map(([block, value]) => (
+                <Tag key={block}>{block} {value}</Tag>
+              ))}
+            </Space>
+          </div>
+          <div className="score-weight-grid">
+            {SCORE_FACTORS.map((factor) => (
+              <Form.Item
+                key={factor.key}
+                name={['weights', factor.key]}
+                label={`${factor.block} · ${factor.label}`}
+                rules={[{ required: true, message: '请填写权重' }]}
+              >
+                <InputNumber min={0} max={100} precision={0} style={{ width: '100%' }} />
+              </Form.Item>
+            ))}
+          </div>
+        </Form>
+      </Modal>
+      <Modal title="最新回测指标" open={!!backtest} onCancel={() => setBacktest(undefined)} footer={null}>
+        {backtest && (
+          <>
+            <Alert
+              type={backtest.passed ? 'success' : 'warning'}
+              showIcon
+              message={backtest.passed ? '达到推荐质量门槛' : '未达到推荐质量门槛'}
+              style={{ marginBottom: 16 }}
+            />
+            <Descriptions bordered column={2} size="small">
+              <Descriptions.Item label="有效样本">{backtest.sampleCount}</Descriptions.Item>
+              <Descriptions.Item label="时序回测折">{backtest.foldCount}</Descriptions.Item>
+              <Descriptions.Item label="AUC">{formatDecimal(backtest.auc, 4)}</Descriptions.Item>
+              <Descriptions.Item label="Brier">{formatDecimal(backtest.brierScore, 4)}</Descriptions.Item>
+              <Descriptions.Item label="基准 Brier">{formatDecimal(backtest.baselineBrierScore, 4)}</Descriptions.Item>
+              <Descriptions.Item label="前20%盈利率">{formatProbability(backtest.top20WinRate)}</Descriptions.Item>
+              <Descriptions.Item label="基准盈利率">{formatProbability(backtest.baselineWinRate)}</Descriptions.Item>
+              <Descriptions.Item label="盈利率提升">{formatProbability(backtest.winRateLift)}</Descriptions.Item>
+              <Descriptions.Item label="测试区间">
+                {backtest.testStartDate || '-'} 至 {backtest.testEndDate || '-'}
+              </Descriptions.Item>
+            </Descriptions>
+            <Alert
+              type="info"
+              showIcon
+              message="回测限制"
+              description="训练集与测试集隔离12个月；历史清盘基金和历史细分类型可能不完整，无风险利率暂按0计算。"
+              style={{ marginTop: 16 }}
+            />
+          </>
+        )}
+      </Modal>
+    </>
   );
 }
 
@@ -1505,6 +1938,14 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
     { title: '济安金信', dataIndex: 'jianRating', width: 120, render: renderRatingStars },
     { title: '晨星评级', dataIndex: 'morningStarRating', width: 120, render: renderRatingStars }
   ];
+  const scoreComponentColumns = [
+    { title: '指标', dataIndex: 'label', width: 170 },
+    { title: '原始值', dataIndex: 'rawValue', width: 110, render: (value: number | undefined) => formatDecimal(value, 4) },
+    { title: '同类标准分', dataIndex: 'normalizedScore', width: 120, render: (value: number | undefined) => formatDecimal(value, 2) },
+    { title: '配置权重', dataIndex: 'weight', width: 100 },
+    { title: '有效权重', dataIndex: 'effectiveWeight', width: 100, render: (value: number | undefined) => value == null ? '-' : `${value.toFixed(2)}%` },
+    { title: '得分贡献', dataIndex: 'contribution', width: 110, render: (value: number | undefined) => formatDecimal(value, 2) }
+  ];
 
   const trendRows = useMemo(() => buildTrendRows(chartNavs, trendPeriod), [chartNavs, trendPeriod]);
 
@@ -1512,6 +1953,64 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
     <Drawer title="基金详情" open={open} onClose={onClose} width={920} destroyOnClose>
       <Tabs
         items={[
+          {
+            key: 'score',
+            label: '基金评分',
+            children: detail?.scoreDetail ? (
+              <div className="score-detail">
+                <div className="score-hero">
+                  <Statistic
+                    title="基金评分"
+                    value={detail.scoreDetail.summary.totalScore}
+                    precision={1}
+                    suffix="/ 100"
+                  />
+                  <Statistic
+                    title="未来1年盈利概率"
+                    value={detail.scoreDetail.summary.profitProbability == null
+                      ? '-'
+                      : detail.scoreDetail.summary.profitProbability * 100}
+                    precision={detail.scoreDetail.summary.profitProbability == null ? undefined : 1}
+                    suffix={detail.scoreDetail.summary.profitProbability == null ? undefined : '%'}
+                  />
+                  <div>
+                    <Typography.Text type="secondary">置信度</Typography.Text>
+                    <div style={{ marginTop: 8 }}>{renderScoreConfidence(detail.scoreDetail.summary.confidence)}</div>
+                  </div>
+                </div>
+                <Descriptions bordered column={2} size="small">
+                  <Descriptions.Item label="评分方案">
+                    {detail.scoreDetail.summary.profileName} v{detail.scoreDetail.summary.profileVersion}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="回测状态">{detail.scoreDetail.summary.validationStatus}</Descriptions.Item>
+                  <Descriptions.Item label="比较组">{detail.scoreDetail.summary.comparisonGroup || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="组内排名">
+                    {detail.scoreDetail.summary.categoryRank && detail.scoreDetail.summary.categoryCount
+                      ? `${detail.scoreDetail.summary.categoryRank}/${detail.scoreDetail.summary.categoryCount}`
+                      : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="数据覆盖率">{formatProbability(detail.scoreDetail.summary.dataCoverage)}</Descriptions.Item>
+                  <Descriptions.Item label="评分日期">{detail.scoreDetail.summary.asOfDate}</Descriptions.Item>
+                </Descriptions>
+                <Alert
+                  type="warning"
+                  showIcon
+                  message={detail.scoreDetail.disclaimer}
+                  style={{ margin: '16px 0' }}
+                />
+                <Table
+                  rowKey="factorKey"
+                  size="small"
+                  pagination={false}
+                  columns={scoreComponentColumns}
+                  dataSource={detail.scoreDetail.components}
+                  scroll={{ x: 760 }}
+                />
+              </div>
+            ) : (
+              <Alert type="info" showIcon message="数据不足，暂未生成评分" />
+            )
+          },
           {
             key: 'base',
             label: '基础信息',
@@ -2346,6 +2845,31 @@ function formatValue(value?: number | string | null) {
   return value == null || value === '' ? '-' : value;
 }
 
+function formatDecimal(value?: number | string | null, digits = 2) {
+  const numeric = toNumber(value);
+  return numeric == null ? '-' : numeric.toFixed(digits);
+}
+
+function formatProbability(value?: number | string | null) {
+  const numeric = toNumber(value);
+  return numeric == null ? '-' : `${(numeric * 100).toFixed(1)}%`;
+}
+
+function renderScoreConfidence(value?: string) {
+  const labels: Record<string, string> = {
+    HIGH: '高',
+    MEDIUM: '中',
+    LOW: '低',
+    INSUFFICIENT: '数据不足'
+  };
+  const colors: Record<string, string> = {
+    HIGH: 'green',
+    MEDIUM: 'blue',
+    LOW: 'orange'
+  };
+  return <Tag color={colors[value || '']}>{labels[value || ''] || '数据不足'}</Tag>;
+}
+
 function formatMoney(value?: number | string | null) {
   const numeric = toNumber(value);
   return numeric == null
@@ -2442,6 +2966,7 @@ function labelOf(view: ViewKey) {
     contacts: '联系人',
     follows: '跟进记录',
     funds: '基金管理',
+    fundFavorites: '自选列表',
     portfolio: '持仓导入',
     stocks: '股票行情',
     news: '资讯管理',

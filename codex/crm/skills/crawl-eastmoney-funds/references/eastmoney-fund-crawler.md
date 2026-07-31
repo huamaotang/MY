@@ -13,7 +13,7 @@ Important files:
 - `spiders/feature_spider.py`: feature data parser
 - `db.py`: MySQL schema and upsert helpers
 - `bin/`: executable manual and scheduled Shell scripts
-- `runtime/`: Python CLI and Web schedulers
+- `runtime/`: APScheduler-backed CLI and Web scheduling services
 - `tools/portfolio_holding_ocr.py`: portfolio screenshot OCR tool
 - `sql/init.sql`: full schema bootstrap
 

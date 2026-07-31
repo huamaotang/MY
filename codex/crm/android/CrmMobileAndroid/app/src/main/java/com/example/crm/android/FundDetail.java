@@ -15,6 +15,7 @@ public class FundDetail implements Serializable {
     public List<FundHolding> latestHoldings = new ArrayList<>();
     public List<FundFeature> features = new ArrayList<>();
     public List<FundRating> ratings = new ArrayList<>();
+    public FundScoreDetail scoreDetail;
 
     public static FundDetail fromJson(JSONObject json) {
         FundDetail detail = new FundDetail();
@@ -51,6 +52,10 @@ public class FundDetail implements Serializable {
             for (int i = 0; i < ratings.length(); i++) {
                 detail.ratings.add(FundRating.fromJson(ratings.optJSONObject(i)));
             }
+        }
+        JSONObject score = json.optJSONObject("scoreDetail");
+        if (score != null) {
+            detail.scoreDetail = FundScoreDetail.fromJson(score);
         }
         return detail;
     }

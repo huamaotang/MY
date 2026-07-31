@@ -20,6 +20,7 @@ public class Fund implements Serializable {
     public FundRating latestRating;
     public FundDailyValuation latestValuation;
     public java.util.List<FundFeature> features = new java.util.ArrayList<>();
+    public FundScoreSummary latestScore;
 
     public static Fund fromJson(JSONObject json) {
         Fund fund = new Fund();
@@ -44,6 +45,8 @@ public class Fund implements Serializable {
         if (features != null) {
             for (int i = 0; i < features.length(); i++) fund.features.add(FundFeature.fromJson(features.optJSONObject(i)));
         }
+        JSONObject score = json.optJSONObject("latestScore");
+        if (score != null) fund.latestScore = FundScoreSummary.fromJson(score);
         return fund;
     }
 

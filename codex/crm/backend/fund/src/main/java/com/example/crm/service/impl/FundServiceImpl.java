@@ -18,8 +18,10 @@ import com.example.crm.mapper.FundPerformanceHistoryMapper;
 import com.example.crm.mapper.FundRatingMapper;
 import com.example.crm.mapper.FundStockHoldingMapper;
 import com.example.crm.service.IFundService;
+import com.example.crm.service.IFundScoreService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.sql.Timestamp;
@@ -43,6 +45,7 @@ public class FundServiceImpl implements IFundService {
     private final FundFeatureDataMapper featureDataMapper;
     private final FundRatingMapper ratingMapper;
     private final FundValuationService valuationService;
+    private final IFundScoreService fundScoreService;
     private final JdbcTemplate jdbcTemplate;
 
     public FundServiceImpl(CfgFundMapper fundMapper,
@@ -52,6 +55,7 @@ public class FundServiceImpl implements IFundService {
                            FundFeatureDataMapper featureDataMapper,
                            FundRatingMapper ratingMapper,
                            FundValuationService valuationService,
+                           IFundScoreService fundScoreService,
                            JdbcTemplate jdbcTemplate) {
         this.fundMapper = fundMapper;
         this.navHistoryMapper = navHistoryMapper;
@@ -60,23 +64,46 @@ public class FundServiceImpl implements IFundService {
         this.featureDataMapper = featureDataMapper;
         this.ratingMapper = ratingMapper;
         this.valuationService = valuationService;
+        this.fundScoreService = fundScoreService;
         this.jdbcTemplate = jdbcTemplate;
     }
 
     @Override
-    public Page<CfgFund> page(long current, long size, String keyword, String fundType, Boolean canBuy,
-                              String sortField, String sortOrder) {
+    public Page<CfgFund> page(String ownerUsername, long current, long size, String keyword, String fundType,
+                              Boolean canBuy, boolean favoritesOnly, String sortField, String sortOrder) {
         String sortExpression = SORT_FIELDS.getOrDefault(sortField, "f.fund_code");
         String sortDirection = "descend".equalsIgnoreCase(sortOrder) ? "DESC" : "ASC";
         Page<CfgFund> page = fundMapper.selectFundPage(new Page<>(current, size),
-                hasText(keyword) ? keyword.trim() : null, fundType, canBuy, sortExpression, sortDirection);
+                ownerUsername, hasText(keyword) ? keyword.trim() : null, fundType, canBuy, favoritesOnly,
+                sortExpression, sortDirection);
+        Map<String, com.example.crm.dto.score.FundScoreSummaryDto> scores = fundScoreService.latestSummaries(
+                page.getRecords().stream().map(CfgFund::getFundCode).collect(Collectors.toList()));
         page.getRecords().forEach(fund -> {
             fund.setLatestPerformance(latestPerformance(fund.getFundCode()));
             fund.setLatestRating(latestRating(fund.getFundCode()));
             fund.setFeatures(featureRows(fund.getFundCode()));
             fund.setLatestValuation(valuationService.latest(fund.getFundCode()));
+            fund.setLatestScore(scores.get(fund.getFundCode()));
         });
         return page;
+    }
+
+    @Override
+    public void addFavorite(String ownerUsername, String fundCode) {
+        findFund(fundCode);
+        jdbcTemplate.update(
+                "INSERT INTO user_fund_favorite (owner_username,fund_code) VALUES (?,?) "
+                        + "ON DUPLICATE KEY UPDATE updated_at=CURRENT_TIMESTAMP",
+                ownerUsername,
+                fundCode);
+    }
+
+    @Override
+    public void removeFavorite(String ownerUsername, String fundCode) {
+        jdbcTemplate.update(
+                "DELETE FROM user_fund_favorite WHERE owner_username=? AND fund_code=?",
+                ownerUsername,
+                fundCode);
     }
 
     private static Map<String, String> sortFields() {
@@ -95,6 +122,8 @@ public class FundServiceImpl implements IFundService {
         fields.put("cashManagementFeeRate", "p.cash_management_fee_rate");
         fields.put("standardDeviation", "(SELECT ff.standard_deviation FROM fund_feature_data ff WHERE ff.fund_code=f.fund_code AND ff.period_label='近3年' ORDER BY ff.cutoff_date DESC LIMIT 1)");
         fields.put("sharpeRatio", "(SELECT ff.sharpe_ratio FROM fund_feature_data ff WHERE ff.fund_code=f.fund_code AND ff.period_label='近3年' ORDER BY ff.cutoff_date DESC LIMIT 1)");
+        fields.put("fundScore", "sr.total_score");
+        fields.put("profitProbability", "sr.profit_probability");
         return java.util.Collections.unmodifiableMap(fields);
     }
 
@@ -109,6 +138,7 @@ public class FundServiceImpl implements IFundService {
         response.setLatestHoldings(latestHoldings(fundCode));
         response.setFeatures(features(fundCode));
         response.setRatings(ratings(fundCode));
+        response.setScoreDetail(fundScoreService.detail(fundCode));
         return response;
     }
 
@@ -132,8 +162,10 @@ public class FundServiceImpl implements IFundService {
     }
 
     @Override
+    @Transactional
     public void delete(String fundCode) {
         findFund(fundCode);
+        jdbcTemplate.update("DELETE FROM user_fund_favorite WHERE fund_code=?", fundCode);
         fundMapper.delete(new LambdaQueryWrapper<CfgFund>().eq(CfgFund::getFundCode, fundCode));
     }
 

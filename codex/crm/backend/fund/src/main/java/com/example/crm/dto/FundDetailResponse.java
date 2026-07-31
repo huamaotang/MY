@@ -7,6 +7,7 @@ import com.example.crm.entity.FundPerformanceHistory;
 import com.example.crm.entity.FundRating;
 import com.example.crm.entity.FundStockHolding;
 import lombok.Data;
+import com.example.crm.dto.score.FundScoreDetailDto;
 
 import java.util.List;
 
@@ -19,4 +20,5 @@ public class FundDetailResponse {
     private List<FundStockHolding> latestHoldings;
     private List<FundFeatureData> features;
     private List<FundRating> ratings;
+    private FundScoreDetailDto scoreDetail;
 }

@@ -16,6 +16,7 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
@@ -274,9 +275,13 @@ public class MainTabActivity extends Activity {
         filterScroll.setHorizontalScrollBarEnabled(true);
         LinearLayout filters = new LinearLayout(this);
         filters.setOrientation(LinearLayout.HORIZONTAL);
-        String[] fundTypes = {"", "股票型", "混合型", "债券型", "指数型", "货币型"};
+        String[] fundTypes = {
+                "", "股票型", "混合型", "债券型", "指数型", "货币型", "FOF", "QDII", "商品"
+        };
         android.widget.Spinner typeSpinner = spinner(
-                new String[]{"全部类型", "股票型", "混合型", "债券型", "指数型", "货币型"});
+                new String[]{
+                        "全部类型", "股票型", "混合型", "债券型", "指数型", "货币型", "FOF", "QDII", "商品"
+                });
         typeSpinner.setSelection(indexOf(fundTypes, fundTypeFilter));
         typeSpinner.setOnItemSelectedListener(selectionSkippingInitial(position -> {
             fundTypeFilter = position == 0 ? null : fundTypes[position];
@@ -483,6 +488,9 @@ public class MainTabActivity extends Activity {
     private LinearLayout fundMetricHeader() {
         LinearLayout row = tableRow(Color.rgb(243, 244, 246));
         row.setMinimumHeight(Ui.dp(this, 46));
+        row.addView(sortableHeader("基金评分", "fundScore", "descend", 96, Gravity.END));
+        row.addView(sortableHeader("1年盈利概率", "profitProbability", "descend", 116, Gravity.END));
+        row.addView(tableCell("置信度", 84, Ui.TEXT, Typeface.BOLD, Gravity.END, 46));
         row.addView(sortableHeader("可购买", "canBuy", "descend", 84, Gravity.END));
         row.addView(tableCell("当日预估", 96, Ui.TEXT, Typeface.BOLD, Gravity.END, 46));
         row.addView(tableCell("估值日期", 148, Ui.TEXT, Typeface.BOLD, Gravity.CENTER, 46));
@@ -526,6 +534,16 @@ public class MainTabActivity extends Activity {
     private LinearLayout fundMetricRow(Fund fund, int background) {
         LinearLayout row = tableRow(background);
         row.setOnClickListener(view -> openFundDetail(fund));
+        row.addView(tableCell(fund.latestScore == null || fund.latestScore.totalScore == null
+                        ? "数据不足" : oneDecimal(fund.latestScore.totalScore),
+                96, fund.latestScore == null || fund.latestScore.totalScore == null ? Ui.MUTED : Ui.BLUE,
+                Typeface.BOLD, Gravity.END, 64));
+        row.addView(tableCell(fund.latestScore == null
+                        ? "未验证" : probability(fund.latestScore.profitProbability),
+                116, Ui.MUTED, Typeface.BOLD, Gravity.END, 64));
+        row.addView(tableCell(fund.latestScore == null
+                        ? "数据不足" : scoreConfidence(fund.latestScore.confidence),
+                84, Ui.MUTED, Typeface.NORMAL, Gravity.END, 64));
         row.addView(tableCell(fund.canBuy ? "可购" : "不可购", 84,
                 fund.canBuy ? Ui.GREEN : Ui.MUTED, Typeface.BOLD, Gravity.END, 64));
         addPercentCell(row, fund.latestValuation == null ? null
@@ -727,6 +745,32 @@ public class MainTabActivity extends Activity {
         StringBuilder result = new StringBuilder();
         for (int i = 0; i < Math.min(value, 5); i++) result.append("★");
         return result.toString();
+    }
+
+    private String oneDecimal(String value) {
+        if (value == null || value.trim().isEmpty()) return "-";
+        try {
+            return new BigDecimal(value).setScale(1, java.math.RoundingMode.HALF_UP).toPlainString();
+        } catch (NumberFormatException ignored) {
+            return value;
+        }
+    }
+
+    private String probability(String value) {
+        if (value == null || value.trim().isEmpty()) return "未验证";
+        try {
+            return new BigDecimal(value).multiply(new BigDecimal("100"))
+                    .setScale(1, java.math.RoundingMode.HALF_UP).toPlainString() + "%";
+        } catch (NumberFormatException ignored) {
+            return "未验证";
+        }
+    }
+
+    private String scoreConfidence(String value) {
+        if ("HIGH".equals(value)) return "高";
+        if ("MEDIUM".equals(value)) return "中";
+        if ("LOW".equals(value)) return "低";
+        return "数据不足";
     }
 
     private void addPerformanceRows(LinearLayout card, FundPerformance value) {

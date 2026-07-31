@@ -33,7 +33,7 @@ Supported data areas:
 7. Use `fund_spider/cli.py` as the only command entrypoint.
 8. Use `nav-performance` for the twice-daily NAV/performance snapshot and `feature` for the 08:00 feature refresh.
 9. Keep full basic profiles, holdings, ratings, and historical NAV as manual commands.
-10. For scheduled execution, use `fund_spider/cli.py schedule`, or `fund_spider/cli.py web` when a Web configuration service is needed.
+10. All recurring schedules must use APScheduler through `fund_spider/cli.py schedule`, or `fund_spider/cli.py web` when a Web configuration service is needed. Do not add custom polling loops or OS-level per-task timers.
 
 ## Commands
 
@@ -78,7 +78,7 @@ fund_spider/.venv/bin/python fund_spider/cli.py web --host 127.0.0.1 --port 8088
 ```
 
 Shell entrypoints are organized under `fund_spider/bin/`, collectors under
-`fund_spider/spiders/`, schedulers under `fund_spider/runtime/`, and standalone
+`fund_spider/spiders/`, APScheduler integration under `fund_spider/runtime/`, and standalone
 tools under `fund_spider/tools/`.
 
 ## Detailed Reference

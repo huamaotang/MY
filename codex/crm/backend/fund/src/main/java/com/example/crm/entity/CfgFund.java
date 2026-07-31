@@ -3,6 +3,7 @@ package com.example.crm.entity;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.example.crm.dto.FundDailyValuationDto;
+import com.example.crm.dto.score.FundScoreSummaryDto;
 import lombok.Data;
 
 import java.time.LocalDate;
@@ -31,4 +32,8 @@ public class CfgFund {
     private java.util.List<FundFeatureData> features;
     @TableField(exist = false)
     private FundDailyValuationDto latestValuation;
+    @TableField(exist = false)
+    private FundScoreSummaryDto latestScore;
+    @TableField(exist = false)
+    private Boolean favorite;
 }

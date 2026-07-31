@@ -12,8 +12,12 @@ import com.example.crm.entity.FundStockHolding;
 import java.util.List;
 
 public interface IFundService {
-    Page<CfgFund> page(long current, long size, String keyword, String fundType, Boolean canBuy,
-                       String sortField, String sortOrder);
+    Page<CfgFund> page(String ownerUsername, long current, long size, String keyword, String fundType,
+                       Boolean canBuy, boolean favoritesOnly, String sortField, String sortOrder);
+
+    void addFavorite(String ownerUsername, String fundCode);
+
+    void removeFavorite(String ownerUsername, String fundCode);
 
     FundDetailResponse detail(String fundCode);
 

@@ -69,6 +69,91 @@ export type Fund = {
   latestRating?: FundRating;
   features?: FundFeature[];
   latestValuation?: FundDailyValuation;
+  latestScore?: FundScoreSummary;
+  favorite?: boolean;
+};
+
+export type FundScoreSummary = {
+  profileId: number;
+  profileName: string;
+  profileVersion: number;
+  validationStatus: 'UNVERIFIED' | 'PASSED' | 'FAILED';
+  asOfDate: string;
+  totalScore?: number;
+  profitProbability?: number;
+  confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'INSUFFICIENT';
+  dataCoverage: number;
+  comparisonGroup?: string;
+  categoryRank?: number;
+  categoryCount?: number;
+  methodologyVersion: string;
+};
+
+export type FundScoreComponent = {
+  factorKey: string;
+  label: string;
+  rawValue?: number;
+  normalizedScore?: number;
+  weight: number;
+  effectiveWeight?: number;
+  contribution?: number;
+};
+
+export type FundScoreDetail = {
+  summary: FundScoreSummary;
+  components: FundScoreComponent[];
+  disclaimer: string;
+};
+
+export type FundScoreProfile = {
+  id: number;
+  profileName: string;
+  versionNo: number;
+  status: string;
+  sourceType: string;
+  targetMonths: number;
+  weights: Record<string, number>;
+  validationStatus: string;
+  active: boolean;
+  createdBy?: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type FundScoreBacktest = {
+  id: number;
+  profileId: number;
+  trainStartDate?: string;
+  trainEndDate?: string;
+  testStartDate?: string;
+  testEndDate?: string;
+  sampleCount: number;
+  foldCount: number;
+  auc?: number;
+  brierScore?: number;
+  baselineBrierScore?: number;
+  top20WinRate?: number;
+  baselineWinRate?: number;
+  winRateLift?: number;
+  passed: boolean;
+  limitationsJson?: string;
+  metricsJson?: string;
+  createdAt: string;
+};
+
+export type FundScoreJob = {
+  id: number;
+  jobType: string;
+  profileId?: number;
+  status: string;
+  requestedBy?: string;
+  message?: string;
+  startedAt?: string;
+  finishedAt?: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type FundNav = {
@@ -165,6 +250,7 @@ export type FundDetail = {
   latestHoldings: FundHolding[];
   features: FundFeature[];
   ratings: FundRating[];
+  scoreDetail?: FundScoreDetail;
 };
 
 export type FinanceNews = { id: number; newsId: string; categoryTag: number; categoryName: string; content: string; createTime: string; sourceUpdateTime?: string; docUrl?: string; tagsJson?: string; imagesJson?: string };
@@ -429,7 +515,15 @@ export function deleteCustomer(id: number) {
   return request<void>(`/customers/${id}`, { method: 'DELETE' });
 }
 
-export function listFunds(params: { current: number; size: number; keyword?: string; fundType?: string; sortField?: string; sortOrder?: string }) {
+export function listFunds(params: {
+  current: number;
+  size: number;
+  keyword?: string;
+  fundType?: string;
+  favoritesOnly?: boolean;
+  sortField?: string;
+  sortOrder?: string;
+}) {
   const search = new URLSearchParams();
   search.set('current', String(params.current));
   search.set('size', String(params.size));
@@ -441,7 +535,16 @@ export function listFunds(params: { current: number; size: number; keyword?: str
   }
   if (params.sortField) search.set('sortField', params.sortField);
   if (params.sortOrder) search.set('sortOrder', params.sortOrder);
-  return request<PageResult<Fund>>(`/funds?${search.toString()}`);
+  const path = params.favoritesOnly ? '/funds/favorites' : '/funds';
+  return request<PageResult<Fund>>(`${path}?${search.toString()}`);
+}
+
+export function addFundFavorite(fundCode: string) {
+  return request<void>(`/funds/${encodeURIComponent(fundCode)}/favorite`, { method: 'POST' });
+}
+
+export function removeFundFavorite(fundCode: string) {
+  return request<void>(`/funds/${encodeURIComponent(fundCode)}/favorite`, { method: 'DELETE' });
 }
 
 export function getFundDetail(fundCode: string) {
@@ -491,6 +594,38 @@ export function saveFund(fund: Fund) {
 
 export function deleteFund(fundCode: string) {
   return request<void>(`/funds/${encodeURIComponent(fundCode)}`, { method: 'DELETE' });
+}
+
+export function listFundScoreProfiles() {
+  return request<FundScoreProfile[]>('/funds/scoring/profiles');
+}
+
+export function saveFundScoreProfile(profile: { id?: number; profileName: string; weights: Record<string, number> }) {
+  const path = profile.id ? `/funds/scoring/profiles/${profile.id}` : '/funds/scoring/profiles';
+  return request<FundScoreProfile>(path, {
+    method: profile.id ? 'PUT' : 'POST',
+    body: JSON.stringify({ profileName: profile.profileName, weights: profile.weights })
+  });
+}
+
+export function backtestFundScoreProfile(id: number) {
+  return request<FundScoreJob>(`/funds/scoring/profiles/${id}/backtest`, { method: 'POST' });
+}
+
+export function activateFundScoreProfile(id: number) {
+  return request<void>(`/funds/scoring/profiles/${id}/activate`, { method: 'POST' });
+}
+
+export function recommendFundScoreProfile() {
+  return request<FundScoreJob>('/funds/scoring/recommend', { method: 'POST' });
+}
+
+export function getFundScoreBacktest(id: number) {
+  return request<FundScoreBacktest | undefined>(`/funds/scoring/profiles/${id}/backtest`);
+}
+
+export function listFundScoreJobs() {
+  return request<FundScoreJob[]>('/funds/scoring/jobs');
 }
 
 export function listUsers(keyword?: string) {
