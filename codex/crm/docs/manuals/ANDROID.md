@@ -247,3 +247,19 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 5. 客户详情能打开。
 6. 断网和服务器地址错误时有可见提示。
 7. 后端 `sys_api_log.source` 能看到 `android`。
+
+## 14. 持仓截图导入
+
+`PortfolioImportActivity` 支持支付宝、腾讯理财通，以及持仓快照、交易明细两种类型。
+快照确认覆盖同平台完整持仓；交易确认只提交基金映射，由服务端重新计算并调整已有持仓。
+
+交易预览按基金显示买入、卖出、净额、当前金额、预计金额、交易数、跳过数和告警。
+无法映射到同平台已有持仓的基金可留空并跳过。
+
+工程使用 Android Gradle Plugin 8.5.2；命令行构建需要与其兼容的 Gradle/JDK。
+如果本机没有兼容 Gradle，可先使用 Android Studio 完成 Gradle Sync，再运行：
+
+```bash
+cd android/CrmMobileAndroid
+gradle assembleDebug
+```

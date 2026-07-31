@@ -51,6 +51,7 @@ import {
   PortfolioHoldingBatch,
   PortfolioHoldingImportPreview,
   PortfolioHoldingImportRow,
+  PortfolioTradeAdjustment,
   StockQuote,
   Role,
   SysMenu,
@@ -600,6 +601,8 @@ function PortfolioAdmin() {
   const [total, setTotal] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [keyword, setKeyword] = useState('');
+  const [sourceLabel, setSourceLabel] = useState<'alipay' | 'tencent'>('alipay');
+  const [importType, setImportType] = useState<'holding' | 'trade'>('holding');
 
   const loadHoldings = async (page = current, size = pageSize) => {
     setLoading(true);
@@ -645,38 +648,72 @@ function PortfolioAdmin() {
     });
   };
 
+  const updateTradeAdjustment = (groupKey: string, patch: Partial<PortfolioTradeAdjustment>) => {
+    setPreview((currentPreview) => {
+      if (!currentPreview) {
+        return currentPreview;
+      }
+      return {
+        ...currentPreview,
+        tradeAdjustments: (currentPreview.tradeAdjustments || []).map((row) =>
+          row.groupKey === groupKey ? { ...row, ...patch } : row
+        )
+      };
+    });
+  };
+
   const confirm = async () => {
     if (!preview) {
       message.error('请先上传截图');
       return;
     }
-    const unresolved = preview.rows.find((row) => !row.fundCode);
-    if (unresolved) {
-      message.error(`第 ${unresolved.rowNo} 行还没有绑定基金代码`);
-      return;
+    if (preview.importType === 'holding') {
+      const unresolved = preview.rows.find((row) => !row.fundCode);
+      if (unresolved) {
+        message.error(`第 ${unresolved.rowNo} 行还没有绑定基金代码`);
+        return;
+      }
     }
     setUploading(true);
     try {
-      await confirmPortfolioHoldingImport(preview.importId, {
-        screenshotDate: preview.screenshotDate,
-        items: preview.rows.map((row) => ({
-          rowNo: row.rowNo,
-          fundCode: row.fundCode,
-          fundName: row.fundName,
-          holdingAmount: row.holdingAmount,
-          holdingProfit: row.holdingProfit,
-          holdingReturnRate: row.holdingReturnRate,
-          holdingCost: row.holdingCost,
-          yesterdayProfit: row.yesterdayProfit,
-          todayProfit: row.todayProfit,
-          holdingShares: row.holdingShares,
-          costNav: row.costNav,
-          screenshotDate: row.screenshotDate,
-          confidence: row.confidence,
-          rawTexts: row.rawTexts
-        }))
-      });
-      message.success('持仓已入库');
+      const result = await confirmPortfolioHoldingImport(
+        preview.importId,
+        preview.importType === 'trade'
+          ? {
+              tradeMappings: (preview.tradeAdjustments || [])
+                .filter((row) => row.fundCode)
+                .map((row) => ({ groupKey: row.groupKey, fundCode: row.fundCode! }))
+            }
+          : {
+              screenshotDate: preview.screenshotDate,
+              items: preview.rows.map((row) => ({
+                rowNo: row.rowNo,
+                fundCode: row.fundCode,
+                fundName: row.fundName,
+                holdingAmount: row.holdingAmount,
+                holdingProfit: row.holdingProfit,
+                holdingReturnRate: row.holdingReturnRate,
+                holdingCost: row.holdingCost,
+                yesterdayProfit: row.yesterdayProfit,
+                todayProfit: row.todayProfit,
+                holdingShares: row.holdingShares,
+                costNav: row.costNav,
+                screenshotDate: row.screenshotDate,
+                confidence: row.confidence,
+                rawTexts: row.rawTexts
+              }))
+            }
+      );
+      if (preview.importType === 'trade') {
+        message.success(
+          `已调整 ${result.affectedHoldingCount} 只基金，应用 ${result.appliedTransactionCount} 条，跳过 ${result.skippedTransactionCount} 条`
+        );
+        if (result.warnings?.length) {
+          message.warning(result.warnings.join('；'));
+        }
+      } else {
+        message.success(`已覆盖 ${result.affectedHoldingCount} 只基金持仓`);
+      }
       setPreview(null);
       await Promise.all([loadHoldings(1), loadImports()]);
     } catch (error) {
@@ -740,7 +777,7 @@ function PortfolioAdmin() {
         </Space>
       )
     },
-    { title: '持有金额', dataIndex: 'holdingAmount', width: 120, render: formatValue },
+    { title: '持有金额', dataIndex: 'holdingAmount', width: 120, render: formatMoney },
     { title: '持有收益', dataIndex: 'holdingProfit', width: 120, render: renderSignedValue },
     { title: '持有收益率', dataIndex: 'holdingReturnRate', width: 120, render: renderSignedPercent },
     { title: '净值成本', dataIndex: 'costNav', width: 120, render: formatValue },
@@ -748,15 +785,73 @@ function PortfolioAdmin() {
     { title: '置信度', dataIndex: 'confidence', width: 100, render: formatValue }
   ];
 
+  const tradeColumns: ColumnsType<PortfolioTradeAdjustment> = [
+    {
+      title: '基金',
+      dataIndex: 'fundName',
+      width: 260,
+      render: (value, row) => (
+        <Space direction="vertical" size={4}>
+          <Typography.Text>{value}</Typography.Text>
+          <Select
+            showSearch
+            allowClear
+            value={row.fundCode}
+            disabled={preview?.status === 'CONFIRMED'}
+            style={{ width: 240 }}
+            placeholder="仅可映射到当前账户持仓"
+            optionFilterProp="label"
+            onChange={(fundCode) => {
+              const selected = row.candidates?.find((candidate) => candidate.fundCode === fundCode);
+              updateTradeAdjustment(row.groupKey, {
+                fundCode,
+                fundName: selected?.fundName || row.fundName,
+                applicable: Boolean(fundCode)
+              });
+            }}
+            options={(row.candidates || []).map((candidate) => ({
+              value: candidate.fundCode,
+              label: `${candidate.fundCode} ${candidate.fundName} (${candidate.score ?? 0})`
+            }))}
+          />
+        </Space>
+      )
+    },
+    { title: '买入合计', dataIndex: 'buyAmount', width: 120, render: formatMoney },
+    { title: '卖出合计', dataIndex: 'sellAmount', width: 120, render: formatMoney },
+    { title: '净增减', dataIndex: 'netAmount', width: 120, render: renderSignedValue },
+    {
+      title: '金额变化',
+      width: 190,
+      render: (_, row) => `${formatMoney(row.currentHoldingAmount)} → ${formatMoney(row.projectedHoldingAmount)}`
+    },
+    {
+      title: '交易',
+      width: 120,
+      render: (_, row) => `应用 ${row.transactionCount} / 跳过 ${row.skippedCount}`
+    },
+    {
+      title: '状态',
+      width: 110,
+      render: (_, row) => row.applicable ? <Tag color="green">可应用</Tag> : <Tag color="orange">将跳过</Tag>
+    },
+    {
+      title: '提示',
+      dataIndex: 'warnings',
+      width: 260,
+      render: (value: string[]) => value?.length ? value.join('；') : '-'
+    }
+  ];
+
   const holdingColumns: ColumnsType<UserFundHolding> = [
     { title: '基金代码', dataIndex: 'fundCode', width: 120 },
     { title: '基金名称', dataIndex: 'fundName', width: 220 },
-    { title: '持有金额', dataIndex: 'holdingAmount', width: 110, render: formatValue },
+    { title: '持有金额', dataIndex: 'holdingAmount', width: 110, render: formatMoney },
     { title: '预估涨跌幅', dataIndex: 'estimatedChangeRate', width: 120, render: renderSignedPercent },
     { title: '预估盈亏', dataIndex: 'estimatedDailyProfit', width: 110, render: renderSignedValue },
     { title: '累计预估涨跌幅', dataIndex: 'estimatedCumulativeChangeRate', width: 145, render: renderSignedPercent },
     { title: '累计预估盈亏', dataIndex: 'estimatedCumulativeProfit', width: 130, render: renderSignedValue },
-    { title: '估值后金额', dataIndex: 'estimatedHoldingAmount', width: 120, render: formatValue },
+    { title: '估值后金额', dataIndex: 'estimatedHoldingAmount', width: 120, render: formatMoney },
     { title: '预估净值', dataIndex: 'estimatedUnitNav', width: 110, render: formatValue },
     { title: '估值日期', dataIndex: 'valuationDate', width: 110 },
     { title: '行情覆盖率', dataIndex: 'valuationCoverageRate', width: 120, render: formatPercent },
@@ -787,10 +882,13 @@ function PortfolioAdmin() {
   const importColumns: ColumnsType<PortfolioHoldingBatch> = [
     { title: '批次ID', dataIndex: 'id', width: 90 },
     { title: '状态', dataIndex: 'status', width: 100 },
-    { title: '来源', dataIndex: 'sourceLabel', width: 100 },
+    { title: '来源', dataIndex: 'sourceLabel', width: 110, render: (value) => value === 'tencent' ? '腾讯理财通' : '支付宝' },
+    { title: '类型', dataIndex: 'importType', width: 100, render: (value) => value === 'trade' ? '交易增减' : '持仓覆盖' },
     { title: '截图日期', dataIndex: 'screenshotDate', width: 110 },
     { title: '图片数', dataIndex: 'imageCount', width: 90 },
-    { title: '明细数', dataIndex: 'itemCount', width: 90 },
+    { title: '基金数', dataIndex: 'itemCount', width: 90 },
+    { title: '交易数', dataIndex: 'transactionCount', width: 90 },
+    { title: '应用/跳过', width: 110, render: (_, row) => row.importType === 'trade' ? `${row.appliedCount}/${row.skippedCount}` : '-' },
     { title: '确认时间', dataIndex: 'confirmedAt', width: 170 },
     { title: '创建时间', dataIndex: 'createdAt', width: 170 },
     {
@@ -805,6 +903,7 @@ function PortfolioAdmin() {
   ];
 
   const previewItems = preview?.rows || [];
+  const tradePreviewItems = preview?.tradeAdjustments || [];
 
   return (
     <div className="page">
@@ -821,6 +920,24 @@ function PortfolioAdmin() {
           <Button icon={<SearchOutlined />} onClick={() => loadHoldings(1)}>
             查询
           </Button>
+          <Select
+            value={sourceLabel}
+            style={{ width: 130 }}
+            onChange={setSourceLabel}
+            options={[
+              { value: 'alipay', label: '支付宝' },
+              { value: 'tencent', label: '腾讯理财通' }
+            ]}
+          />
+          <Select
+            value={importType}
+            style={{ width: 130 }}
+            onChange={setImportType}
+            options={[
+              { value: 'holding', label: '持仓列表覆盖' },
+              { value: 'trade', label: '交易批量增减' }
+            ]}
+          />
           <Button icon={<InboxOutlined />} onClick={chooseFiles}>
             上传截图
           </Button>
@@ -841,7 +958,7 @@ function PortfolioAdmin() {
           }
           setUploading(true);
           try {
-            setPreview(await previewPortfolioHoldings(files));
+            setPreview(await previewPortfolioHoldings(files, sourceLabel, importType));
           } catch (error) {
             message.error((error as Error).message);
           } finally {
@@ -853,19 +970,33 @@ function PortfolioAdmin() {
         items={[
           {
             key: 'preview',
-            label: preview ? `识别预览 (${preview.rows.length})` : '识别预览',
+            label: preview
+              ? `识别预览 (${preview.importType === 'trade' ? tradePreviewItems.length : preview.rows.length})`
+              : '识别预览',
             children: (
               <Space direction="vertical" style={{ width: '100%' }} size={16}>
                 {preview ? (
                   <>
                     <Space wrap>
                       <Typography.Text>来源：{preview.sourceLabel}</Typography.Text>
+                      <Typography.Text>类型：{preview.importType === 'trade' ? '交易批量增减' : '持仓列表覆盖'}</Typography.Text>
                       <Typography.Text>状态：{preview.status}</Typography.Text>
                       <Typography.Text>图片数：{preview.imageCount}</Typography.Text>
                       <Typography.Text>截图日期：{preview.screenshotDate || '-'}</Typography.Text>
                     </Space>
                     {preview.warnings?.length ? <Typography.Text type="danger">{preview.warnings.join('；')}</Typography.Text> : null}
-                    <Table rowKey="rowNo" loading={uploading} columns={previewColumns} dataSource={previewItems} pagination={false} scroll={{ x: 1350 }} />
+                    {preview.importType === 'trade' ? (
+                      <Table
+                        rowKey="groupKey"
+                        loading={uploading}
+                        columns={tradeColumns}
+                        dataSource={tradePreviewItems}
+                        pagination={false}
+                        scroll={{ x: 1300 }}
+                      />
+                    ) : (
+                      <Table rowKey="rowNo" loading={uploading} columns={previewColumns} dataSource={previewItems} pagination={false} scroll={{ x: 1350 }} />
+                    )}
                     <Space>
                       {preview.status === 'PREVIEWED' ? (
                         <Button type="primary" loading={uploading} onClick={confirm}>
@@ -880,8 +1011,13 @@ function PortfolioAdmin() {
                 ) : (
                   <div className="portfolio-dropzone" onClick={chooseFiles}>
                     <InboxOutlined style={{ fontSize: 40 }} />
-                    <Typography.Title level={4} style={{ margin: 0 }}>点击上传支付宝基金持仓截图</Typography.Title>
-                    <Typography.Text type="secondary">支持 1-3 张 PNG / JPG 截图，先预览再确认。</Typography.Text>
+                    <Typography.Title level={4} style={{ margin: 0 }}>
+                      点击上传{sourceLabel === 'tencent' ? '腾讯理财通' : '支付宝'}
+                      {importType === 'trade' ? '交易明细' : '基金持仓'}截图
+                    </Typography.Title>
+                    <Typography.Text type="secondary">
+                      支持 1-3 张 PNG / JPG；{importType === 'trade' ? '仅调整已有持仓金额' : '确认后覆盖同平台持仓'}。
+                    </Typography.Text>
                   </div>
                 )}
               </Space>
@@ -1054,8 +1190,8 @@ function FundList() {
     { title: '招商评级', key: 'zhaoshangRating', width: 110, render: (_, row) => renderRatingStars(row.latestRating?.zhaoshangRating), sorter: true },
     { title: '晨星评级', key: 'morningStarRating', width: 110, render: (_, row) => renderRatingStars(row.latestRating?.morningStarRating), sorter: true },
     ...performanceListColumns(),
-    { title: '标准差', key: 'standardDeviation', width: 120, render: (_, row) => featureSummary(row.features, 'standardDeviation'), sorter: true },
-    { title: '夏普比率', key: 'sharpeRatio', width: 120, render: (_, row) => featureSummary(row.features, 'sharpeRatio'), sorter: true },
+    { title: '标准差（近3年）', key: 'standardDeviation', width: 140, render: (_, row) => threeYearFeatureValue(row.features, 'standardDeviation'), sorter: true },
+    { title: '夏普比率（近3年）', key: 'sharpeRatio', width: 150, render: (_, row) => threeYearFeatureValue(row.features, 'sharpeRatio'), sorter: true },
     {
       title: '操作',
       key: 'action',
@@ -2210,6 +2346,13 @@ function formatValue(value?: number | string | null) {
   return value == null || value === '' ? '-' : value;
 }
 
+function formatMoney(value?: number | string | null) {
+  const numeric = toNumber(value);
+  return numeric == null
+    ? '-'
+    : numeric.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
 function compareValues(first?: number | string | null, second?: number | string | null) {
   const firstNumber = toNumber(first);
   const secondNumber = toNumber(second);
@@ -2232,13 +2375,9 @@ function performanceListColumns(): ColumnsType<Fund> {
   }));
 }
 
-function firstFeatureValue(features: FundFeature[] | undefined, key: 'standardDeviation' | 'sharpeRatio') {
-  return features?.[0]?.[key];
-}
-
-function featureSummary(features: FundFeature[] | undefined, key: 'standardDeviation' | 'sharpeRatio') {
-  if (!features?.length) return '-';
-  return features.map((item) => `${item.periodLabel}:${formatValue(item[key])}`).join(' / ');
+function threeYearFeatureValue(features: FundFeature[] | undefined, key: 'standardDeviation' | 'sharpeRatio') {
+  const feature = features?.find((item) => item.periodLabel === '近3年');
+  return formatValue(feature?.[key]);
 }
 
 function formatPercent(value?: number | string | null) {
@@ -2260,7 +2399,7 @@ function renderSignedValue(value?: number | string | null) {
     return '-';
   }
   const color = numeric > 0 ? '#cf1322' : numeric < 0 ? '#389e0d' : undefined;
-  return <span style={{ color }}>{formatValue(value)}</span>;
+  return <span style={{ color }}>{formatMoney(value)}</span>;
 }
 
 function renderRatingStars(value?: number | string | null) {

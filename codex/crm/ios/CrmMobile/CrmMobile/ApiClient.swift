@@ -36,7 +36,9 @@ final class ApiClient {
         try await request(path: "/customers/\(id)")
     }
 
-    func listFunds(current: Int, size: Int, keyword: String?) async throws -> PageResult<Fund> {
+    func listFunds(current: Int, size: Int, keyword: String?, fundType: String? = nil,
+                   canBuy: Bool? = nil, sortField: String? = nil,
+                   sortOrder: String? = nil) async throws -> PageResult<Fund> {
         var queryItems = [
             URLQueryItem(name: "current", value: String(current)),
             URLQueryItem(name: "size", value: String(size))
@@ -44,6 +46,14 @@ final class ApiClient {
         if let keyword, !keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             queryItems.append(URLQueryItem(name: "keyword", value: keyword))
         }
+        if let fundType, !fundType.isEmpty {
+            queryItems.append(URLQueryItem(name: "fundType", value: fundType))
+        }
+        if let canBuy {
+            queryItems.append(URLQueryItem(name: "canBuy", value: String(canBuy)))
+        }
+        if let sortField { queryItems.append(URLQueryItem(name: "sortField", value: sortField)) }
+        if let sortOrder { queryItems.append(URLQueryItem(name: "sortOrder", value: sortOrder)) }
         return try await request(path: "/funds", queryItems: queryItems)
     }
 
@@ -68,15 +78,24 @@ final class ApiClient {
         return try await request(path: "/news", queryItems: queryItems)
     }
 
-    func listPortfolioHoldings(current: Int, size: Int, keyword: String? = nil) async throws -> PageResult<UserFundHolding> {
+    func listPortfolioHoldings(current: Int, size: Int, keyword: String? = nil,
+                               scope: String = "raw", sortField: String = "holdingAmount",
+                               sortOrder: String = "desc") async throws -> PageResult<UserFundHolding> {
         var queryItems = [
             URLQueryItem(name: "current", value: String(current)),
-            URLQueryItem(name: "size", value: String(size))
+            URLQueryItem(name: "size", value: String(size)),
+            URLQueryItem(name: "scope", value: scope),
+            URLQueryItem(name: "sortField", value: sortField),
+            URLQueryItem(name: "sortOrder", value: sortOrder)
         ]
         if let keyword, !keyword.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             queryItems.append(URLQueryItem(name: "keyword", value: keyword))
         }
         return try await request(path: "/portfolio/holdings", queryItems: queryItems)
+    }
+
+    func portfolioOverview() async throws -> PortfolioOverview {
+        try await request(path: "/portfolio/overview")
     }
 
     func listPortfolioImports(current: Int, size: Int) async throws -> PageResult<PortfolioHoldingBatch> {
@@ -86,19 +105,34 @@ final class ApiClient {
         ])
     }
 
-    func previewPortfolioHoldings(images: [Data]) async throws -> PortfolioHoldingImportPreview {
-        let multipart = MultipartBody(parts: images.enumerated().map { index, data in
+    func previewPortfolioHoldings(
+        images: [Data],
+        sourceLabel: String = "alipay",
+        importType: String = "holding"
+    ) async throws -> PortfolioHoldingImportPreview {
+        let imageParts = images.enumerated().map { index, data in
             MultipartBody.Part(name: "images", filename: "screenshot-\(index + 1).jpg", mimeType: "image/jpeg", data: data)
-        })
-        return try await performMultipartRequest(path: "/portfolio/imports/ocr", multipart: multipart)
+        }
+        return try await performMultipartRequest(
+            path: "/portfolio/imports/ocr?sourceLabel=\(sourceLabel)&importType=\(importType)",
+            multipart: MultipartBody(parts: imageParts)
+        )
     }
 
     func portfolioHoldingImport(importId: Int) async throws -> PortfolioHoldingImportPreview {
         try await request(path: "/portfolio/imports/\(importId)")
     }
 
-    func confirmPortfolioHoldingImport(importId: Int, request: PortfolioHoldingConfirmRequest) async throws {
-        try await performRequestNoData(path: "/portfolio/imports/\(importId)/confirm", method: "POST", httpBody: try encoder.encode(request))
+    func confirmPortfolioHoldingImport(
+        importId: Int,
+        request: PortfolioHoldingConfirmRequest
+    ) async throws -> PortfolioHoldingConfirmResponse {
+        try await performRequest(
+            path: "/portfolio/imports/\(importId)/confirm",
+            method: "POST",
+            queryItems: [],
+            httpBody: try encoder.encode(request)
+        )
     }
 
     func listStocks(current: Int, size: Int, keyword: String = "", sortField: String? = nil, sortOrder: String? = nil) async throws -> PageResult<StockQuote> {
@@ -247,7 +281,13 @@ private struct LoginRequest: Encodable {
 
 struct PortfolioHoldingConfirmRequest: Encodable {
     let screenshotDate: String?
-    let items: [PortfolioHoldingConfirmItemRequest]
+    let items: [PortfolioHoldingConfirmItemRequest]?
+    let tradeMappings: [PortfolioTradeMappingRequest]?
+}
+
+struct PortfolioTradeMappingRequest: Encodable {
+    let groupKey: String
+    let fundCode: String
 }
 
 struct PortfolioHoldingConfirmItemRequest: Encodable {

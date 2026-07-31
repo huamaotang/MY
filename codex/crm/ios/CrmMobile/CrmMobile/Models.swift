@@ -202,34 +202,65 @@ struct PortfolioHoldingImportRow: Decodable, Hashable {
     let candidates: [PortfolioHoldingCandidate]
 }
 
+struct PortfolioTradeAdjustment: Decodable, Hashable {
+    let groupKey: String
+    var fundCode: String?
+    var fundName: String
+    let buyAmount: Decimal
+    let sellAmount: Decimal
+    let netAmount: Decimal
+    let currentHoldingAmount: Decimal?
+    let projectedHoldingAmount: Decimal?
+    let transactionCount: Int
+    let skippedCount: Int
+    var applicable: Bool
+    let warnings: [String]
+    let candidates: [PortfolioHoldingCandidate]
+}
+
 struct PortfolioHoldingImportPreview: Decodable {
     let importId: Int
     let sourceLabel: String
+    let importType: String
     let status: String
     let screenshotDate: String?
     let imageCount: Int
     let imageHashes: [String]
     let warnings: [String]
     var rows: [PortfolioHoldingImportRow]
+    var tradeAdjustments: [PortfolioTradeAdjustment]
 }
 
 struct PortfolioHoldingBatch: Decodable, Identifiable, Hashable {
     let id: Int
     let status: String
     let sourceLabel: String
+    let importType: String
     let screenshotDate: String?
     let imageCount: Int
     let itemCount: Int
+    let transactionCount: Int
+    let appliedCount: Int
+    let skippedCount: Int
     let confirmedAt: String?
     let createdAt: String?
     let updatedAt: String?
 }
 
+struct PortfolioHoldingConfirmResponse: Decodable {
+    let affectedHoldingCount: Int
+    let appliedTransactionCount: Int
+    let skippedTransactionCount: Int
+    let warnings: [String]
+}
+
 struct UserFundHolding: Decodable, Identifiable, Hashable {
     let id: Int
     let ownerUsername: String
+    let sourceLabel: String?
     let fundCode: String
     let fundName: String
+    let fundType: String?
     let holdingAmount: Decimal?
     let holdingProfit: Decimal?
     let holdingReturnRate: Decimal?
@@ -253,6 +284,21 @@ struct UserFundHolding: Decodable, Identifiable, Hashable {
     let latestImportAt: String?
     let createdAt: String?
     let updatedAt: String?
+}
+
+struct PortfolioAccountSummary: Decodable, Hashable {
+    let sourceLabel: String
+    let displayName: String
+    let holdingCount: Int
+    let holdingAmount: Decimal?
+    let holdingProfit: Decimal?
+    let holdingReturnRate: Decimal?
+    let todayProfit: Decimal?
+}
+
+struct PortfolioOverview: Decodable {
+    let total: PortfolioAccountSummary
+    let accounts: [PortfolioAccountSummary]
 }
 
 struct StockQuote: Decodable, Identifiable, Hashable {

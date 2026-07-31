@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 public class UserFundHolding {
     private Long id;
     private String ownerUsername;
+    private String sourceLabel;
     private String fundCode;
     private String fundName;
     private BigDecimal holdingAmount;

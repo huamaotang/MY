@@ -64,11 +64,12 @@ public class FundServiceImpl implements IFundService {
     }
 
     @Override
-    public Page<CfgFund> page(long current, long size, String keyword, String fundType, String sortField, String sortOrder) {
+    public Page<CfgFund> page(long current, long size, String keyword, String fundType, Boolean canBuy,
+                              String sortField, String sortOrder) {
         String sortExpression = SORT_FIELDS.getOrDefault(sortField, "f.fund_code");
         String sortDirection = "descend".equalsIgnoreCase(sortOrder) ? "DESC" : "ASC";
         Page<CfgFund> page = fundMapper.selectFundPage(new Page<>(current, size),
-                hasText(keyword) ? keyword.trim() : null, fundType, sortExpression, sortDirection);
+                hasText(keyword) ? keyword.trim() : null, fundType, canBuy, sortExpression, sortDirection);
         page.getRecords().forEach(fund -> {
             fund.setLatestPerformance(latestPerformance(fund.getFundCode()));
             fund.setLatestRating(latestRating(fund.getFundCode()));
@@ -92,8 +93,8 @@ public class FundServiceImpl implements IFundService {
         fields.put("sinceInceptionReturnRate", "p.since_inception_return_rate"); fields.put("customReturnRate", "p.custom_return_rate");
         fields.put("originalFeeRate", "p.original_fee_rate"); fields.put("discountedFeeRate", "p.discounted_fee_rate");
         fields.put("cashManagementFeeRate", "p.cash_management_fee_rate");
-        fields.put("standardDeviation", "(SELECT ff.standard_deviation FROM fund_feature_data ff WHERE ff.fund_code=f.fund_code ORDER BY ff.cutoff_date DESC, ff.period_label ASC LIMIT 1)");
-        fields.put("sharpeRatio", "(SELECT ff.sharpe_ratio FROM fund_feature_data ff WHERE ff.fund_code=f.fund_code ORDER BY ff.cutoff_date DESC, ff.period_label ASC LIMIT 1)");
+        fields.put("standardDeviation", "(SELECT ff.standard_deviation FROM fund_feature_data ff WHERE ff.fund_code=f.fund_code AND ff.period_label='近3年' ORDER BY ff.cutoff_date DESC LIMIT 1)");
+        fields.put("sharpeRatio", "(SELECT ff.sharpe_ratio FROM fund_feature_data ff WHERE ff.fund_code=f.fund_code AND ff.period_label='近3年' ORDER BY ff.cutoff_date DESC LIMIT 1)");
         return java.util.Collections.unmodifiableMap(fields);
     }
 

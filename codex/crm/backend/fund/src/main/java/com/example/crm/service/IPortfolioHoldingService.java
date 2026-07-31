@@ -2,19 +2,26 @@ package com.example.crm.service;
 
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.crm.dto.portfolio.PortfolioHoldingBatchSummaryDto;
+import com.example.crm.dto.portfolio.PortfolioHoldingConfirmResponse;
 import com.example.crm.dto.portfolio.PortfolioHoldingConfirmRequest;
 import com.example.crm.dto.portfolio.PortfolioHoldingImportPreviewResponse;
+import com.example.crm.dto.portfolio.PortfolioOverviewDto;
 import com.example.crm.dto.portfolio.UserFundHoldingDto;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
 public interface IPortfolioHoldingService {
-    PortfolioHoldingImportPreviewResponse preview(String ownerUsername, List<MultipartFile> images);
+    PortfolioHoldingImportPreviewResponse preview(String ownerUsername, String sourceLabel, String importType,
+                                                   List<MultipartFile> images);
 
-    void confirm(String ownerUsername, Long importId, PortfolioHoldingConfirmRequest request);
+    PortfolioHoldingConfirmResponse confirm(String ownerUsername, Long importId,
+                                             PortfolioHoldingConfirmRequest request);
 
-    Page<UserFundHoldingDto> holdings(String ownerUsername, long current, long size, String keyword);
+    Page<UserFundHoldingDto> holdings(String ownerUsername, long current, long size, String keyword,
+                                      String scope, String sortField, String sortOrder);
+
+    PortfolioOverviewDto overview(String ownerUsername);
 
     Page<PortfolioHoldingBatchSummaryDto> imports(String ownerUsername, long current, long size);
 

@@ -10,8 +10,10 @@ import java.time.LocalDateTime;
 public class UserFundHoldingDto {
     private Long id;
     private String ownerUsername;
+    private String sourceLabel;
     private String fundCode;
     private String fundName;
+    private String fundType;
     private BigDecimal holdingAmount;
     private BigDecimal holdingProfit;
     private BigDecimal holdingReturnRate;

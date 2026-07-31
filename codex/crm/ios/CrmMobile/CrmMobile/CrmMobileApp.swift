@@ -154,6 +154,21 @@ struct StockHistoryView: View {
 }
 
 private func decimal(_ value: Decimal?) -> String { value.map { NSDecimalNumber(decimal: $0).stringValue } ?? "-" }
+private let moneyFormatter: NumberFormatter = {
+    let formatter = NumberFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.numberStyle = .decimal
+    formatter.usesGroupingSeparator = true
+    formatter.groupingSeparator = ","
+    formatter.groupingSize = 3
+    formatter.minimumFractionDigits = 2
+    formatter.maximumFractionDigits = 2
+    return formatter
+}()
+private func money(_ value: Decimal?) -> String {
+    guard let value else { return "-" }
+    return moneyFormatter.string(from: NSDecimalNumber(decimal: value)) ?? "-"
+}
 private func compact(_ value: Decimal?) -> String {
     guard let value else { return "-" }
     let number = NSDecimalNumber(decimal: value).doubleValue
@@ -168,7 +183,7 @@ private func compact(_ value: Decimal?) -> String {
 }
 @ViewBuilder private func signedValue(_ value: Decimal?) -> some View {
     let number = value.map { NSDecimalNumber(decimal: $0).doubleValue }
-    Text(number.map { String(format: "%.2f", $0) } ?? "-")
+    Text(money(value))
         .foregroundStyle(number.map { $0 > 0 ? Color.red : $0 < 0 ? Color.green : Color.secondary } ?? Color.secondary)
 }
 
@@ -225,28 +240,400 @@ struct FinanceNewsView: View {
 
 struct PortfolioHoldingView: View {
     @EnvironmentObject private var session: SessionStore
+    @State private var selectedTab = 0
+    @State private var overview: PortfolioOverview?
+    @State private var holdings: [UserFundHolding] = []
+    @State private var keyword = ""
+    @State private var sortField = "holdingAmount"
+    @State private var sortOrder = "desc"
+    @State private var loading = false
+    @State private var error: String?
+    @State private var showImport = false
+    @State private var importSourceLabel = "alipay"
+    @State private var importType = "holding"
+
+    private let tabs = ["账户汇总", "全部", "支付宝", "腾讯理财通"]
+    private var scope: String {
+        switch selectedTab {
+        case 1: return "all"
+        case 2: return "alipay"
+        case 3: return "tencent"
+        default: return "all"
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(tabs.indices, id: \.self) { index in
+                            Button(tabs[index]) {
+                                selectedTab = index
+                            }
+                            .font(.body.weight(selectedTab == index ? .semibold : .regular))
+                            .foregroundStyle(selectedTab == index ? .white : .primary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(selectedTab == index ? Color.accentColor : Color(.secondarySystemBackground))
+                            .clipShape(Capsule())
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                }
+                Divider()
+                if let error {
+                    Text(error).font(.caption).foregroundStyle(.red).padding(.horizontal).padding(.top, 8)
+                }
+                if selectedTab == 0 {
+                    accountSummary
+                } else {
+                    holdingList
+                }
+            }
+            .navigationTitle("持仓")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        openImport(type: "holding")
+                    } label: {
+                        Label("导入", systemImage: "square.and.arrow.down")
+                    }
+                }
+            }
+            .sheet(isPresented: $showImport, onDismiss: { Task { await reload() } }) {
+                PortfolioImportView(
+                    initialSourceLabel: importSourceLabel,
+                    initialImportType: importType
+                )
+                    .environmentObject(session)
+            }
+            .task { await reload() }
+            .onChange(of: selectedTab) { _ in
+                if selectedTab > 0 { Task { await loadHoldings() } }
+            }
+        }
+    }
+
+    private var accountSummary: some View {
+        ScrollView {
+            LazyVStack(spacing: 8) {
+                if let total = overview?.total {
+                    PortfolioSummaryCard(summary: total, prominent: true)
+                }
+                ForEach(overview?.accounts ?? [], id: \.sourceLabel) { account in
+                    Button {
+                        selectedTab = account.sourceLabel == "tencent" ? 3 : 2
+                    } label: {
+                        PortfolioSummaryCard(summary: account, prominent: false)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if overview == nil && loading { ProgressView("加载账户") }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+        }
+        .refreshable { await reload() }
+    }
+
+    private var holdingList: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("搜索基金", text: $keyword)
+                    .submitLabel(.search)
+                    .onSubmit { Task { await loadHoldings() } }
+                if !keyword.isEmpty {
+                    Button { keyword = ""; Task { await loadHoldings() } } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(8)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            if let summary = selectedSummary {
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text("资产").foregroundStyle(.secondary)
+                    Text(money(summary.holdingAmount))
+                        .font(.headline.weight(.semibold))
+                    Spacer()
+                    Text("今日").foregroundStyle(.secondary)
+                    Text(money(summary.todayProfit))
+                        .foregroundStyle(summary.todayProfit.map(signedValueColor) ?? .secondary)
+                    Spacer()
+                    Text("\(summary.holdingCount) 只")
+                }
+                .font(.subheadline)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 2)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            if selectedTab >= 2 {
+                accountImportActions
+            }
+            if holdings.isEmpty && !loading {
+                VStack(spacing: 10) {
+                    Image(systemName: "tray").font(.largeTitle).foregroundStyle(.secondary)
+                    Text(selectedTab == 3 ? "暂无腾讯理财通持仓" : "暂无持仓").font(.headline)
+                    Text(selectedTab >= 2
+                         ? "点击上方“导入持仓列表”上传账户截图"
+                         : "点击右上角“导入”上传账户截图")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                PortfolioCompactTable(
+                    holdings: holdings,
+                    sortField: sortField,
+                    sortOrder: sortOrder,
+                    onSort: { field in
+                        if sortField == field {
+                            sortOrder = sortOrder == "asc" ? "desc" : "asc"
+                        } else {
+                            sortField = field
+                            sortOrder = field == "fundName" || field == "fundType" ? "asc" : "desc"
+                        }
+                        Task { await loadHoldings() }
+                    }
+                )
+                .refreshable { await reload() }
+            }
+            if loading { ProgressView().padding(.vertical, 8) }
+        }
+    }
+
+    private var accountImportActions: some View {
+        HStack(spacing: 8) {
+            Button {
+                openImport(type: "holding")
+            } label: {
+                Label("导入持仓列表", systemImage: "list.bullet.rectangle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+
+            Button {
+                openImport(type: "trade")
+            } label: {
+                Label("导入交易记录", systemImage: "arrow.left.arrow.right")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+        }
+        .font(.subheadline.weight(.semibold))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
+    }
+
+    private func openImport(type: String) {
+        importSourceLabel = selectedTab == 3 ? "tencent" : "alipay"
+        importType = type
+        showImport = true
+    }
+
+    private var selectedSummary: PortfolioAccountSummary? {
+        if selectedTab == 1 { return overview?.total }
+        return overview?.accounts.first { $0.sourceLabel == scope }
+    }
+
+    private func reload() async {
+        loading = true
+        defer { loading = false }
+        do {
+            overview = try await session.apiClient.portfolioOverview()
+            if selectedTab > 0 { await loadHoldings(manageLoading: false) }
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func loadHoldings(manageLoading: Bool = true) async {
+        if manageLoading { loading = true }
+        defer { if manageLoading { loading = false } }
+        do {
+            holdings = try await session.apiClient.listPortfolioHoldings(
+                current: 1, size: 200, keyword: keyword, scope: scope,
+                sortField: sortField, sortOrder: sortOrder
+            ).records
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+private struct PortfolioSummaryCard: View {
+    let summary: PortfolioAccountSummary
+    let prominent: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(summary.displayName).font(prominent ? .title2.bold() : .title3.bold())
+                Spacer()
+                Text("\(summary.holdingCount) 只").font(.subheadline).foregroundStyle(.secondary)
+                if !prominent { Image(systemName: "chevron.right").font(.subheadline).foregroundStyle(.secondary) }
+            }
+            Text(money(summary.holdingAmount))
+                .font(prominent ? .system(size: 32, weight: .bold) : .title2.bold())
+            HStack {
+                summaryMetric("持有收益", summary.holdingProfit, percentValue: false)
+                Spacer()
+                summaryMetric("收益率", summary.holdingReturnRate, percentValue: true)
+                Spacer()
+                summaryMetric("今日收益", summary.todayProfit, percentValue: false)
+            }
+        }
+        .padding(14)
+        .background(prominent ? Color.accentColor.opacity(0.12) : Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func summaryMetric(_ title: String, _ value: Decimal?, percentValue: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.subheadline).foregroundStyle(.secondary)
+            Text(percentValue ? (percent(value) ?? "-") : money(value))
+                .font(.body.bold())
+                .foregroundStyle(value.map(signedValueColor) ?? .secondary)
+        }
+    }
+}
+
+private struct PortfolioCompactTable: View {
+    let holdings: [UserFundHolding]
+    let sortField: String
+    let sortOrder: String
+    let onSort: (String) -> Void
+
+    var body: some View {
+        ScrollView([.horizontal, .vertical], showsIndicators: true) {
+            LazyVStack(spacing: 0) {
+                HStack(spacing: 0) {
+                    header("基金 / 金额", "fundName", 132, .leading)
+                    header("当日收益", "estimatedDailyProfit", 92)
+                    header("类型", "fundType", 76)
+                    header("持有收益 / 率", "holdingProfit", 116)
+                }
+                .background(Color(.secondarySystemGroupedBackground))
+                ForEach(holdings) { holding in
+                    Divider()
+                    NavigationLink {
+                        PortfolioHoldingDetailView(holding: holding)
+                    } label: {
+                        HStack(spacing: 0) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(portfolioFundName(holding.fundName)).font(.subheadline.bold()).foregroundStyle(.blue)
+                                Text(money(holding.holdingAmount)).font(.subheadline).foregroundStyle(.secondary)
+                            }
+                            .frame(width: 132, alignment: .leading)
+                            .frame(minHeight: 54)
+                            .padding(.horizontal, 4)
+                            valueCell(holding.estimatedDailyProfit ?? holding.todayProfit, width: 92)
+                            Text(holding.fundType ?? "-")
+                                .font(.subheadline)
+                                .lineLimit(1)
+                                .frame(width: 76)
+                                .frame(minHeight: 54)
+                                .padding(.horizontal, 4)
+                            VStack(alignment: .trailing, spacing: 2) {
+                                Text(money(holding.holdingProfit))
+                                Text(percent(holding.holdingReturnRate) ?? "-")
+                            }
+                            .font(.subheadline)
+                            .foregroundStyle(holding.holdingProfit.map(signedValueColor) ?? .secondary)
+                            .frame(width: 116, alignment: .trailing)
+                            .frame(minHeight: 54)
+                            .padding(.horizontal, 4)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func header(_ title: String, _ field: String, _ width: CGFloat,
+                        _ alignment: Alignment = .trailing) -> some View {
+        Button {
+            onSort(field)
+        } label: {
+            HStack(spacing: 3) {
+                Text(title)
+                if sortField == field {
+                    Image(systemName: sortOrder == "asc" ? "chevron.up" : "chevron.down")
+                }
+            }
+            .font(.subheadline.bold())
+            .frame(width: width, alignment: alignment)
+            .frame(minHeight: 40)
+            .padding(.horizontal, 4)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func valueCell(_ value: Decimal?, width: CGFloat) -> some View {
+        Text(money(value))
+            .font(.subheadline)
+            .foregroundStyle(value.map(signedValueColor) ?? .secondary)
+            .frame(width: width, alignment: .trailing)
+            .frame(minHeight: 54)
+            .padding(.horizontal, 4)
+    }
+}
+
+struct PortfolioImportView: View {
+    @EnvironmentObject private var session: SessionStore
+    @Environment(\.dismiss) private var dismiss
     @State private var selectedItems: [PhotosPickerItem] = []
     @State private var preview: PortfolioHoldingImportPreview?
     @State private var holdings: [UserFundHolding] = []
     @State private var imports: [PortfolioHoldingBatch] = []
     @State private var keyword = ""
+    @State private var sourceLabel: String
+    @State private var importType: String
     @State private var loading = false
     @State private var uploading = false
     @State private var error: String?
+    @State private var notice: String?
+
+    init(initialSourceLabel: String = "alipay", initialImportType: String = "holding") {
+        _sourceLabel = State(initialValue:
+            initialSourceLabel == "tencent" ? "tencent" : "alipay")
+        _importType = State(initialValue:
+            initialImportType == "trade" ? "trade" : "holding")
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
+                    Picker("账户来源", selection: $sourceLabel) {
+                        Text("支付宝").tag("alipay")
+                        Text("腾讯理财通").tag("tencent")
+                    }
+                    .pickerStyle(.segmented)
+                    Picker("导入类型", selection: $importType) {
+                        Text("持仓列表").tag("holding")
+                        Text("交易记录").tag("trade")
+                    }
+                    .pickerStyle(.segmented)
                     PhotosPicker(selection: $selectedItems, maxSelectionCount: 3, matching: .images) {
-                        Label("选择支付宝持仓截图", systemImage: "photo.on.rectangle")
+                        Label(importType == "trade" ? "选择交易记录截图" : "选择持仓列表截图",
+                              systemImage: "photo.on.rectangle")
                     }
                     Button(uploading ? "上传中…" : "上传并识别") {
                         Task { await uploadSelectedImages() }
                     }
                     .disabled(selectedItems.isEmpty || uploading)
                     if let preview {
-                        Text("来源 \(preview.sourceLabel) · \(preview.imageCount) 张 · \(preview.screenshotDate ?? "-")")
+                        Text("\(preview.sourceLabel == "tencent" ? "腾讯理财通" : "支付宝") · \(preview.importType == "trade" ? "交易增减" : "持仓覆盖") · \(preview.imageCount) 张 · \(preview.screenshotDate ?? "-")")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         if !preview.warnings.isEmpty {
@@ -260,13 +647,25 @@ struct PortfolioHoldingView: View {
                 if let error {
                     Section { Text(error).foregroundStyle(.red) }
                 }
+                if let notice {
+                    Section { Text(notice).foregroundStyle(.green) }
+                }
 
                 if let preview {
                     Section("识别预览") {
-                        ForEach(Array(preview.rows.enumerated()), id: \.offset) { index, row in
-                            PortfolioHoldingRowEditor(row: bindingForPreviewRow(index), isEditable: preview.status == "PREVIEWED", onFundCodeChange: { code in
-                                updatePreviewRow(index) { $0.fundCode = code }
-                            })
+                        if preview.importType == "trade" {
+                            ForEach(Array(preview.tradeAdjustments.indices), id: \.self) { index in
+                                PortfolioTradeAdjustmentEditor(
+                                    adjustment: bindingForTradeAdjustment(index),
+                                    isEditable: preview.status == "PREVIEWED"
+                                )
+                            }
+                        } else {
+                            ForEach(Array(preview.rows.enumerated()), id: \.offset) { index, _ in
+                                PortfolioHoldingRowEditor(row: bindingForPreviewRow(index), isEditable: preview.status == "PREVIEWED", onFundCodeChange: { code in
+                                    updatePreviewRow(index) { $0.fundCode = code }
+                                })
+                            }
                         }
                         if preview.status == "PREVIEWED" {
                             Button("确认入库") {
@@ -301,7 +700,7 @@ struct PortfolioHoldingView: View {
                 }
 
                 Section("导入历史") {
-                    ForEach(imports) { item in
+                    ForEach(imports.filter { $0.sourceLabel == sourceLabel }) { item in
                         Button {
                             Task { await openImport(item.id) }
                         } label: {
@@ -311,15 +710,23 @@ struct PortfolioHoldingView: View {
                                     Spacer()
                                     Text(item.status).font(.caption).foregroundStyle(.secondary)
                                 }
-                                Text("截图 \(item.screenshotDate ?? "-") · \(item.itemCount) 条")
+                                Text("截图 \(item.screenshotDate ?? "-") · \(item.itemCount) 只基金")
                                     .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("\(item.sourceLabel == "tencent" ? "腾讯理财通" : "支付宝") · \(item.importType == "trade" ? "交易增减 \(item.appliedCount)/\(item.skippedCount)" : "持仓覆盖")")
+                                    .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("持仓导入")
+            .navigationTitle("\(sourceLabel == "tencent" ? "腾讯理财通" : "支付宝")导入")
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("关闭") { dismiss() }
+                }
+            }
             .task {
                 if holdings.isEmpty {
                     await loadHoldings()
@@ -327,6 +734,12 @@ struct PortfolioHoldingView: View {
                 if imports.isEmpty {
                     await loadImports()
                 }
+            }
+            .onChange(of: sourceLabel) { _ in
+                selectedItems.removeAll()
+                preview = nil
+                notice = nil
+                Task { await loadHoldings() }
             }
             .refreshable {
                 await loadHoldings()
@@ -351,11 +764,44 @@ struct PortfolioHoldingView: View {
         preview = current
     }
 
+    private func bindingForTradeAdjustment(_ index: Int) -> Binding<PortfolioTradeAdjustment> {
+        Binding(
+            get: {
+                preview?.tradeAdjustments[index] ?? PortfolioTradeAdjustment(
+                    groupKey: "",
+                    fundCode: nil,
+                    fundName: "",
+                    buyAmount: 0,
+                    sellAmount: 0,
+                    netAmount: 0,
+                    currentHoldingAmount: nil,
+                    projectedHoldingAmount: nil,
+                    transactionCount: 0,
+                    skippedCount: 0,
+                    applicable: false,
+                    warnings: [],
+                    candidates: []
+                )
+            },
+            set: { newValue in
+                guard var current = preview,
+                      current.tradeAdjustments.indices.contains(index) else { return }
+                current.tradeAdjustments[index] = newValue
+                preview = current
+            }
+        )
+    }
+
     private func loadHoldings() async {
         loading = true
         defer { loading = false }
         do {
-            holdings = try await session.apiClient.listPortfolioHoldings(current: 1, size: 100, keyword: keyword).records
+            holdings = try await session.apiClient.listPortfolioHoldings(
+                current: 1,
+                size: 100,
+                keyword: keyword,
+                scope: sourceLabel
+            ).records
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -387,8 +833,13 @@ struct PortfolioHoldingView: View {
                 error = "未能读取所选图片，请重新选择截图"
                 return
             }
-            preview = try await session.apiClient.previewPortfolioHoldings(images: images)
+            preview = try await session.apiClient.previewPortfolioHoldings(
+                images: images,
+                sourceLabel: sourceLabel,
+                importType: importType
+            )
             error = nil
+            notice = nil
         } catch {
             self.error = error.localizedDescription
         }
@@ -396,18 +847,19 @@ struct PortfolioHoldingView: View {
 
     private func confirmPreview() async {
         guard let preview else { return }
-        guard preview.rows.allSatisfy({ !($0.fundCode ?? "").isEmpty }) else {
+        guard preview.importType == "trade"
+                || preview.rows.allSatisfy({ !($0.fundCode ?? "").isEmpty }) else {
             error = "请为每条识别结果选择基金代码"
             return
         }
         uploading = true
         defer { uploading = false }
         do {
-            try await session.apiClient.confirmPortfolioHoldingImport(
+            let result = try await session.apiClient.confirmPortfolioHoldingImport(
                 importId: preview.importId,
                 request: PortfolioHoldingConfirmRequest(
-                    screenshotDate: preview.screenshotDate,
-                    items: preview.rows.map {
+                    screenshotDate: preview.importType == "holding" ? preview.screenshotDate : nil,
+                    items: preview.importType == "holding" ? preview.rows.map {
                         PortfolioHoldingConfirmItemRequest(
                             rowNo: $0.rowNo,
                             fundCode: $0.fundCode ?? "",
@@ -424,9 +876,26 @@ struct PortfolioHoldingView: View {
                             confidence: $0.confidence,
                             rawTexts: $0.rawTexts
                         )
-                    }
+                    } : nil,
+                    tradeMappings: preview.importType == "trade"
+                        ? preview.tradeAdjustments.compactMap {
+                            guard let fundCode = $0.fundCode, !fundCode.isEmpty else { return nil }
+                            return PortfolioTradeMappingRequest(
+                                groupKey: $0.groupKey,
+                                fundCode: fundCode
+                            )
+                        }
+                        : nil
                 )
             )
+            notice = preview.importType == "trade"
+                ? "已调整 \(result.affectedHoldingCount) 只基金，应用 \(result.appliedTransactionCount) 条，跳过 \(result.skippedTransactionCount) 条"
+                : "已覆盖 \(result.affectedHoldingCount) 只基金持仓"
+            if !result.warnings.isEmpty {
+                notice = [notice, result.warnings.joined(separator: "；")]
+                    .compactMap { $0 }
+                    .joined(separator: "\n")
+            }
             self.preview = nil
             selectedItems.removeAll()
             error = nil
@@ -440,6 +909,7 @@ struct PortfolioHoldingView: View {
     private func openImport(_ importId: Int) async {
         do {
             preview = try await session.apiClient.portfolioHoldingImport(importId: importId)
+            notice = nil
         } catch {
             self.error = error.localizedDescription
         }
@@ -481,7 +951,7 @@ struct PortfolioHoldingRowEditor: View {
             .keyboardType(.numberPad)
             .disabled(!isEditable)
             HStack {
-                Text("金额 \(decimal(row.holdingAmount))")
+                Text("金额 \(money(row.holdingAmount))")
                 Text("净值成本 \(decimal(row.costNav))")
                 Spacer()
                 signedPercent(row.holdingReturnRate)
@@ -497,6 +967,60 @@ struct PortfolioHoldingRowEditor: View {
             }
             .font(.caption2)
             .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 6)
+    }
+}
+
+struct PortfolioTradeAdjustmentEditor: View {
+    @Binding var adjustment: PortfolioTradeAdjustment
+    let isEditable: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(adjustment.fundName).font(.headline)
+            Picker("现有持仓", selection: Binding(
+                get: { adjustment.fundCode ?? "" },
+                set: { value in
+                    adjustment.fundCode = value.isEmpty ? nil : value
+                    if let candidate = adjustment.candidates.first(where: { $0.fundCode == value }) {
+                        adjustment.fundName = candidate.fundName
+                    }
+                    adjustment.applicable = !value.isEmpty
+                }
+            )) {
+                Text("不应用").tag("")
+                ForEach(adjustment.candidates, id: \.fundCode) { candidate in
+                    Text("\(candidate.fundCode) \(candidate.fundName)").tag(candidate.fundCode)
+                }
+            }
+            .pickerStyle(.menu)
+            .disabled(!isEditable)
+
+            HStack {
+                Text("买入 \(money(adjustment.buyAmount))")
+                Text("卖出 \(money(adjustment.sellAmount))")
+                Spacer()
+                Text("净额 \(money(adjustment.netAmount))")
+                    .foregroundStyle(signedValueColor(adjustment.netAmount))
+            }
+            .font(.caption)
+            Text("\(money(adjustment.currentHoldingAmount)) → \(money(adjustment.projectedHoldingAmount))")
+                .font(.caption)
+            HStack {
+                Text("应用 \(adjustment.transactionCount) 条")
+                Text("跳过 \(adjustment.skippedCount) 条")
+                Spacer()
+                Label(adjustment.applicable ? "可应用" : "将跳过",
+                      systemImage: adjustment.applicable ? "checkmark.circle" : "exclamationmark.triangle")
+                    .foregroundStyle(adjustment.applicable ? .green : .orange)
+            }
+            .font(.caption2)
+            if !adjustment.warnings.isEmpty {
+                Text(adjustment.warnings.joined(separator: "；"))
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
         }
         .padding(.vertical, 6)
     }
@@ -560,26 +1084,26 @@ private struct PortfolioHoldingsTable: View {
             .frame(minHeight: 58)
             .padding(.horizontal, 6)
 
-            cell(decimal(holding.holdingAmount), width: 100)
+            cell(money(holding.holdingAmount), width: 100)
             cell(percent(holding.estimatedChangeRate) ?? "-", width: 96,
                  color: holding.estimatedChangeRate.map(signedValueColor) ?? .secondary, weight: .semibold)
-            cell(decimal(holding.estimatedDailyProfit), width: 96,
+            cell(money(holding.estimatedDailyProfit), width: 96,
                  color: holding.estimatedDailyProfit.map(signedValueColor) ?? .secondary)
-            cell(decimal(holding.estimatedHoldingAmount), width: 108)
+            cell(money(holding.estimatedHoldingAmount), width: 108)
             cell(percent(holding.estimatedCumulativeChangeRate) ?? "-", width: 96,
                  color: holding.estimatedCumulativeChangeRate.map(signedValueColor) ?? .secondary, weight: .semibold)
-            cell(decimal(holding.estimatedCumulativeProfit), width: 96,
+            cell(money(holding.estimatedCumulativeProfit), width: 96,
                  color: holding.estimatedCumulativeProfit.map(signedValueColor) ?? .secondary)
-            cell(decimal(holding.holdingProfit), width: 96,
+            cell(money(holding.holdingProfit), width: 96,
                  color: holding.holdingProfit.map(signedValueColor) ?? .secondary)
             cell(percent(holding.holdingReturnRate) ?? "-", width: 100,
                  color: holding.holdingReturnRate.map(signedValueColor) ?? .secondary)
-            cell(decimal(holding.holdingCost), width: 96)
+            cell(money(holding.holdingCost), width: 96)
             cell(decimal(holding.holdingShares), width: 96)
             cell(decimal(holding.costNav), width: 92)
-            cell(decimal(holding.yesterdayProfit), width: 92,
+            cell(money(holding.yesterdayProfit), width: 92,
                  color: holding.yesterdayProfit.map(signedValueColor) ?? .secondary)
-            cell(decimal(holding.todayProfit), width: 92,
+            cell(money(holding.todayProfit), width: 92,
                  color: holding.todayProfit.map(signedValueColor) ?? .secondary)
             cell(percent(holding.valuationCoverageRate) ?? "-", width: 92, color: .secondary)
             cell(valuationDateTime(holding), width: 148, alignment: .center, color: .secondary)
@@ -661,10 +1185,10 @@ struct PortfolioHoldingDetailView: View {
             }
 
             Section("持仓数据") {
-                DetailLine(title: "持有金额", value: decimal(holding.holdingAmount))
+                DetailLine(title: "持有金额", value: money(holding.holdingAmount))
                 SignedValueLine(title: "持有收益", value: holding.holdingProfit)
                 SignedPercentLine(title: "持有收益率", value: holding.holdingReturnRate)
-                DetailLine(title: "持有成本", value: decimal(holding.holdingCost))
+                DetailLine(title: "持有成本", value: money(holding.holdingCost))
                 SignedValueLine(title: "昨日收益", value: holding.yesterdayProfit)
                 SignedValueLine(title: "今日收益", value: holding.todayProfit)
                 DetailLine(title: "持有份额", value: decimal(holding.holdingShares))
@@ -673,7 +1197,7 @@ struct PortfolioHoldingDetailView: View {
                 DetailLine(title: "重仓报告日", value: holding.holdingReportDate)
                 SignedPercentLine(title: "当日预估涨跌", value: holding.estimatedChangeRate)
                 SignedValueLine(title: "预估当日盈亏", value: holding.estimatedDailyProfit)
-                DetailLine(title: "估值后金额", value: decimal(holding.estimatedHoldingAmount))
+                DetailLine(title: "估值后金额", value: money(holding.estimatedHoldingAmount))
                 DetailLine(title: "预估单位净值", value: decimal(holding.estimatedUnitNav))
                 SignedPercentLine(title: "累计预估涨跌", value: holding.estimatedCumulativeChangeRate)
                 SignedValueLine(title: "累计预估盈亏", value: holding.estimatedCumulativeProfit)
@@ -854,6 +1378,11 @@ private func shortFundName(_ value: String) -> String {
     return String(trimmed.prefix(6)) + "..."
 }
 
+private func portfolioFundName(_ value: String) -> String {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? "-" : String(trimmed.prefix(8))
+}
+
 private func valuationDateTime(_ holding: UserFundHolding) -> String {
     formatDateTimeSeconds(holding.valuationUpdatedAt) ?? holding.valuationDate ?? "-"
 }
@@ -875,6 +1404,10 @@ struct ProductListView: View {
 
     @State private var funds: [Fund] = []
     @State private var keyword = ""
+    @State private var fundType = ""
+    @State private var purchaseFilter = -1
+    @State private var sortField = "fundCode"
+    @State private var sortOrder = "ascend"
     @State private var currentPage = 1
     @State private var total = 0
     @State private var isLoading = false
@@ -884,69 +1417,100 @@ struct ProductListView: View {
     @State private var wasShowingDetail = false
 
     private let pageSize = 20
+    private let fundTypes = ["", "股票型", "混合型", "债券型", "指数型", "货币型"]
+
+    private var querySignature: String {
+        "\(fundType)|\(purchaseFilter)|\(sortField)|\(sortOrder)"
+    }
 
     var body: some View {
         NavigationStack(path: $navigationPath) {
-            List {
-                if let errorMessage {
-                    Section {
-                        Text(errorMessage)
-                            .foregroundStyle(.red)
-                    }
-                }
-
-                ForEach(funds) { fund in
-                    NavigationLink(value: fund) {
-                        ProductRow(fund: fund)
-                            .onAppear {
-                                loadMoreIfNeeded(current: fund)
+            VStack(spacing: 0) {
+                ScrollView(.horizontal, showsIndicators: true) {
+                    HStack(spacing: 10) {
+                        Picker("基金类型", selection: $fundType) {
+                            ForEach(fundTypes, id: \.self) { value in
+                                Text(value.isEmpty ? "全部类型" : value).tag(value)
                             }
+                        }
+                        .pickerStyle(.menu)
+
+                        Picker("购买状态", selection: $purchaseFilter) {
+                            Text("全部购买状态").tag(-1)
+                            Text("可购买").tag(1)
+                            Text("不可购买").tag(0)
+                        }
+                        .pickerStyle(.menu)
+
+                        Button("清除筛选") {
+                            fundType = ""
+                            purchaseFilter = -1
+                            sortField = "fundCode"
+                            sortOrder = "ascend"
+                        }
+                        .disabled(fundType.isEmpty && purchaseFilter == -1
+                                  && sortField == "fundCode" && sortOrder == "ascend")
                     }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
                 }
 
-                if isLoadingMore {
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                        Spacer()
-                    }
+                HStack {
+                    Text("已加载 \(funds.count) / \(total)")
+                    Spacer()
+                    Text("点击表头排序，左右滑动查看指标")
                 }
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal)
+                .padding(.bottom, 6)
+
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal)
+                }
+
+                FundSpreadsheet(
+                    funds: funds,
+                    sortField: sortField,
+                    sortOrder: sortOrder,
+                    isLoadingMore: isLoadingMore,
+                    onSort: changeSort,
+                    onLastRowAppear: loadMoreIfNeeded
+                )
             }
             .overlay {
                 if isLoading && funds.isEmpty {
                     ProgressView("加载产品")
                 } else if !isLoading && funds.isEmpty {
                     VStack(spacing: 10) {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
+                        Image(systemName: "tablecells")
                             .font(.system(size: 42))
                             .foregroundStyle(.secondary)
                         Text("暂无产品")
                             .font(.headline)
-                        Text("尝试调整搜索关键词")
+                        Text("尝试调整搜索或筛选条件")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
                 }
             }
-            .searchable(text: $keyword, prompt: "搜索基金代码或名称")
-            .onSubmit(of: .search) {
-                Task {
-                    await reload()
-                }
-            }
-            .refreshable {
-                await reload()
-            }
+            .searchable(text: $keyword, prompt: "搜索基金代码、名称或经理")
+            .onSubmit(of: .search) { Task { await reload() } }
+            .refreshable { await reload() }
             .navigationTitle("产品")
             .navigationDestination(for: Fund.self) { fund in
                 ProductDetailView(fund: fund)
             }
+            .onChange(of: querySignature) { _ in
+                Task { await reload() }
+            }
             .onChange(of: navigationPath) { newPath in
                 if newPath.isEmpty && wasShowingDetail {
                     wasShowingDetail = false
-                    Task {
-                        await reload()
-                    }
+                    Task { await reload() }
                 } else if !newPath.isEmpty {
                     wasShowingDetail = true
                 }
@@ -959,6 +1523,15 @@ struct ProductListView: View {
         }
     }
 
+    private func changeSort(_ field: String, _ defaultOrder: String) {
+        if sortField == field {
+            sortOrder = sortOrder == "ascend" ? "descend" : "ascend"
+        } else {
+            sortField = field
+            sortOrder = defaultOrder
+        }
+    }
+
     private func reload() async {
         currentPage = 1
         total = 0
@@ -966,16 +1539,9 @@ struct ProductListView: View {
         await load(page: 1)
     }
 
-    private func loadMoreIfNeeded(current fund: Fund) {
-        guard fund.fundCode == funds.last?.fundCode else {
-            return
-        }
-        guard funds.count < total, !isLoadingMore, !isLoading else {
-            return
-        }
-        Task {
-            await load(page: currentPage + 1)
-        }
+    private func loadMoreIfNeeded() {
+        guard funds.count < total, !isLoadingMore, !isLoading else { return }
+        Task { await load(page: currentPage + 1) }
     }
 
     private func load(page: Int) async {
@@ -990,7 +1556,15 @@ struct ProductListView: View {
         }
 
         do {
-            let result = try await session.apiClient.listFunds(current: page, size: pageSize, keyword: keyword)
+            let result = try await session.apiClient.listFunds(
+                current: page,
+                size: pageSize,
+                keyword: keyword,
+                fundType: fundType.isEmpty ? nil : fundType,
+                canBuy: purchaseFilter < 0 ? nil : purchaseFilter == 1,
+                sortField: sortField,
+                sortOrder: sortOrder
+            )
             currentPage = result.current
             total = result.total
             if page == 1 {
@@ -1005,65 +1579,208 @@ struct ProductListView: View {
     }
 }
 
-private struct ProductRow: View {
-    let fund: Fund
+private struct FundSpreadsheet: View {
+    let funds: [Fund]
+    let sortField: String
+    let sortOrder: String
+    let isLoadingMore: Bool
+    let onSort: (String, String) -> Void
+    let onLastRowAppear: () -> Void
+
+    private let headerHeight: CGFloat = 46
+    private let rowHeight: CGFloat = 64
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top) {
-                Text(fund.fundName)
-                    .font(.headline)
-                    .lineLimit(2)
-                Spacer()
-                Text(fund.fundCode)
-                    .font(.caption.bold())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(.blue.opacity(0.12), in: Capsule())
-                    .foregroundStyle(.blue)
-                Text(fund.canBuy == true ? "可购" : "不可购")
-                    .font(.caption.bold())
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background((fund.canBuy == true ? Color.green : Color.gray).opacity(0.12), in: Capsule())
-                    .foregroundStyle(fund.canBuy == true ? Color.green : Color.secondary)
-            }
+        ScrollView(.vertical, showsIndicators: true) {
+            HStack(alignment: .top, spacing: 0) {
+                frozenColumns
+                    .background(Color(.systemBackground))
+                    .shadow(color: .black.opacity(0.08), radius: 2, x: 2)
 
-            HStack(spacing: 10) {
-                if let fundType = nonEmpty(fund.fundType) {
-                    Label(fundType, systemImage: "tag")
+                ScrollView(.horizontal, showsIndicators: true) {
+                    metricColumns
                 }
-                if let manager = nonEmpty(fund.fundManager) {
-                    Label(manager, systemImage: "person")
-                }
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-            if let company = nonEmpty(fund.managementCompany) {
-                Label(company, systemImage: "building.columns")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Text("规模：\(fund.netAssetScale ?? "-")")
-                .font(.caption).foregroundStyle(.secondary)
-            Text("招商：\(ratingStars(fund.latestRating?.zhaoshangRating))  晨星：\(ratingStars(fund.latestRating?.morningStarRating))")
-                .font(.caption).foregroundStyle(.secondary)
-            if let valuation = fund.latestValuation {
-                SignedPercentLine(title: "当日预估", value: valuation.estimatedChangeRate)
-                Text("估值日期 \(preciseValuationDate(timestamp: valuation.quoteUpdatedAt, fallbackDate: valuation.valuationDate) ?? "-") · 行情覆盖 \(percent(valuation.quoteCoverageRate) ?? "-")")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            if let performance = fund.latestPerformance {
-                PerformanceValuesView(value: performance)
-            }
-            if let features = fund.features, !features.isEmpty {
-                Text(features.map { "\($0.periodLabel) 标准差:\($0.standardDeviation.map(String.init) ?? "-") 夏普:\($0.sharpeRatio.map(String.init) ?? "-")" }.joined(separator: " / "))
-                    .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .padding(.vertical, 6)
+    }
+
+    private var frozenColumns: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 0) {
+                sortableHeader("基金名称", field: "fundName", defaultOrder: "ascend",
+                               width: 150, alignment: .leading)
+                sortableHeader("代码", field: "fundCode", defaultOrder: "ascend",
+                               width: 88, alignment: .leading)
+            }
+            ForEach(Array(funds.enumerated()), id: \.element.id) { index, fund in
+                NavigationLink(value: fund) {
+                    HStack(spacing: 0) {
+                        cell(fund.fundName, width: 150, alignment: .leading,
+                             color: .blue, weight: .semibold)
+                        cell(fund.fundCode, width: 88, alignment: .leading,
+                             color: .secondary, weight: .semibold)
+                    }
+                    .background(rowBackground(index))
+                    .onAppear {
+                        if fund.id == funds.last?.id { onLastRowAppear() }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            if isLoadingMore {
+                ProgressView().frame(width: 238, height: rowHeight)
+            }
+        }
+    }
+
+    private var metricColumns: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            metricHeader
+            ForEach(Array(funds.enumerated()), id: \.element.id) { index, fund in
+                NavigationLink(value: fund) {
+                    metricRow(fund)
+                        .background(rowBackground(index))
+                }
+                .buttonStyle(.plain)
+            }
+            if isLoadingMore {
+                ProgressView().frame(width: 2940, height: rowHeight)
+            }
+        }
+    }
+
+    private var metricHeader: some View {
+        HStack(spacing: 0) {
+            sortableHeader("可购买", field: "canBuy", defaultOrder: "descend", width: 84)
+            plainHeader("当日预估", width: 96)
+            plainHeader("估值日期", width: 148, alignment: .center)
+            sortableHeader("类型", field: "fundType", defaultOrder: "ascend", width: 100)
+            sortableHeader("基金经理", field: "fundManager", defaultOrder: "ascend", width: 120)
+            sortableHeader("管理人", field: "managementCompany", defaultOrder: "ascend", width: 180)
+            sortableHeader("规模", field: "netAssetScale", defaultOrder: "descend", width: 120)
+            sortableHeader("成立日期", field: "inceptionDate", defaultOrder: "descend", width: 110)
+            sortableHeader("招商评级", field: "zhaoshangRating", defaultOrder: "descend", width: 100)
+            sortableHeader("晨星评级", field: "morningStarRating", defaultOrder: "descend", width: 100)
+            performanceHeaders
+            sortableHeader("标准差", field: "standardDeviation", defaultOrder: "ascend", width: 150)
+            sortableHeader("夏普比率", field: "sharpeRatio", defaultOrder: "descend", width: 150)
+        }
+        .background(Color(.secondarySystemGroupedBackground))
+    }
+
+    private var performanceHeaders: some View {
+        Group {
+            sortableHeader("近一周", field: "weeklyReturnRate", defaultOrder: "descend", width: 96)
+            sortableHeader("近一月", field: "monthlyReturnRate", defaultOrder: "descend", width: 96)
+            sortableHeader("近三月", field: "threeMonthReturnRate", defaultOrder: "descend", width: 96)
+            sortableHeader("近六月", field: "sixMonthReturnRate", defaultOrder: "descend", width: 96)
+            sortableHeader("近一年", field: "oneYearReturnRate", defaultOrder: "descend", width: 96)
+            sortableHeader("近两年", field: "twoYearReturnRate", defaultOrder: "descend", width: 96)
+            sortableHeader("近三年", field: "threeYearReturnRate", defaultOrder: "descend", width: 96)
+            sortableHeader("今年以来", field: "yearToDateReturnRate", defaultOrder: "descend", width: 100)
+            sortableHeader("成立以来", field: "sinceInceptionReturnRate", defaultOrder: "descend", width: 100)
+            sortableHeader("区间收益", field: "customReturnRate", defaultOrder: "descend", width: 96)
+            sortableHeader("原手续费", field: "originalFeeRate", defaultOrder: "ascend", width: 96)
+            sortableHeader("折后手续费", field: "discountedFeeRate", defaultOrder: "ascend", width: 104)
+            sortableHeader("活期宝手续费", field: "cashManagementFeeRate", defaultOrder: "ascend", width: 116)
+        }
+    }
+
+    private func metricRow(_ fund: Fund) -> some View {
+        HStack(spacing: 0) {
+            cell(fund.canBuy == true ? "可购" : "不可购", width: 84,
+                 color: fund.canBuy == true ? .green : .secondary, weight: .semibold)
+            percentCell(fund.latestValuation?.estimatedChangeRate, width: 96)
+            cell(preciseValuationDate(timestamp: fund.latestValuation?.quoteUpdatedAt,
+                                      fallbackDate: fund.latestValuation?.valuationDate) ?? "-",
+                 width: 148, alignment: .center, color: .secondary)
+            cell(fund.fundType ?? "-", width: 100)
+            cell(fund.fundManager ?? "-", width: 120)
+            cell(fund.managementCompany ?? "-", width: 180, alignment: .leading)
+            cell(fund.netAssetScale ?? "-", width: 120)
+            cell(fund.inceptionDate ?? "-", width: 110, alignment: .center)
+            cell(ratingStars(fund.latestRating?.zhaoshangRating), width: 100, color: .orange)
+            cell(ratingStars(fund.latestRating?.morningStarRating), width: 100, color: .orange)
+            performanceCells(fund.latestPerformance)
+            cell(featureSummary(fund.features, keyPath: \.standardDeviation), width: 150)
+            cell(featureSummary(fund.features, keyPath: \.sharpeRatio), width: 150)
+        }
+    }
+
+    private func performanceCells(_ value: FundPerformance?) -> some View {
+        Group {
+            percentCell(value?.weeklyReturnRate, width: 96)
+            percentCell(value?.monthlyReturnRate, width: 96)
+            percentCell(value?.threeMonthReturnRate, width: 96)
+            percentCell(value?.sixMonthReturnRate, width: 96)
+            percentCell(value?.oneYearReturnRate, width: 96)
+            percentCell(value?.twoYearReturnRate, width: 96)
+            percentCell(value?.threeYearReturnRate, width: 96)
+            percentCell(value?.yearToDateReturnRate, width: 100)
+            percentCell(value?.sinceInceptionReturnRate, width: 100)
+            percentCell(value?.customReturnRate, width: 96)
+            percentCell(value?.originalFeeRate, width: 96)
+            percentCell(value?.discountedFeeRate, width: 104)
+            percentCell(value?.cashManagementFeeRate, width: 116)
+        }
+    }
+
+    private func sortableHeader(_ title: String, field: String, defaultOrder: String,
+                                width: CGFloat, alignment: Alignment = .trailing) -> some View {
+        Button {
+            onSort(field, defaultOrder)
+        } label: {
+            headerText(title + sortIndicator(field), width: width, alignment: alignment)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func plainHeader(_ title: String, width: CGFloat,
+                             alignment: Alignment = .trailing) -> some View {
+        headerText(title, width: width, alignment: alignment)
+    }
+
+    private func headerText(_ value: String, width: CGFloat, alignment: Alignment) -> some View {
+        Text(value)
+            .font(.caption.weight(.semibold))
+            .lineLimit(2)
+            .frame(width: width, height: headerHeight, alignment: alignment)
+            .padding(.horizontal, 6)
+            .background(Color(.secondarySystemGroupedBackground))
+    }
+
+    private func cell(_ value: String, width: CGFloat, alignment: Alignment = .trailing,
+                      color: Color = .primary, weight: Font.Weight = .regular) -> some View {
+        Text(value)
+            .font(.caption.weight(weight))
+            .foregroundStyle(color)
+            .lineLimit(2)
+            .frame(width: width, height: rowHeight, alignment: alignment)
+            .padding(.horizontal, 6)
+    }
+
+    private func percentCell(_ value: Decimal?, width: CGFloat) -> some View {
+        cell(percent(value) ?? "-", width: width,
+             color: value.map(signedValueColor) ?? .secondary,
+             weight: .semibold)
+    }
+
+    private func sortIndicator(_ field: String) -> String {
+        guard sortField == field else { return "" }
+        return sortOrder == "ascend" ? " ↑" : " ↓"
+    }
+
+    private func rowBackground(_ index: Int) -> Color {
+        index.isMultiple(of: 2) ? Color(.systemBackground) : Color(.secondarySystemBackground)
+    }
+
+    private func featureSummary(_ features: [FundFeature]?,
+                                keyPath: KeyPath<FundFeature, Decimal?>) -> String {
+        guard let features, !features.isEmpty else { return "-" }
+        return features.map { feature in
+            let value = feature[keyPath: keyPath].map { NSDecimalNumber(decimal: $0).stringValue } ?? "-"
+            return "\(feature.periodLabel):\(value)"
+        }.joined(separator: " / ")
     }
 }
 
@@ -1546,7 +2263,7 @@ private struct SignedValueLine: View {
         HStack(alignment: .top) {
             Text(title).foregroundStyle(.secondary)
             Spacer()
-            Text(decimal(value))
+            Text(money(value))
                 .multilineTextAlignment(.trailing)
                 .foregroundStyle(value.map(signedValueColor) ?? .secondary)
         }

@@ -15,10 +15,12 @@ public interface CfgFundMapper extends BaseMapper<CfgFund> {
             + "WHERE 1=1 "
             + "<if test='keyword != null and keyword != \"\"'>AND (f.fund_name LIKE CONCAT('%',#{keyword},'%') OR f.fund_code LIKE CONCAT('%',#{keyword},'%') OR f.fund_manager LIKE CONCAT('%',#{keyword},'%')) </if>"
             + "<if test='fundType != null and fundType != \"\"'>AND f.fund_type=#{fundType} </if>"
+            + "<if test='canBuy != null'>AND f.can_buy=#{canBuy} </if>"
             + "ORDER BY ${sortExpression} ${sortDirection}, f.fund_code ASC</script>")
     Page<CfgFund> selectFundPage(Page<CfgFund> page,
                                  @Param("keyword") String keyword,
                                  @Param("fundType") String fundType,
+                                 @Param("canBuy") Boolean canBuy,
                                  @Param("sortExpression") String sortExpression,
                                  @Param("sortDirection") String sortDirection);
 }

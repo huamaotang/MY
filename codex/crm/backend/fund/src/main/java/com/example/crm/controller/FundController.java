@@ -38,9 +38,10 @@ public class FundController {
                                            @RequestParam(defaultValue = "10") long size,
                                            @RequestParam(required = false) String keyword,
                                            @RequestParam(required = false) String fundType,
+                                           @RequestParam(required = false) Boolean canBuy,
                                            @RequestParam(required = false) String sortField,
                                            @RequestParam(required = false) String sortOrder) {
-        return ApiResponse.ok(fundService.page(current, size, keyword, fundType, sortField, sortOrder));
+        return ApiResponse.ok(fundService.page(current, size, keyword, fundType, canBuy, sortField, sortOrder));
     }
 
     @GetMapping("/{fundCode}")

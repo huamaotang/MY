@@ -188,6 +188,36 @@ Dry-run both unique scheduled jobs:
 python cli.py schedule --once 1 --dry-run 1 --trigger all
 ```
 
+## Portfolio screenshot OCR
+
+`tools/portfolio_holding_ocr.py` supports Alipay and Tencent Licaitong holding
+snapshots and trade-detail screenshots:
+
+```bash
+python tools/portfolio_holding_ocr.py \
+  --source-label alipay \
+  --import-type holding \
+  screenshot.png
+
+python tools/portfolio_holding_ocr.py \
+  --source-label tencent \
+  --import-type trade \
+  screenshot.png
+```
+
+`source-label` accepts `alipay` or `tencent`; `import-type` accepts `holding` or
+`trade`. The parser can be unit tested without importing RapidOCR because the
+OCR runtime is loaded only by the command entry point:
+
+```bash
+PYTHONPYCACHEPREFIX=/tmp/crm-pycache \
+python -m unittest tools/test_portfolio_holding_ocr.py
+```
+
+For real-image OCR, install `requirements.txt` into a compatible virtual
+environment and point backend configuration `CRM_PYTHON_EXECUTABLE` to that
+environment's Python executable.
+
 Run only the morning or evening plan immediately:
 
 ```bash

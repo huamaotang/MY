@@ -384,3 +384,48 @@ mvn -pl admin -am -DskipTests package
 ```
 
 文档、配置、SQL 和代码要一起提交，不要只提交 Java 文件。
+
+## 17. 支付宝与腾讯理财通截图导入
+
+持仓页支持支付宝、腾讯理财通两种账户来源，以及两类截图：
+
+- `holding`：完整持仓快照。确认后覆盖当前用户同一 `sourceLabel` 的持仓，其他平台不受影响。
+- `trade`：交易明细。只调整同平台已有基金的 `holdingAmount`，不会新建或删除持仓。
+
+OCR 预览接口：
+
+```text
+POST /api/portfolio/imports/ocr?sourceLabel=alipay|tencent&importType=holding|trade
+Content-Type: multipart/form-data
+images: 1 至 3 张 JPG/PNG
+```
+
+两个查询参数为兼容旧客户端分别默认 `alipay`、`holding`。运行时按查询参数选择版式，
+不使用上传文件名判断平台。
+
+确认接口：
+
+```text
+POST /api/portfolio/imports/{importId}/confirm
+```
+
+快照确认提交 `items`；交易确认只提交 `tradeMappings` 中的 `groupKey` 和 `fundCode`。
+交易金额由服务端根据已保存的逐笔 OCR 记录重新计算，客户端展示的净额不作为入账依据。
+失败、关闭、撤销、重复、未匹配和不晚于最近快照日期的交易会被跳过；卖出最低减到 0，
+持仓行继续保留。
+
+升级已有数据库时执行：
+
+```text
+fund_spider/sql/20260730_add_portfolio_trade_import.sql
+```
+
+该迁移为批次增加 `import_type`，并创建逐笔交易导入表和已应用指纹唯一约束。
+
+验证基金服务：
+
+```bash
+cd backend
+mvn -pl fund -am test
+mvn -pl fund -am package
+```

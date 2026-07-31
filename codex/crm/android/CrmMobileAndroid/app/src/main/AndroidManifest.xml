@@ -19,6 +19,9 @@
             android:name=".PortfolioHoldingActivity"
             android:exported="false" />
         <activity
+            android:name=".PortfolioImportActivity"
+            android:exported="false" />
+        <activity
             android:name=".StockDetailActivity"
             android:exported="false" />
         <activity

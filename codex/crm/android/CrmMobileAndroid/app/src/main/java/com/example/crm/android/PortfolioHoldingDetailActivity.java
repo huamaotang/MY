@@ -118,10 +118,10 @@ public class PortfolioHoldingDetailActivity extends Activity {
         content.addView(fundDetailButton, buttonParams);
 
         section("持仓数据");
-        row("持有金额", holding.holdingAmount);
+        amountRow("持有金额", holding.holdingAmount);
         signedValueRow("持有收益", holding.holdingProfit);
         signedPercentRow("持有收益率", holding.holdingReturnRate);
-        row("持有成本", holding.holdingCost);
+        amountRow("持有成本", holding.holdingCost);
         signedValueRow("昨日收益", holding.yesterdayProfit);
         signedValueRow("今日收益", holding.todayProfit);
         row("持有份额", holding.holdingShares);
@@ -130,7 +130,7 @@ public class PortfolioHoldingDetailActivity extends Activity {
         row("重仓报告日", holding.holdingReportDate);
         signedPercentRow("当日预估涨跌", holding.estimatedChangeRate);
         signedValueRow("预估当日盈亏", holding.estimatedDailyProfit);
-        row("估值后金额", holding.estimatedHoldingAmount);
+        amountRow("估值后金额", holding.estimatedHoldingAmount);
         row("预估单位净值", holding.estimatedUnitNav);
         signedPercentRow("累计预估涨跌", holding.estimatedCumulativeChangeRate);
         signedValueRow("累计预估盈亏", holding.estimatedCumulativeProfit);
@@ -284,6 +284,13 @@ public class PortfolioHoldingDetailActivity extends Activity {
         content.addView(view);
     }
 
+    private void amountRow(String title, Double value) {
+        TextView view = Ui.text(this, title + "： " + format(value), 14,
+                Ui.MUTED, Typeface.NORMAL);
+        view.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 4));
+        content.addView(view);
+    }
+
     private void signedPercentRow(String title, Double value) {
         TextView view = Ui.text(this, title + "： " + formatPercent(value), 14,
                 signedColor(value), Typeface.NORMAL);
@@ -372,7 +379,7 @@ public class PortfolioHoldingDetailActivity extends Activity {
     }
 
     private String format(Double value) {
-        return value == null ? "-" : String.format(Locale.getDefault(), "%.2f", value);
+        return value == null ? "-" : String.format(Locale.CHINA, "%,.2f", value);
     }
 
     private String formatPercent(Double value) {

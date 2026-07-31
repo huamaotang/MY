@@ -134,6 +134,11 @@ public class ApiClient {
     }
 
     public PageResult<Fund> listFunds(int current, int size, String keyword) throws ApiException {
+        return listFunds(current, size, keyword, null, null, null, null);
+    }
+
+    public PageResult<Fund> listFunds(int current, int size, String keyword, String fundType,
+                                      Boolean canBuy, String sortField, String sortOrder) throws ApiException {
         try {
             StringBuilder path = new StringBuilder("/funds?current=")
                     .append(current)
@@ -142,6 +147,10 @@ public class ApiClient {
             if (keyword != null && !keyword.trim().isEmpty()) {
                 path.append("&keyword=").append(URLEncoder.encode(keyword.trim(), "UTF-8"));
             }
+            appendQuery(path, "fundType", fundType);
+            if (canBuy != null) path.append("&canBuy=").append(canBuy);
+            appendQuery(path, "sortField", sortField);
+            appendQuery(path, "sortOrder", sortOrder);
             JSONObject data = request("GET", path.toString(), null);
             PageResult<Fund> page = new PageResult<>();
             page.total = data.optInt("total");
@@ -158,6 +167,13 @@ public class ApiClient {
             throw ex;
         } catch (Exception ex) {
             throw new ApiException("加载产品失败", ex);
+        }
+    }
+
+    private void appendQuery(StringBuilder path, String name, String value) throws Exception {
+        if (value != null && !value.trim().isEmpty()) {
+            path.append("&").append(name).append("=")
+                    .append(URLEncoder.encode(value.trim(), "UTF-8"));
         }
     }
 
@@ -196,11 +212,20 @@ public class ApiClient {
     }
 
     public PageResult<UserFundHolding> listPortfolioHoldings(int current, int size, String keyword) throws ApiException {
+        return listPortfolioHoldings(current, size, keyword, "raw", "holdingAmount", "desc");
+    }
+
+    public PageResult<UserFundHolding> listPortfolioHoldings(int current, int size, String keyword,
+                                                              String scope, String sortField,
+                                                              String sortOrder) throws ApiException {
         try {
             StringBuilder path = new StringBuilder("/portfolio/holdings?current=")
                     .append(current)
                     .append("&size=")
-                    .append(size);
+                    .append(size)
+                    .append("&scope=").append(scope)
+                    .append("&sortField=").append(sortField)
+                    .append("&sortOrder=").append(sortOrder);
             if (keyword != null && !keyword.trim().isEmpty()) {
                 path.append("&keyword=").append(URLEncoder.encode(keyword.trim(), "UTF-8"));
             }
@@ -218,6 +243,14 @@ public class ApiClient {
             return page;
         } catch (Exception ex) {
             throw new ApiException("加载持仓失败", ex);
+        }
+    }
+
+    public PortfolioOverview portfolioOverview() throws ApiException {
+        try {
+            return PortfolioOverview.fromJson(request("GET", "/portfolio/overview", null));
+        } catch (Exception ex) {
+            throw new ApiException("加载账户汇总失败", ex);
         }
     }
 
@@ -241,11 +274,25 @@ public class ApiClient {
     }
 
     public PortfolioHoldingImportPreview previewPortfolioHoldings(List<byte[]> images) throws ApiException {
+        return previewPortfolioHoldings(images, "alipay", "holding");
+    }
+
+    public PortfolioHoldingImportPreview previewPortfolioHoldings(List<byte[]> images,
+                                                                   String sourceLabel) throws ApiException {
+        return previewPortfolioHoldings(images, sourceLabel, "holding");
+    }
+
+    public PortfolioHoldingImportPreview previewPortfolioHoldings(List<byte[]> images,
+                                                                   String sourceLabel,
+                                                                   String importType) throws ApiException {
         try {
-            JSONObject data = requestMultipart("/portfolio/imports/ocr", images);
+            String path = "/portfolio/imports/ocr?sourceLabel="
+                    + URLEncoder.encode(sourceLabel, "UTF-8")
+                    + "&importType=" + URLEncoder.encode(importType, "UTF-8");
+            JSONObject data = requestMultipart(path, images);
             return PortfolioHoldingImportPreview.fromJson(data);
         } catch (Exception ex) {
-            throw new ApiException("识别持仓截图失败", ex);
+            throw new ApiException("识别导入截图失败", ex);
         }
     }
 
@@ -257,9 +304,12 @@ public class ApiClient {
         }
     }
 
-    public void confirmPortfolioHoldingImport(int importId, PortfolioHoldingConfirmRequest requestBody) throws ApiException {
+    public PortfolioHoldingConfirmResponse confirmPortfolioHoldingImport(
+            int importId, PortfolioHoldingConfirmRequest requestBody) throws ApiException {
         try {
-            requestNoData("POST", "/portfolio/imports/" + importId + "/confirm", requestBody.toJson());
+            JSONObject data = request(
+                    "POST", "/portfolio/imports/" + importId + "/confirm", requestBody.toJson());
+            return PortfolioHoldingConfirmResponse.fromJson(data);
         } catch (Exception ex) {
             throw new ApiException("确认入库失败", ex);
         }

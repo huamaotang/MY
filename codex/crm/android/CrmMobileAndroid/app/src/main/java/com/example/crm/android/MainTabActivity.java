@@ -2,6 +2,7 @@ package com.example.crm.android;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Color;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.view.Gravity;
@@ -9,6 +10,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -32,6 +34,8 @@ public class MainTabActivity extends Activity {
     private LinearLayout root;
     private LinearLayout content;
     private LinearLayout listContainer;
+    private LinearLayout fundFrozenTable;
+    private LinearLayout fundMetricsTable;
     private TextView titleView;
     private TextView summaryView;
     private ProgressBar progressBar;
@@ -48,6 +52,10 @@ public class MainTabActivity extends Activity {
     private boolean refreshCustomersOnResume = false;
     private boolean refreshFundsOnResume = false;
     private int newsCategoryTag = -1;
+    private String fundTypeFilter;
+    private int purchaseFilter = -1;
+    private String fundSortField = "fundCode";
+    private String fundSortOrder = "ascend";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -131,7 +139,7 @@ public class MainTabActivity extends Activity {
     private void showFunds() {
         activeTab = "funds";
         titleView.setText("产品");
-        buildListContent("搜索基金代码或名称", "搜索", "刷新");
+        buildFundListContent();
         Button stockButton = new Button(this);
         stockButton.setText("切换到股票行情");
         stockButton.setOnClickListener(view -> showStocks());
@@ -242,6 +250,103 @@ public class MainTabActivity extends Activity {
         content.addView(loadMoreButton, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 46)));
     }
 
+    private void buildFundListContent() {
+        content.removeAllViews();
+        keywordInput = new EditText(this);
+        keywordInput.setHint("搜索基金代码、名称或经理");
+        keywordInput.setSingleLine(true);
+        content.addView(keywordInput, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52)));
+
+        LinearLayout actions = new LinearLayout(this);
+        actions.setOrientation(LinearLayout.HORIZONTAL);
+        Button searchButton = new Button(this);
+        searchButton.setText("搜索");
+        searchButton.setOnClickListener(view -> reloadFunds());
+        Button refreshButton = new Button(this);
+        refreshButton.setText("刷新");
+        refreshButton.setOnClickListener(view -> reloadFunds());
+        actions.addView(searchButton, new LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1));
+        actions.addView(refreshButton, new LinearLayout.LayoutParams(0, Ui.dp(this, 44), 1));
+        content.addView(actions);
+
+        HorizontalScrollView filterScroll = new HorizontalScrollView(this);
+        filterScroll.setHorizontalScrollBarEnabled(true);
+        LinearLayout filters = new LinearLayout(this);
+        filters.setOrientation(LinearLayout.HORIZONTAL);
+        String[] fundTypes = {"", "股票型", "混合型", "债券型", "指数型", "货币型"};
+        android.widget.Spinner typeSpinner = spinner(
+                new String[]{"全部类型", "股票型", "混合型", "债券型", "指数型", "货币型"});
+        typeSpinner.setSelection(indexOf(fundTypes, fundTypeFilter));
+        typeSpinner.setOnItemSelectedListener(selectionSkippingInitial(position -> {
+            fundTypeFilter = position == 0 ? null : fundTypes[position];
+            reloadFunds();
+        }));
+        filters.addView(typeSpinner);
+
+        android.widget.Spinner purchaseSpinner = spinner(
+                new String[]{"全部购买状态", "可购买", "不可购买"});
+        purchaseSpinner.setSelection(purchaseFilter < 0 ? 0 : purchaseFilter == 1 ? 1 : 2);
+        purchaseSpinner.setOnItemSelectedListener(selectionSkippingInitial(position -> {
+            purchaseFilter = position == 0 ? -1 : position == 1 ? 1 : 0;
+            reloadFunds();
+        }));
+        filters.addView(purchaseSpinner);
+
+        Button clearButton = new Button(this);
+        clearButton.setText("清除筛选");
+        clearButton.setOnClickListener(view -> {
+            fundTypeFilter = null;
+            purchaseFilter = -1;
+            fundSortField = "fundCode";
+            fundSortOrder = "ascend";
+            showFunds();
+            reloadFunds();
+        });
+        filters.addView(clearButton);
+        filterScroll.addView(filters);
+        content.addView(filterScroll);
+
+        summaryView = Ui.text(this, "", 13, Ui.MUTED, Typeface.NORMAL);
+        content.addView(summaryView);
+
+        progressBar = new ProgressBar(this);
+        progressBar.setVisibility(ProgressBar.GONE);
+        content.addView(progressBar, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 36)));
+
+        ScrollView verticalScroll = new ScrollView(this);
+        verticalScroll.setFillViewport(true);
+        LinearLayout tableRoot = new LinearLayout(this);
+        tableRoot.setOrientation(LinearLayout.HORIZONTAL);
+
+        fundFrozenTable = new LinearLayout(this);
+        fundFrozenTable.setOrientation(LinearLayout.VERTICAL);
+        fundFrozenTable.setElevation(Ui.dp(this, 2));
+        tableRoot.addView(fundFrozenTable, new LinearLayout.LayoutParams(
+                Ui.dp(this, 238), ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        HorizontalScrollView metricScroll = new HorizontalScrollView(this);
+        metricScroll.setFillViewport(true);
+        metricScroll.setHorizontalScrollBarEnabled(true);
+        fundMetricsTable = new LinearLayout(this);
+        fundMetricsTable.setOrientation(LinearLayout.VERTICAL);
+        metricScroll.addView(fundMetricsTable);
+        tableRoot.addView(metricScroll, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+
+        verticalScroll.addView(tableRoot, new ScrollView.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        content.addView(verticalScroll, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+
+        loadMoreButton = new Button(this);
+        loadMoreButton.setText("加载更多");
+        loadMoreButton.setOnClickListener(view -> loadFunds(fundPage + 1));
+        content.addView(loadMoreButton, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 46)));
+    }
+
     private void reloadCustomers() {
         customerPage = 1;
         customerTotal = 0;
@@ -321,7 +426,10 @@ public class MainTabActivity extends Activity {
         String keyword = keywordInput.getText().toString();
         executor.execute(() -> {
             try {
-                PageResult<Fund> result = session.apiClient().listFunds(page, PAGE_SIZE, keyword);
+                PageResult<Fund> result = session.apiClient().listFunds(
+                        page, PAGE_SIZE, keyword, fundTypeFilter,
+                        purchaseFilter < 0 ? null : purchaseFilter == 1,
+                        fundSortField, fundSortOrder);
                 runOnUiThread(() -> {
                     fundPage = result.current;
                     fundTotal = result.total;
@@ -340,15 +448,186 @@ public class MainTabActivity extends Activity {
     }
 
     private void renderFunds() {
-        listContainer.removeAllViews();
+        if (fundFrozenTable == null || fundMetricsTable == null) return;
+        fundFrozenTable.removeAllViews();
+        fundMetricsTable.removeAllViews();
         summaryView.setText("已加载 " + funds.size() + " / " + fundTotal);
         if (funds.isEmpty() && !loading) {
-            empty("暂无产品");
+            TextView empty = Ui.text(this, "暂无产品", 16, Ui.MUTED, Typeface.NORMAL);
+            empty.setGravity(Gravity.CENTER);
+            fundFrozenTable.addView(empty, new LinearLayout.LayoutParams(
+                    Ui.dp(this, 238), Ui.dp(this, 160)));
+            loadMoreButton.setVisibility(View.GONE);
+            return;
         }
-        for (Fund fund : funds) {
-            listContainer.addView(fundRow(fund));
+
+        fundFrozenTable.addView(fundFrozenHeader());
+        fundMetricsTable.addView(fundMetricHeader());
+        for (int index = 0; index < funds.size(); index++) {
+            Fund fund = funds.get(index);
+            int background = index % 2 == 0 ? Color.WHITE : Color.rgb(249, 250, 251);
+            fundFrozenTable.addView(fundFrozenRow(fund, background));
+            fundMetricsTable.addView(fundMetricRow(fund, background));
         }
         loadMoreButton.setVisibility(funds.size() < fundTotal ? View.VISIBLE : View.GONE);
+    }
+
+    private LinearLayout fundFrozenHeader() {
+        LinearLayout row = tableRow(Color.rgb(243, 244, 246));
+        row.setMinimumHeight(Ui.dp(this, 46));
+        row.addView(sortableHeader("基金名称", "fundName", "ascend", 150, Gravity.START));
+        row.addView(sortableHeader("代码", "fundCode", "ascend", 88, Gravity.START));
+        return row;
+    }
+
+    private LinearLayout fundMetricHeader() {
+        LinearLayout row = tableRow(Color.rgb(243, 244, 246));
+        row.setMinimumHeight(Ui.dp(this, 46));
+        row.addView(sortableHeader("可购买", "canBuy", "descend", 84, Gravity.END));
+        row.addView(tableCell("当日预估", 96, Ui.TEXT, Typeface.BOLD, Gravity.END, 46));
+        row.addView(tableCell("估值日期", 148, Ui.TEXT, Typeface.BOLD, Gravity.CENTER, 46));
+        row.addView(sortableHeader("类型", "fundType", "ascend", 100, Gravity.END));
+        row.addView(sortableHeader("基金经理", "fundManager", "ascend", 120, Gravity.END));
+        row.addView(sortableHeader("管理人", "managementCompany", "ascend", 180, Gravity.START));
+        row.addView(sortableHeader("规模", "netAssetScale", "descend", 120, Gravity.END));
+        row.addView(sortableHeader("成立日期", "inceptionDate", "descend", 110, Gravity.CENTER));
+        row.addView(sortableHeader("招商评级", "zhaoshangRating", "descend", 100, Gravity.END));
+        row.addView(sortableHeader("晨星评级", "morningStarRating", "descend", 100, Gravity.END));
+        addPerformanceHeaders(row);
+        row.addView(sortableHeader("标准差", "standardDeviation", "ascend", 150, Gravity.END));
+        row.addView(sortableHeader("夏普比率", "sharpeRatio", "descend", 150, Gravity.END));
+        return row;
+    }
+
+    private void addPerformanceHeaders(LinearLayout row) {
+        row.addView(sortableHeader("近一周", "weeklyReturnRate", "descend", 96, Gravity.END));
+        row.addView(sortableHeader("近一月", "monthlyReturnRate", "descend", 96, Gravity.END));
+        row.addView(sortableHeader("近三月", "threeMonthReturnRate", "descend", 96, Gravity.END));
+        row.addView(sortableHeader("近六月", "sixMonthReturnRate", "descend", 96, Gravity.END));
+        row.addView(sortableHeader("近一年", "oneYearReturnRate", "descend", 96, Gravity.END));
+        row.addView(sortableHeader("近两年", "twoYearReturnRate", "descend", 96, Gravity.END));
+        row.addView(sortableHeader("近三年", "threeYearReturnRate", "descend", 96, Gravity.END));
+        row.addView(sortableHeader("今年以来", "yearToDateReturnRate", "descend", 100, Gravity.END));
+        row.addView(sortableHeader("成立以来", "sinceInceptionReturnRate", "descend", 100, Gravity.END));
+        row.addView(sortableHeader("区间收益", "customReturnRate", "descend", 96, Gravity.END));
+        row.addView(sortableHeader("原手续费", "originalFeeRate", "ascend", 96, Gravity.END));
+        row.addView(sortableHeader("折后手续费", "discountedFeeRate", "ascend", 104, Gravity.END));
+        row.addView(sortableHeader("活期宝手续费", "cashManagementFeeRate", "ascend", 116, Gravity.END));
+    }
+
+    private LinearLayout fundFrozenRow(Fund fund, int background) {
+        LinearLayout row = tableRow(background);
+        row.setOnClickListener(view -> openFundDetail(fund));
+        row.addView(tableCell(Ui.value(fund.fundName), 150, Ui.BLUE, Typeface.BOLD, Gravity.START, 64));
+        row.addView(tableCell(Ui.value(fund.fundCode), 88, Ui.MUTED, Typeface.BOLD, Gravity.START, 64));
+        return row;
+    }
+
+    private LinearLayout fundMetricRow(Fund fund, int background) {
+        LinearLayout row = tableRow(background);
+        row.setOnClickListener(view -> openFundDetail(fund));
+        row.addView(tableCell(fund.canBuy ? "可购" : "不可购", 84,
+                fund.canBuy ? Ui.GREEN : Ui.MUTED, Typeface.BOLD, Gravity.END, 64));
+        addPercentCell(row, fund.latestValuation == null ? null
+                : fund.latestValuation.estimatedChangeRate, 96);
+        row.addView(tableCell(fund.latestValuation == null ? "-"
+                        : Ui.value(ProductDetailActivity.preciseValuationDate(
+                                fund.latestValuation.quoteUpdatedAt,
+                                fund.latestValuation.valuationDate)),
+                148, Ui.MUTED, Typeface.NORMAL, Gravity.CENTER, 64));
+        row.addView(tableCell(Ui.value(fund.fundType), 100, Ui.TEXT, Typeface.NORMAL, Gravity.END, 64));
+        row.addView(tableCell(Ui.value(fund.fundManager), 120, Ui.TEXT, Typeface.NORMAL, Gravity.END, 64));
+        row.addView(tableCell(Ui.value(fund.managementCompany), 180, Ui.TEXT, Typeface.NORMAL, Gravity.START, 64));
+        row.addView(tableCell(Ui.value(fund.netAssetScale), 120, Ui.TEXT, Typeface.NORMAL, Gravity.END, 64));
+        row.addView(tableCell(Ui.value(fund.inceptionDate), 110, Ui.TEXT, Typeface.NORMAL, Gravity.CENTER, 64));
+        row.addView(tableCell(ratingStars(fund.latestRating == null ? null
+                : fund.latestRating.zhaoshangRating), 100, 0xFFD97706, Typeface.NORMAL, Gravity.END, 64));
+        row.addView(tableCell(ratingStars(fund.latestRating == null ? null
+                : fund.latestRating.morningStarRating), 100, 0xFFD97706, Typeface.NORMAL, Gravity.END, 64));
+        addPerformanceCells(row, fund.latestPerformance);
+        row.addView(tableCell(featureSummary(fund.features, true), 150,
+                Ui.TEXT, Typeface.NORMAL, Gravity.END, 64));
+        row.addView(tableCell(featureSummary(fund.features, false), 150,
+                Ui.TEXT, Typeface.NORMAL, Gravity.END, 64));
+        return row;
+    }
+
+    private void addPerformanceCells(LinearLayout row, FundPerformance value) {
+        addPercentCell(row, value == null ? null : value.weeklyReturnRate, 96);
+        addPercentCell(row, value == null ? null : value.monthlyReturnRate, 96);
+        addPercentCell(row, value == null ? null : value.threeMonthReturnRate, 96);
+        addPercentCell(row, value == null ? null : value.sixMonthReturnRate, 96);
+        addPercentCell(row, value == null ? null : value.oneYearReturnRate, 96);
+        addPercentCell(row, value == null ? null : value.twoYearReturnRate, 96);
+        addPercentCell(row, value == null ? null : value.threeYearReturnRate, 96);
+        addPercentCell(row, value == null ? null : value.yearToDateReturnRate, 100);
+        addPercentCell(row, value == null ? null : value.sinceInceptionReturnRate, 100);
+        addPercentCell(row, value == null ? null : value.customReturnRate, 96);
+        addPercentCell(row, value == null ? null : value.originalFeeRate, 96);
+        addPercentCell(row, value == null ? null : value.discountedFeeRate, 104);
+        addPercentCell(row, value == null ? null : value.cashManagementFeeRate, 116);
+    }
+
+    private void addPercentCell(LinearLayout row, String value, int width) {
+        row.addView(tableCell(percent(value), width, signedColor(value),
+                Typeface.BOLD, Gravity.END, 64));
+    }
+
+    private TextView sortableHeader(String title, String field, String defaultOrder,
+                                    int width, int gravity) {
+        String indicator = fundSortField.equals(field)
+                ? ("ascend".equals(fundSortOrder) ? " ↑" : " ↓") : "";
+        TextView header = tableCell(title + indicator, width, Ui.TEXT,
+                Typeface.BOLD, gravity, 46);
+        header.setOnClickListener(view -> {
+            if (fundSortField.equals(field)) {
+                fundSortOrder = "ascend".equals(fundSortOrder) ? "descend" : "ascend";
+            } else {
+                fundSortField = field;
+                fundSortOrder = defaultOrder;
+            }
+            reloadFunds();
+        });
+        return header;
+    }
+
+    private LinearLayout tableRow(int backgroundColor) {
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setBackgroundColor(backgroundColor);
+        row.setClickable(true);
+        return row;
+    }
+
+    private TextView tableCell(String value, int widthDp, int color, int style,
+                               int gravity, int heightDp) {
+        TextView cell = Ui.text(this, value, 12, color, style);
+        cell.setGravity(Gravity.CENTER_VERTICAL | gravity);
+        cell.setPadding(Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 6), Ui.dp(this, 6));
+        cell.setMaxLines(2);
+        cell.setLayoutParams(new LinearLayout.LayoutParams(
+                Ui.dp(this, widthDp), Ui.dp(this, heightDp)));
+        return cell;
+    }
+
+    private String featureSummary(List<FundFeature> values, boolean standardDeviation) {
+        if (values == null || values.isEmpty()) return "-";
+        StringBuilder text = new StringBuilder();
+        for (FundFeature value : values) {
+            if (text.length() > 0) text.append(" / ");
+            text.append(Ui.value(value.periodLabel)).append(":")
+                    .append(Ui.value(standardDeviation
+                            ? value.standardDeviation : value.sharpeRatio));
+        }
+        return text.toString();
+    }
+
+    private void openFundDetail(Fund fund) {
+        Intent intent = new Intent(this, ProductDetailActivity.class);
+        intent.putExtra("fund", fund);
+        refreshFundsOnResume = true;
+        startActivity(intent);
     }
 
     private View fundRow(Fund fund) {
@@ -477,6 +756,42 @@ public class MainTabActivity extends Activity {
         return card;
     }
 
+    private android.widget.Spinner spinner(String[] values) {
+        android.widget.Spinner spinner = new android.widget.Spinner(this);
+        spinner.setAdapter(new android.widget.ArrayAdapter<>(
+                this, android.R.layout.simple_spinner_dropdown_item, values));
+        return spinner;
+    }
+
+    private int indexOf(String[] values, String selected) {
+        if (selected == null || selected.isEmpty()) return 0;
+        for (int index = 0; index < values.length; index++) {
+            if (selected.equals(values[index])) return index;
+        }
+        return 0;
+    }
+
+    private android.widget.AdapterView.OnItemSelectedListener selectionSkippingInitial(
+            java.util.function.IntConsumer action) {
+        return new android.widget.AdapterView.OnItemSelectedListener() {
+            private boolean initial = true;
+
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, View view,
+                                       int position, long id) {
+                if (initial) {
+                    initial = false;
+                    return;
+                }
+                action.accept(position);
+            }
+
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> parent) {
+            }
+        };
+    }
+
     private void showMine() {
         activeTab = "mine";
         titleView.setText("我的");
@@ -511,6 +826,8 @@ public class MainTabActivity extends Activity {
         Ui.toast(this, ex.getMessage());
         if ("customers".equals(activeTab)) {
             renderCustomers();
+        } else if ("stocks".equals(activeTab)) {
+            renderStocks();
         } else {
             renderFunds();
         }

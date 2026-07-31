@@ -3,8 +3,10 @@ package com.example.crm.controller;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.example.crm.common.ApiResponse;
 import com.example.crm.dto.portfolio.PortfolioHoldingBatchSummaryDto;
+import com.example.crm.dto.portfolio.PortfolioHoldingConfirmResponse;
 import com.example.crm.dto.portfolio.PortfolioHoldingConfirmRequest;
 import com.example.crm.dto.portfolio.PortfolioHoldingImportPreviewResponse;
+import com.example.crm.dto.portfolio.PortfolioOverviewDto;
 import com.example.crm.dto.portfolio.UserFundHoldingDto;
 import com.example.crm.service.IPortfolioHoldingService;
 import org.springframework.security.core.Authentication;
@@ -30,24 +32,38 @@ public class PortfolioHoldingController {
 
     @PostMapping("/imports/ocr")
     public ApiResponse<PortfolioHoldingImportPreviewResponse> preview(Authentication authentication,
+                                                                     @RequestParam(defaultValue = "alipay") String sourceLabel,
+                                                                     @RequestParam(defaultValue = "holding") String importType,
                                                                      @RequestPart("images") List<MultipartFile> images) {
-        return ApiResponse.ok(portfolioHoldingService.preview(authentication.getName(), images));
+        return ApiResponse.ok(portfolioHoldingService.preview(
+                authentication.getName(), sourceLabel, importType, images));
     }
 
     @PostMapping("/imports/{importId}/confirm")
-    public ApiResponse<Void> confirm(Authentication authentication,
-                                     @PathVariable Long importId,
-                                     @org.springframework.web.bind.annotation.RequestBody PortfolioHoldingConfirmRequest request) {
-        portfolioHoldingService.confirm(authentication.getName(), importId, request);
-        return ApiResponse.ok();
+    public ApiResponse<PortfolioHoldingConfirmResponse> confirm(
+            Authentication authentication,
+            @PathVariable Long importId,
+            @org.springframework.web.bind.annotation.RequestBody(required = false)
+            PortfolioHoldingConfirmRequest request) {
+        return ApiResponse.ok(portfolioHoldingService.confirm(
+                authentication.getName(), importId, request));
     }
 
     @GetMapping("/holdings")
     public ApiResponse<Page<UserFundHoldingDto>> holdings(Authentication authentication,
                                                           @RequestParam(defaultValue = "1") long current,
                                                           @RequestParam(defaultValue = "10") long size,
-                                                          @RequestParam(required = false) String keyword) {
-        return ApiResponse.ok(portfolioHoldingService.holdings(authentication.getName(), current, size, keyword));
+                                                          @RequestParam(required = false) String keyword,
+                                                          @RequestParam(defaultValue = "raw") String scope,
+                                                          @RequestParam(defaultValue = "holdingAmount") String sortField,
+                                                          @RequestParam(defaultValue = "desc") String sortOrder) {
+        return ApiResponse.ok(portfolioHoldingService.holdings(
+                authentication.getName(), current, size, keyword, scope, sortField, sortOrder));
+    }
+
+    @GetMapping("/overview")
+    public ApiResponse<PortfolioOverviewDto> overview(Authentication authentication) {
+        return ApiResponse.ok(portfolioHoldingService.overview(authentication.getName()));
     }
 
     @GetMapping("/imports")

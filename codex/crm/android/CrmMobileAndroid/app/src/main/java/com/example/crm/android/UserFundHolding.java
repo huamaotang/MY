@@ -7,8 +7,10 @@ import java.io.Serializable;
 public class UserFundHolding implements Serializable {
     public int id;
     public String ownerUsername;
+    public String sourceLabel;
     public String fundCode;
     public String fundName;
+    public String fundType;
     public Double holdingAmount;
     public Double holdingProfit;
     public Double holdingReturnRate;
@@ -37,8 +39,10 @@ public class UserFundHolding implements Serializable {
         UserFundHolding holding = new UserFundHolding();
         holding.id = json.optInt("id");
         holding.ownerUsername = Fund.optionalString(json, "ownerUsername");
+        holding.sourceLabel = Fund.optionalString(json, "sourceLabel");
         holding.fundCode = Fund.optionalString(json, "fundCode");
         holding.fundName = Fund.optionalString(json, "fundName");
+        holding.fundType = Fund.optionalString(json, "fundType");
         holding.holdingAmount = toDouble(json, "holdingAmount");
         holding.holdingProfit = toDouble(json, "holdingProfit");
         holding.holdingReturnRate = toDouble(json, "holdingReturnRate");

@@ -193,27 +193,56 @@ export type PortfolioHoldingImportRow = {
   candidates: PortfolioHoldingCandidate[];
 };
 
+export type PortfolioTradeAdjustment = {
+  groupKey: string;
+  fundCode?: string;
+  fundName: string;
+  buyAmount: number;
+  sellAmount: number;
+  netAmount: number;
+  currentHoldingAmount?: number;
+  projectedHoldingAmount?: number;
+  transactionCount: number;
+  skippedCount: number;
+  applicable: boolean;
+  warnings: string[];
+  candidates: PortfolioHoldingCandidate[];
+};
+
 export type PortfolioHoldingImportPreview = {
   importId: number;
   sourceLabel: string;
+  importType: 'holding' | 'trade';
   status: string;
   screenshotDate?: string;
   imageCount: number;
   imageHashes: string[];
   warnings: string[];
   rows: PortfolioHoldingImportRow[];
+  tradeAdjustments: PortfolioTradeAdjustment[];
 };
 
 export type PortfolioHoldingBatch = {
   id: number;
   status: string;
   sourceLabel: string;
+  importType: 'holding' | 'trade';
   screenshotDate?: string;
   imageCount: number;
   itemCount: number;
+  transactionCount: number;
+  appliedCount: number;
+  skippedCount: number;
   confirmedAt?: string;
   createdAt?: string;
   updatedAt?: string;
+};
+
+export type PortfolioHoldingConfirmResponse = {
+  affectedHoldingCount: number;
+  appliedTransactionCount: number;
+  skippedTransactionCount: number;
+  warnings: string[];
 };
 
 export type UserFundHolding = {
@@ -256,17 +285,29 @@ export function listFinanceNews(params: { current: number; size: number; keyword
 
 export function deleteFinanceNews(id: number) { return request<void>(`/news/${id}`, { method: 'DELETE' }); }
 
-export function previewPortfolioHoldings(files: File[]) {
+export function previewPortfolioHoldings(
+  files: File[],
+  sourceLabel: 'alipay' | 'tencent' = 'alipay',
+  importType: 'holding' | 'trade' = 'holding'
+) {
   const formData = new FormData();
   files.forEach((file) => formData.append('images', file));
-  return request<PortfolioHoldingImportPreview>('/portfolio/imports/ocr', {
+  const search = new URLSearchParams({ sourceLabel, importType });
+  return request<PortfolioHoldingImportPreview>(`/portfolio/imports/ocr?${search.toString()}`, {
     method: 'POST',
     body: formData
   });
 }
 
-export function confirmPortfolioHoldingImport(importId: number, body: { screenshotDate?: string; items: Array<Partial<PortfolioHoldingImportRow> & { rowNo: number; fundCode?: string; fundName: string }> }) {
-  return request<void>(`/portfolio/imports/${importId}/confirm`, {
+export function confirmPortfolioHoldingImport(
+  importId: number,
+  body: {
+    screenshotDate?: string;
+    items?: Array<Partial<PortfolioHoldingImportRow> & { rowNo: number; fundCode?: string; fundName: string }>;
+    tradeMappings?: Array<{ groupKey: string; fundCode: string }>;
+  }
+) {
+  return request<PortfolioHoldingConfirmResponse>(`/portfolio/imports/${importId}/confirm`, {
     method: 'POST',
     body: JSON.stringify(body)
   });

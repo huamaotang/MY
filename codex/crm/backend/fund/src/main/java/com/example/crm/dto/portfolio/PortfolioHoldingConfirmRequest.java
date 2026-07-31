@@ -9,4 +9,5 @@ import java.util.List;
 public class PortfolioHoldingConfirmRequest {
     private LocalDate screenshotDate;
     private List<PortfolioHoldingConfirmItemRequest> items;
+    private List<PortfolioTradeMappingRequest> tradeMappings;
 }

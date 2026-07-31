@@ -215,3 +215,23 @@ load() async
 4. 客户详情能打开。
 5. 退出登录后再次进入需要重新登录。
 6. `X-Client-Source: ios` 在后端 `sys_api_log` 中可见。
+
+## 13. 持仓截图导入
+
+“持仓”页的导入区域支持支付宝、腾讯理财通，以及持仓快照、交易明细两种类型。
+快照确认会覆盖同平台完整持仓；交易确认只调整同平台已有基金的持有金额。
+
+交易预览按基金汇总，并显示买入、卖出、净额、当前金额、预计金额、应用数和跳过原因。
+基金映射选项来自后端返回的同平台已有持仓，无法匹配的交易可以留空跳过。
+
+命令行验证：
+
+```bash
+xcodebuild \
+  -project ios/CrmMobile/CrmMobile.xcodeproj \
+  -scheme CrmMobile \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath /tmp/crm-ios-derived \
+  CODE_SIGNING_ALLOWED=NO \
+  build
+```

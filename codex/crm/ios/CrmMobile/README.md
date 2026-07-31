@@ -7,6 +7,10 @@
 - 使用现有 CRM 账号登录。
 - 配置网关 API 地址，例如 `http://192.168.1.10:8780/api`。
 - 展示客户列表，支持关键词搜索、下拉刷新、分页加载。
+- 基金列表采用 Excel 式二维表格，每只基金一行，名称和代码固定，指标可横向滚动。
+- 支持按表头排序，并可按基金类型、是否可购买筛选。
+- 持仓页支持支付宝、腾讯理财通的持仓快照和交易明细截图导入。
+- 持仓快照覆盖同平台持仓；交易明细只增减同平台已有基金，不新建或删除。
 - 展示客户详情。
 - Token 存储在 Keychain。
 
@@ -25,9 +29,9 @@ http://192.168.1.10:8780/api
 
 不要填写 `127.0.0.1`，真机上的 `127.0.0.1` 指向 iPhone 自己。
 
-## 验证限制
+## 命令行验证
 
-当前机器只安装了 Command Line Tools，`xcodebuild` 无法构建 iOS App。需要安装完整 Xcode，或执行：
+如果 `xcode-select` 没有指向完整 Xcode，先执行：
 
 ```bash
 sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
@@ -36,5 +40,11 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 然后在仓库根目录运行：
 
 ```bash
-xcodebuild -project ios/CrmMobile/CrmMobile.xcodeproj -scheme CrmMobile -destination 'generic/platform=iOS' build
+xcodebuild \
+  -project ios/CrmMobile/CrmMobile.xcodeproj \
+  -scheme CrmMobile \
+  -destination 'generic/platform=iOS' \
+  -derivedDataPath /tmp/crm-ios-derived \
+  CODE_SIGNING_ALLOWED=NO \
+  build
 ```

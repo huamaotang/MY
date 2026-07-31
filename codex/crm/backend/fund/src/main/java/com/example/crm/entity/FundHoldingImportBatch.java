@@ -14,6 +14,7 @@ public class FundHoldingImportBatch {
     private Long id;
     private String ownerUsername;
     private String sourceLabel;
+    private String importType;
     private String status;
     private LocalDate screenshotDate;
     private Integer imageCount;

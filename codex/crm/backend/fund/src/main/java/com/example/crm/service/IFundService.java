@@ -12,7 +12,8 @@ import com.example.crm.entity.FundStockHolding;
 import java.util.List;
 
 public interface IFundService {
-    Page<CfgFund> page(long current, long size, String keyword, String fundType, String sortField, String sortOrder);
+    Page<CfgFund> page(long current, long size, String keyword, String fundType, Boolean canBuy,
+                       String sortField, String sortOrder);
 
     FundDetailResponse detail(String fundCode);
 
