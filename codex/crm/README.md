@@ -117,7 +117,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-本地调度平台的启动、Deployment 注册和 Worker 运行见 [Python 手册](docs/manuals/PYTHON.md#prefect-任务平台)。
+本地调度平台的启动、Deployment 注册和 Worker 运行见 [Python 手册](docs/manuals/PYTHON.md)。
 
 ## 默认端口
 

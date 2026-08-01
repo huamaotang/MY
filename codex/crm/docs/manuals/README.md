@@ -63,11 +63,11 @@
 
 | 现象 | 第一检查点 | 详细说明 |
 | --- | --- | --- |
-| Gateway `503` | 下游是否注册到 Nacos | [BACKEND.md](BACKEND.md#常见故障) |
-| Gateway `429` | Redis 与限流参数 | [DEPLOYMENT.md](DEPLOYMENT.md#网关与-redis) |
-| API `401/403` | Token、角色、权限码 | [API.md](../reference/API.md#认证权限与通用约定) |
-| Python 任务失败 | Prefect Flow 日志与 `.env` | [PYTHON.md](PYTHON.md#故障处理) |
-| 真机连不上 | 地址是否用了电脑局域网 IP | [IOS.md](IOS.md#联调地址) / [ANDROID.md](ANDROID.md#联调地址) |
+| Gateway `503` | 下游是否注册到 Nacos | [BACKEND.md](BACKEND.md) |
+| Gateway `429` | Redis 与限流参数 | [DEPLOYMENT.md](DEPLOYMENT.md) |
+| API `401/403` | Token、角色、权限码 | [API.md](../reference/API.md) |
+| Python 任务失败 | Prefect Flow 日志与 `.env` | [PYTHON.md](PYTHON.md) |
+| 真机连不上 | 地址是否用了电脑局域网 IP | [IOS.md](IOS.md) / [ANDROID.md](ANDROID.md) |
 | 数据字段为空 | 爬虫刷新时间、表和 Java DTO | [DATABASE.md](../reference/DATABASE.md) |
 
 ## 文档变更检查

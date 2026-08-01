@@ -168,7 +168,7 @@ Python 以确定 commit、`requirements.txt`、迁移和 `prefect.yaml` 作为�
 - iOS：Xcode Archive/签名 build，版本和 build 递增。
 - Android：同一 commit 生成签名 AAB 和渠道 APK，版本码递增。
 
-详细签名和商店步骤见 [iOS 手册](IOS.md#版本与签名) 与 [Android 手册](ANDROID.md#release-签名)。
+详细签名和商店步骤见 [iOS 手册](IOS.md) 与 [Android 手册](ANDROID.md)。
 
 ## 7. 数据库发布
 
@@ -186,7 +186,7 @@ Python 以确定 commit、`requirements.txt`、迁移和 `prefect.yaml` 作为�
 - 在发布故障中临时编写未经审阅的逆向 SQL。
 - 把 ORM/`ensure_schema` 自动建表当作正式迁移系统。
 
-命令和表清单见 [数据库参考](../reference/DATABASE.md#迁移规则)。
+命令和表清单见 [数据库参考](../reference/DATABASE.md)。
 
 ## 8. 生产发布
 

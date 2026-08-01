@@ -2,7 +2,7 @@
 
 完整中文开发、测试、Prefect 与生产运维教程见
 [`docs/manuals/PYTHON.md`](../docs/manuals/PYTHON.md)；CLI/Deployment 摘要见
-[`docs/reference/API.md`](../docs/reference/API.md#python-cli-接口)。
+[`docs/reference/API.md`](../docs/reference/API.md)。
 
 EastMoney/Tiantian Fund crawler with one supported command entrypoint:
 

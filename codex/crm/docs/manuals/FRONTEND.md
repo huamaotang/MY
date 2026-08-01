@@ -84,7 +84,7 @@ VITE_API_BASE=http://127.0.0.1:8780/api
 | 资讯 | 列表、频道/关键词筛选、删除 |
 | 股票 | 列表、排序、详情、历史行情 |
 
-完整接口覆盖见 [API 参考](../reference/API.md#客户端接口覆盖)。
+完整接口覆盖见 [API 参考](../reference/API.md)。
 
 ## 6. 新增 API
 

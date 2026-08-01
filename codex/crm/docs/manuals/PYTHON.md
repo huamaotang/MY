@@ -1,6 +1,6 @@
 # Python 数据任务开发与运维手册
 
-本文覆盖 `fund_spider/` 的采集、评分、数据库、测试、Prefect 调度和生产发布。表结构见 [数据库参考](../reference/DATABASE.md)，命令摘要见 [API 参考](../reference/API.md#python-cli-接口)。
+本文覆盖 `fund_spider/` 的采集、评分、数据库、测试、Prefect 调度和生产发布。表结构见 [数据库参考](../reference/DATABASE.md)，命令摘要见 [API 参考](../reference/API.md)。
 
 ## 1. 项目定位
 

@@ -266,7 +266,7 @@ adb logcat | rg 'AndroidRuntime|com.example.crm.android'
 
 通常使用签名 APK，提交开发者资质、应用资料、隐私/权限说明、测试账号和可能的行业/版权材料。包名与签名保持一致，多渠道使用同一可复现构建或明确 flavor。
 
-商店规则会变化，按 [Android 发布手册](../manuals/ANDROID.md#google-play) 中的官方链接发布当日重查。
+商店规则会变化，按 [Android 发布手册](../manuals/ANDROID.md) 中的官方链接发布当日重查。
 
 ## 20. 架构演进知识
 

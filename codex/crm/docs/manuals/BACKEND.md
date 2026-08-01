@@ -47,7 +47,7 @@ docker compose version
 
 ## 3. 初始化数据库
 
-新环境按 [数据库参考](../reference/DATABASE.md#本地初始化) 初始化 `crm` 和 `fund`。不要对生产执行 `sql/schema.sql`，因为它会删表重建。
+新环境按 [数据库参考](../reference/DATABASE.md) 初始化 `crm` 和 `fund`。不要对生产执行 `sql/schema.sql`，因为它会删表重建。
 
 确认 Nacos 中：
 
@@ -171,7 +171,7 @@ done
 curl -fsS http://127.0.0.1:8780/actuator/gateway/routes
 ```
 
-然后按 [API 登录示例](../reference/API.md#登录示例) 获取 Token，并从 Gateway 访问客户和基金列表。
+然后按 [API 登录示例](../reference/API.md) 获取 Token，并从 Gateway 访问客户和基金列表。
 
 ## 8. 分层开发
 
@@ -311,7 +311,7 @@ admin/target/admin-0.1.0.jar
 
 ## 14. 生产发布与回滚
 
-完整顺序见 [部署手册](DEPLOYMENT.md#生产发布)。Java 部分要点：
+完整顺序见 [部署手册](DEPLOYMENT.md)。Java 部分要点：
 
 1. 先备份并执行已审阅的数据库增量迁移。
 2. 发布生产 Nacos 配置，读回核对，不使用 dev 默认值。

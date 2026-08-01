@@ -114,7 +114,7 @@ Authorization: Bearer <token>
 
 方法路径不带 `/api`。`performRequest` 同时处理 HTTP 状态、`ApiResponse.code`、JSON 解码和空数据；新增接口必须复用统一入口。
 
-当前覆盖登录、客户、基金、净值、资讯、股票、用户持仓、OCR 预览/确认和导入历史，详见 [客户端接口覆盖](../reference/API.md#客户端接口覆盖)。
+当前覆盖登录、客户、基金、净值、资讯、股票、用户持仓、OCR 预览/确认和导入历史，详见 [客户端接口覆盖](../reference/API.md)。
 
 ## 7. 新增接口
 
