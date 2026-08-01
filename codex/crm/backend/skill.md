@@ -8,7 +8,7 @@ description: Use when implementing, debugging, or validating CRM backend Java mi
 ## First Steps
 
 1. Read `backend/agent.md`.
-2. Identify the owning module: `core`, `gateway`, `system`, `customer`, or `admin`.
+2. Identify the owning module: `core`, `gateway`, `system`, `customer`, `fund`, or `admin`.
 3. Inspect the matching controller, service, mapper, entity, and Nacos YAML before editing.
 4. Check if the change affects gateway route predicates or frontend/mobile clients.
 
@@ -46,7 +46,7 @@ For full default backend chain:
 
 ```bash
 cd backend
-mvn -pl system,customer,gateway -am -DskipTests package
+mvn -pl system,customer,fund,gateway -am -DskipTests package
 ```
 
 Runtime smoke test:

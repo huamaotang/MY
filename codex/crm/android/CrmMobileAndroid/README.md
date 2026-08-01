@@ -2,6 +2,10 @@
 
 原生 Android CRM 客户信息 App，功能对齐 iOS 版。
 
+当前工程使用 Java Activity，不是 Kotlin/Compose。完整开发、签名、Google Play
+和国内渠道教程见 [`docs/manuals/ANDROID.md`](../../docs/manuals/ANDROID.md)，
+基础与进阶学习路线见 [`docs/learning/ANDROID.md`](../../docs/learning/ANDROID.md)。
+
 ## 功能
 
 - 使用现有 CRM 账号登录。

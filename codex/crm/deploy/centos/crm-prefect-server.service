@@ -10,9 +10,7 @@ Group=crm
 WorkingDirectory=/opt/crm/fund_spider
 EnvironmentFile=-/etc/crm/fund-spider.env
 Environment=PREFECT_HOME=/opt/crm/fund_spider/.prefect
-Environment=PREFECT_SERVER_HOST=127.0.0.1
-Environment=PREFECT_SERVER_PORT=4200
-Environment=PREFECT_UI_API_URL=http://127.0.0.1:4200/api
+Environment=CRM_FUND_SPIDER_DIR=/opt/crm/fund_spider
 ExecStart=/opt/crm/fund_spider/bin/run_prefect_server.sh
 Restart=always
 RestartSec=5

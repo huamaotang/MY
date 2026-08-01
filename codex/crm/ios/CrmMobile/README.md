@@ -2,6 +2,10 @@
 
 原生 iPhone CRM 客户信息 App，使用 SwiftUI 实现。
 
+完整开发、联调、TestFlight 和 App Store 教程见
+[`docs/manuals/IOS.md`](../../docs/manuals/IOS.md)，Swift/SwiftUI 学习路线见
+[`docs/learning/IOS.md`](../../docs/learning/IOS.md)。
+
 ## 功能
 
 - 使用现有 CRM 账号登录。

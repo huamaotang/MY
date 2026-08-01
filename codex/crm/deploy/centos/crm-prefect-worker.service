@@ -10,7 +10,6 @@ Group=crm
 WorkingDirectory=/opt/crm/fund_spider
 EnvironmentFile=-/etc/crm/fund-spider.env
 Environment=PREFECT_HOME=/opt/crm/fund_spider/.prefect
-Environment=PREFECT_API_URL=http://127.0.0.1:4200/api
 Environment=CRM_FUND_SPIDER_DIR=/opt/crm/fund_spider
 Environment=PREFECT_WORK_POOL=crm-process-pool
 Environment=PREFECT_WORKER_LIMIT=1

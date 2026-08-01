@@ -1,334 +1,233 @@
-# 前端管理台开发手册
+# Web 管理台开发手册
 
-本文覆盖 `frontend/` 的本地启动、接口调用、页面开发和排错。
+本文覆盖 `frontend/` 的 React/TypeScript 开发、API 对接、构建与发布。接口字段以 [API 参考](../reference/API.md) 和 Java DTO 为准。
 
-## 1. 技术栈
+## 1. 技术栈与结构
 
-| 项 | 说明 |
+| 项 | 当前实现 |
 | --- | --- |
-| 框架 | React 18 |
-| 语言 | TypeScript |
-| 构建 | Vite 5 |
-| UI | Ant Design 5 |
-| 图标 | `@ant-design/icons` |
-| API | 原生 `fetch` 封装 |
+| React | 18.2 |
+| TypeScript | 5.3 |
+| Vite | 5.1 |
+| Ant Design | 5.15 |
+| 请求 | 浏览器 `fetch`，统一封装在 `src/api.ts` |
+| 状态 | 组件状态 + 浏览器存储中的 Token |
 
-## 2. 目录结构
+| 文件 | 职责 |
+| --- | --- |
+| `src/api.ts` | API 类型、Base URL、Token/Header、错误和全部请求函数 |
+| `src/App.tsx` | 登录、菜单、页面、表格、表单、弹窗和业务状态 |
+| `src/styles.css` | 全局与业务布局 |
+| `src/main.tsx` | React 挂载入口 |
+| `vite.config.ts` | Vite 配置 |
 
-```text
-frontend/
-  index.html
-  package.json
-  package-lock.json
-  vite.config.ts
-  tsconfig.json
-  src/
-    api.ts          API 封装、类型定义
-    App.tsx         页面、菜单、表格、表单
-    main.tsx        React 入口
-    styles.css      全局样式
-    vite-env.d.ts   Vite 类型声明
-```
+页面目前较集中，修改前先搜索现有类型/函数/菜单 key，避免重复实现。
 
-当前页面集中在 `App.tsx`，后续页面变多时建议拆成 `src/pages/`、`src/components/`、`src/hooks/`。
+## 2. 安装与运行
 
-## 3. 启动前准备
-
-先确认后端链路可用：
+需要 Node.js 18+ 和 npm。
 
 ```bash
-curl -i http://127.0.0.1:8780/actuator/health
-```
-
-期望：
-
-```text
-HTTP/1.1 200 OK
-{"status":"UP"}
-```
-
-如果返回 `DOWN`，先处理后端 Redis/Nacos 问题。
-
-## 4. 安装依赖
-
-```bash
+node --version
+npm --version
 cd frontend
 npm install
-```
-
-如果依赖异常，先删除 `node_modules` 后重装：
-
-```bash
-rm -rf node_modules
-npm install
-```
-
-不要随意删除 `package-lock.json`，除非明确要整体升级依赖。
-
-## 5. 配置 API 地址
-
-默认 API 基址在 `frontend/src/api.ts`：
-
-```ts
-const API_BASE = (import.meta.env.VITE_API_BASE || '/api').replace(/\/$/, '');
-```
-
-本地开发推荐建 `frontend/.env.local`：
-
-```text
-VITE_API_BASE=http://127.0.0.1:8780/api
-```
-
-如果前端由 Nginx 反代到 gateway，也可以不配置，走默认 `/api`。
-
-## 6. 启动开发服务器
-
-```bash
-cd frontend
 npm run dev
 ```
 
-Vite 会输出访问地址，例如：
+Vite 监听 `0.0.0.0`，地址以终端输出为准，通常是 `http://127.0.0.1:5173`。
 
-```text
-Local:   http://localhost:5173/
-Network: http://192.168.1.10:5173/
+## 3. API 地址
+
+复制本地配置：
+
+```bash
+cd frontend
+cp .env.example .env.local
 ```
 
-浏览器打开 Local 地址即可。
-
-## 7. 登录
-
-默认账号：
-
-```text
-用户名：admin
-密码：admin123
+```env
+VITE_API_BASE=http://127.0.0.1:8780/api
 ```
 
-登录成功后 token 存在：
+规则：
 
-```text
-localStorage.crm_token
-```
+- Base 必须包含 `/api`。
+- `api.ts` 中路径写 `/customers`，不能再写 `/api/customers`。
+- 生产默认建议 `VITE_API_BASE=/api`，由同源 Nginx 转发，避免 CORS 和环境域名写死。
+- Vite 变量在构建时固化；改环境变量后需要重新构建。
 
-退出时会删除这个 token。
+## 4. 登录与请求封装
 
-## 8. API 封装说明
+`request<T>()` 负责：
 
-所有请求走 `request<T>()`：
+1. 拼接 `VITE_API_BASE` 与相对路径。
+2. 默认发送 JSON Content-Type。
+3. 添加 `X-Client-Source: web`。
+4. 从存储读取 Token 并添加 Bearer Header。
+5. 解析 `ApiResponse<T>`，业务 `code != 0` 时抛错。
 
-```ts
-export async function request<T>(path: string, options: RequestInit = {}): Promise<T>
-```
+开发环境初始化账号 `admin/admin123` 仅用于本地。生产不能保留该密码。
 
-它会自动处理：
+浏览器排查：打开 DevTools → Network，检查 Request URL、Authorization、X-Client-Source、HTTP 状态和响应 `code/message`。
 
-| 行为 | 说明 |
+## 5. 当前功能
+
+| 领域 | Web 能力 |
 | --- | --- |
-| 拼接地址 | `${API_BASE}${path}` |
-| JSON 请求头 | `Content-Type: application/json` |
-| 来源标记 | `X-Client-Source: web` |
-| JWT | 从 `localStorage.crm_token` 读取并设置 `Authorization` |
-| 统一响应 | 要求 HTTP 成功且 `body.code === 0` |
-| 错误提示 | 抛出 `Error(message)`，页面用 Ant Design message 展示 |
+| CRM | 客户列表、搜索、新增、编辑、删除 |
+| 权限 | 用户、角色、菜单管理；登录用户菜单 |
+| 基金 | 列表、筛选、排序、详情、净值、持仓、估值、特征、评级、CRUD |
+| 自选 | 加入/移出、独立自选列表 |
+| 评分 | 配置权重、入队回测/推荐、激活、查看任务和结果 |
+| 用户持仓 | OCR 上传、预览校对、确认、批次和持仓列表 |
+| 资讯 | 列表、频道/关键词筛选、删除 |
+| 股票 | 列表、排序、详情、历史行情 |
 
-后端统一响应结构：
+完整接口覆盖见 [API 参考](../reference/API.md#客户端接口覆盖)。
 
-```ts
-type ApiResponse<T> = {
-  code: number;
-  message: string;
-  data: T;
-};
-```
+## 6. 新增 API
 
-## 9. 当前 API 函数
+顺序固定：
 
-| 函数 | 方法和路径 | 说明 |
-| --- | --- | --- |
-| `login` | `POST /auth/login` | 登录 |
-| `listCustomers` | `GET /customers` | 客户分页 |
-| `saveCustomer` | `POST/PUT /customers` | 新增或修改客户 |
-| `deleteCustomer` | `DELETE /customers/{id}` | 删除客户 |
-| `listFunds` | `GET /funds` 或 `GET /funds/favorites` | 基金或当前用户自选基金分页 |
-| `addFundFavorite` | `POST /funds/{fundCode}/favorite` | 加入自选 |
-| `removeFundFavorite` | `DELETE /funds/{fundCode}/favorite` | 取消自选 |
-| `listUsers` | `GET /users` | 用户列表 |
-| `saveUser` | `POST/PUT /users` | 新增或修改用户 |
-| `deleteUser` | `DELETE /users/{id}` | 删除用户 |
-| `listRoles` | `GET /roles` | 角色列表 |
-| `saveRole` | `POST/PUT /roles` | 新增或修改角色 |
-| `deleteRole` | `DELETE /roles/{id}` | 删除角色 |
-| `listMenus` | `GET /menus` | 菜单树 |
-| `saveMenu` | `POST/PUT /menus` | 新增或修改菜单 |
-| `deleteMenu` | `DELETE /menus/{id}` | 删除菜单 |
+1. 确认 Java 接口已经通过 Gateway 可访问。
+2. 在 `api.ts` 增加/修改 TypeScript 类型，字段可空性与 JSON 一致。
+3. 增加请求函数，路径不带 `/api`。
+4. 在页面调用并处理 loading、成功、空数据和错误。
+5. 运行 TypeScript/Vite 构建。
+6. 用普通权限账号做 403 验证。
 
-注意：`api.ts` 里的路径不带 `/api`，因为 `API_BASE` 已经包含 `/api`。
-
-## 10. 页面结构
-
-`App.tsx` 维护整体布局和当前视图：
+示例：
 
 ```ts
-type ViewKey = 'dashboard' | 'customers' | 'contacts' | 'follows' | 'funds' | 'fundFavorites' | 'users' | 'roles' | 'menus';
-```
+export type Example = {
+  id: number
+  name: string
+  note?: string
+}
 
-左侧菜单由 `menuItems` 定义：
-
-```ts
-const menuItems = [
-  { key: 'dashboard', label: '工作台' },
-  { key: 'crm', children: [...] },
-  { key: 'system', children: [...] }
-];
-```
-
-内容区按 `view` 渲染：
-
-```tsx
-{view === 'dashboard' && <Dashboard />}
-{view === 'customers' && <CustomerList />}
-{view === 'users' && <UserAdmin />}
-```
-
-管理台使用多标签工作区：点击左侧菜单会打开对应 Tab，已打开的菜单会直接切换到原 Tab，
-不会重复创建。切换 Tab 时页面组件保持挂载，因此查询条件、分页和表单状态会保留；
-工作台固定不可关闭，其余菜单 Tab 支持关闭。
-
-标签列表、顺序和当前标签保存在浏览器 `sessionStorage` 中。刷新页面后会恢复全部标签，
-但只挂载并重新请求当前标签的数据；其他标签在用户切换过去时才重新加载。退出登录会清空
-标签状态并恢复为工作台。
-
-## 11. 新增一个页面
-
-以新增“联系人管理”为例：
-
-1. 在 `api.ts` 增加类型：
-
-```ts
-export type Contact = {
-  id?: number;
-  customerId: number;
-  contactName: string;
-  mobile?: string;
-};
-```
-
-2. 增加 API 函数：
-
-```ts
-export function listContacts(customerId?: number) {
-  const search = new URLSearchParams();
-  if (customerId) search.set('customerId', String(customerId));
-  return request<Contact[]>(`/contacts${search.toString() ? `?${search.toString()}` : ''}`);
+export function listExamples() {
+  return request<Example[]>('/examples')
 }
 ```
 
-3. 在 `App.tsx` 增加页面组件，例如 `ContactList()`。
-4. 确认 `ViewKey` 已包含 `contacts`。
-5. 确认左侧菜单有 `{ key: 'contacts' }`。
-6. 在内容区加入：
+不要使用 `any` 掩盖 DTO 不一致；Decimal 后端字段通常作为 JSON number 或可空值，先看真实响应再定类型。
 
-```tsx
-{view === 'contacts' && <ContactList />}
+## 7. 新增页面
+
+1. 定义页面/menu key，并确认权限菜单中存在对应项。
+2. 添加组件与本地状态：数据、loading、错误、筛选、分页。
+3. 使用已有 Ant Design 表格、表单、Modal 和消息模式。
+4. 分页把 `current/size` 传给后端，使用返回的 `total`。
+5. 排序只传后端允许的 `sortField/sortOrder`。
+6. 操作按钮按权限隐藏，但后端仍必须做权限校验。
+7. 处理空列表、慢请求、重复点击和组件卸载后的状态更新。
+
+## 8. 表单与数据安全
+
+- 新增和编辑共用表单时，打开弹窗前明确 reset/回填。
+- 前端校验用于体验，后端校验才是安全边界。
+- 删除使用确认弹窗，成功后重新拉取当前页。
+- 不在日志/消息中展示 Token、密码、原始 OCR 图片或后端堆栈。
+- 用户输入不要通过 `dangerouslySetInnerHTML` 渲染。
+- 上传前提示支持格式/大小，后端仍需再次验证。
+
+## 9. 基金与持仓特殊规则
+
+- 基金名称和代码在二维表中固定，指标区可横向滚动。
+- 排序字段必须与 Java 白名单同步。
+- 自选是当前用户名维度，不要只在浏览器本地维护。
+- 总分与未来一年盈利概率是不同字段；未验证 profile 不显示概率。
+- 评分回测/推荐接口只入队，需要轮询/刷新任务状态。
+- OCR 预览允许用户修正；只有 confirm 才影响最终持仓。
+- 持仓快照和交易明细的覆盖/调整规则不可混用。
+
+## 10. 联调
+
+最短链路：
+
+```text
+MySQL -> Nacos/Redis -> system/customer/fund/gateway -> Vite
 ```
 
-7. 浏览器验证列表、空状态、错误提示。
+检查：
 
-## 12. 新增表单字段
-
-以客户增加 `taxNo` 字段为例：
-
-1. 后端数据库加字段。
-2. 后端实体、Mapper、Service、Controller 支持该字段。
-3. `frontend/src/api.ts` 的 `Customer` 类型加：
-
-```ts
-taxNo?: string;
+```bash
+curl -fsS http://127.0.0.1:8780/actuator/health
+curl -fsS http://127.0.0.1:8780/actuator/gateway/routes
 ```
 
-4. `CustomerList` 表格 columns 加一列。
-5. 新增/编辑 Modal 的 Form 加 `Form.Item`。
-6. 保存时确认 `form.validateFields()` 返回的值包含新字段。
-7. 浏览器保存后刷新，确认字段回显。
+浏览器常见状态：
 
-## 13. 构建
+| 状态 | 含义 |
+| --- | --- |
+| `401/403` | 未登录、Token 失效或权限不足 |
+| `404` | Base/路径错误或 Gateway 路由未覆盖 |
+| `429` | Gateway 限流 |
+| `503` | 下游未注册或不健康 |
+| `500` | 服务异常；结合响应 message 和服务日志 |
+
+## 11. 测试与构建
+
+当前 package scripts 没有独立 lint/unit test，最低验收是：
 
 ```bash
 cd frontend
 npm run build
 ```
 
-输出目录：
+它会先执行 `tsc`，再生成 `dist/`。手工冒烟至少覆盖：
 
 ```text
-frontend/dist/
+登录 -> 菜单 -> 客户列表 -> 基金列表/详情 -> 持仓列表 -> 退出/重新登录
 ```
 
-本地预览生产包：
+修改相应功能时再覆盖创建/编辑/删除、筛选、分页、排序、上传和权限拒绝。
 
-```bash
-npm run preview
-```
-
-## 14. 联调检查清单
-
-浏览器 DevTools 里重点看：
-
-| 项 | 正常表现 |
-| --- | --- |
-| Request URL | 指向 `http://127.0.0.1:8780/api/...` 或同源 `/api/...` |
-| Request Headers | 有 `Authorization: Bearer ...` |
-| Request Headers | 有 `X-Client-Source: web` |
-| Response | JSON，`code` 为 `0` 表示业务成功 |
-| Status | `401/403` 通常是登录态或权限问题 |
-| Status | `429` 是 Gateway 限流 |
-| Status | `503` 是 Gateway 找不到下游服务 |
-
-## 15. 常见问题
-
-| 问题 | 处理 |
-| --- | --- |
-| 页面打开空白 | 看浏览器 Console，通常是 TS/运行时错误 |
-| 登录报网络错误 | 检查 `VITE_API_BASE` 和 gateway 是否启动 |
-| 登录成功后接口 403 | token 可能过期，退出重新登录 |
-| 接口 429 | 限流触发，降低请求频率或调整 Nacos 限流配置 |
-| CORS 报错 | 确认请求经过 gateway，检查 `gateway-dev.yaml` 的 `globalcors` |
-| 修改 `.env.local` 不生效 | 重启 `npm run dev` |
-| 新菜单点击没反应 | 检查 `ViewKey`、`menuItems`、内容区条件渲染是否一致 |
-
-## 16. 提交前检查
+## 12. 生产构建与 Nginx
 
 ```bash
 cd frontend
-npm run build
+npm ci
+VITE_API_BASE=/api npm run build
 ```
 
-同时手动点一遍：
+发布 `frontend/dist/` 到 Nginx 静态目录。推荐版本化目录和原子软链接切换：
 
 ```text
-登录 -> 客户列表 -> 新增客户 -> 编辑客户 -> 删除客户 -> 用户/角色/菜单页面
+/srv/crm/frontend/releases/<release-id>/
+/srv/crm/frontend/current -> releases/<release-id>
 ```
 
-## 17. 持仓截图导入
+发布前检查：
 
-持仓页导入区需要先选择账户来源（支付宝或腾讯理财通）和导入类型：
+- `index.html` 和静态资源能加载。
+- SPA 未知路由回退 `index.html`。
+- `/api/` 反代 Gateway，保留必要 Header 和超时。
+- 生产为 HTTPS，不混用 HTTP API。
+- Cache-Control：带 hash 资源可长缓存，`index.html` 不长缓存。
 
-- 持仓快照：预览逐只基金数据；确认后覆盖所选平台的完整持仓。
-- 交易明细：按基金汇总买入、卖出和净额；基金只能映射到所选平台的已有持仓。
+回滚只切回上一完整 `dist`，不要混合两个版本的文件。
 
-交易预览会展示当前金额、预计金额、交易数、跳过数和跳过原因。确认时前端仅提交
-`tradeMappings`，不提交或计算可入账净额。导入历史同时展示平台、类型、基金数、交易数、
-应用数和跳过数。
+## 13. 常见故障
 
-截图一次最多选择 3 张 JPG/PNG。切换平台或类型后应重新上传，以新的选择创建独立导入批次。
+| 现象 | 原因 | 处理 |
+| --- | --- | --- |
+| Network Error | Gateway 未启动/Base 错 | 检查 `.env.local` 与健康接口 |
+| URL 出现 `/api/api` | Base 和函数路径重复 | 函数路径移除 `/api` |
+| 刷新页面 404 | Nginx 未配置 SPA fallback | `try_files ... /index.html` |
+| 修改环境变量无效 | Vite 已构建 | 重新 build/deploy |
+| 页面无菜单 | Token 权限或 `/menus/mine` | 重新登录并检查角色菜单 |
+| TypeScript 编译失败 | 后端字段与类型不同步 | 先修 `api.ts` 类型 |
+| 评分一直 pending | Python Worker/pipeline 未消费 | 查 Prefect 和 score jobs |
 
-## 18. 基金自选列表
+## 14. 提交前检查
 
-基金管理页在基金名称右侧展示五角星按钮。空心星表示未自选，金色实心星表示已自选；
-点击后调用基金服务保存或删除当前登录用户的自选关系。
-
-产品管理菜单下的“自选列表”复用基金管理页的列、筛选、排序、分页、详情和维护操作，
-数据源切换为 `GET /funds/favorites`。基金管理和自选列表两个标签同时打开时，星标变更会在
-页面间同步；取消自选后，对应基金会立即从自选列表移除。
+- [ ] API 路径不重复 `/api`，Header 和 Token 流程未被破坏。
+- [ ] 类型与后端真实 JSON 一致，没有用 `any` 规避错误。
+- [ ] loading、空态、错误、分页和重复操作均处理。
+- [ ] 权限按钮和后端权限同时验证。
+- [ ] `npm run build` 通过。
+- [ ] 受影响业务冒烟通过。
+- [ ] API 和项目文档已同步。
+- [ ] 未提交 `.env.local`、Token、用户数据或构建机绝对路径。

@@ -12,8 +12,9 @@ Important files:
 - `spiders/nav_spider.py`: historical NAV parser
 - `spiders/feature_spider.py`: feature data parser
 - `db.py`: MySQL schema and upsert helpers
-- `bin/`: executable manual and scheduled Shell scripts
-- `runtime/`: APScheduler-backed CLI and Web scheduling services
+- `bin/`: executable manual and Prefect service/deployment scripts
+- `prefect_flows.py`, `prefect.yaml`: Flow and Deployment definitions
+- `runtime/`: Prefect business-task execution, locking, and logs
 - `tools/portfolio_holding_ocr.py`: portfolio screenshot OCR tool
 - `sql/init.sql`: full schema bootstrap
 

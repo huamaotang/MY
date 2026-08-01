@@ -10,7 +10,7 @@ pull:
 deployments:
   - name: morning-fund-refresh
     version: "1"
-    paused: true
+    paused: false
     description: 每天 08:00 依次刷新基金净值/阶段收益和基金特征数据。
     tags: [crm, fund, daily]
     entrypoint: prefect_flows.py:morning_fund_refresh_flow
@@ -29,7 +29,7 @@ deployments:
 
   - name: evening-nav-performance
     version: "1"
-    paused: true
+    paused: false
     description: 每天 21:00 刷新基金净值和阶段收益快照。
     tags: [crm, fund, daily]
     entrypoint: prefect_flows.py:nav_performance_flow
@@ -62,7 +62,7 @@ deployments:
 
   - name: score-pipeline
     version: "1"
-    paused: true
+    paused: false
     description: 每天 22:30 标注历史样本、计算基金评分并处理待执行评分任务。
     tags: [crm, fund, score, daily]
     entrypoint: prefect_flows.py:score_pipeline_flow
@@ -81,7 +81,7 @@ deployments:
 
   - name: sina-news
     version: "1"
-    paused: true
+    paused: false
     description: 每 120 秒抓取一次新浪财经新闻。
     tags: [crm, news, interval]
     entrypoint: prefect_flows.py:sina_news_flow
@@ -100,7 +100,7 @@ deployments:
 
   - name: stock-cn
     version: "1"
-    paused: true
+    paused: false
     description: 工作日在 A 股交易窗口内每 5 分钟刷新一次行情。
     tags: [crm, stock, cn]
     entrypoint: prefect_flows.py:stock_cn_flow
@@ -134,7 +134,7 @@ deployments:
 
   - name: stock-hk
     version: "1"
-    paused: true
+    paused: false
     description: 工作日在港股交易窗口内每 5 分钟刷新一次行情。
     tags: [crm, stock, hk]
     entrypoint: prefect_flows.py:stock_hk_flow

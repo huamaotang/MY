@@ -1,73 +1,114 @@
-# CentOS APScheduler 任务调度部署
+# CentOS Prefect 任务管理平台
 
-原来分散在 CentOS `crontab` 或 `systemd timer` 中的 CRM 数据任务，统一由
-`APScheduler==3.11.3` 调度。自研时间轮询已经废弃；CentOS 只需要守护一个
-常驻的 Python Web 服务，不再分别维护每项任务的执行时间。
+CRM 的基金、评分、资讯和行情任务统一注册为 Prefect 3 Deployment。Prefect
+Server 提供任务控制台和 API，Process Worker 负责启动实际 Python Flow。
+自研调度页面和 APScheduler 均已废弃。
 
-调度控制接口默认只监听 `127.0.0.1:8088`，不要在没有认证和访问控制的
-情况下直接暴露到公网。
+控制台默认只监听 `127.0.0.1:4200`。生产环境建议通过 SSH 隧道、VPN 或带
+认证的 Nginx 访问，不要直接把无认证的控制台暴露到公网。
 
-## APScheduler 接管的任务
+## 已注册任务
 
-| Python 任务 | 默认时间/间隔 | 执行命令 |
+| Deployment | 默认时间/间隔 | 实际任务 |
 | --- | --- | --- |
-| 净值与业绩 | 每天 08:00、21:00 | `run_nav_performance.sh` |
-| 特色数据 | 每天 08:00 | `run_feature.sh` |
-| 基金评分 | 每天 22:30 | `run_score.sh` |
-| 新浪资讯 | 每 120 秒 | `run_sina_news.sh` |
-| A 股行情 | 交易日交易时段，每 300 秒 | `run_stock.sh cn` |
-| 港股行情 | 交易日交易时段，每 300 秒 | `run_stock.sh hk` |
+| `morning-fund-refresh` | 每天 08:00 | 净值/业绩完成后串行执行特征刷新 |
+| `evening-nav-performance` | 每天 21:00 | 净值与阶段收益 |
+| `feature-refresh-manual` | 仅手动 | 特征数据 |
+| `score-pipeline` | 每天 22:30 | 历史标签、评分计算、评分队列 |
+| `sina-news` | 每 120 秒 | 新浪财经资讯 |
+| `stock-cn` | A 股交易窗口每 5 分钟 | A 股行情 |
+| `stock-hk` | 港股交易窗口每 5 分钟 | 港股行情 |
 
-所有任务使用 `Asia/Shanghai` 时区。APScheduler 负责 Cron/Interval
-触发、合并补跑和单实例限制；行情开闭市资格由任务回调判断，不依赖
-CentOS Shell 脚本。
+所有 Cron 使用 `Asia/Shanghai` 时区。Worker 默认限制为单并发，业务执行器
+另有跨进程锁，避免数据任务重叠。
 
-## 安装服务
+## 安装
 
-以下命令假设项目目录为 `/opt/crm`、运行用户为 `crm`：
+以下命令假设项目位于 `/opt/crm`，运行用户和组均为 `crm`：
 
 ```bash
+cd /opt/crm
+docker compose -f deploy/prefect/docker-compose.yml up -d
+
 cd /opt/crm/fund_spider
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 cp -n .env.example .env
+sudo chown -R crm:crm /opt/crm/fund_spider
 
-sudo cp /opt/crm/deploy/centos/crm-task-scheduler.service \
-  /etc/systemd/system/crm-task-scheduler.service
+sudo cp /opt/crm/deploy/centos/crm-prefect-server.service \
+  /etc/systemd/system/crm-prefect-server.service
+sudo cp /opt/crm/deploy/centos/crm-prefect-worker.service \
+  /etc/systemd/system/crm-prefect-worker.service
 sudo systemctl daemon-reload
-sudo systemctl enable --now crm-task-scheduler
+sudo systemctl enable --now crm-prefect-server
 ```
 
-生产数据库连接、请求节流和调度覆盖项放到
-`/etc/crm/fund-spider.env`，不要把密码写入 service 文件。常用调度配置：
-
-```env
-NAV_PERFORMANCE_SCHEDULE_TIMES=08:00,21:00
-FEATURE_SCHEDULE_TIME=08:00
-FEATURE_SCHEDULE_ENABLED=1
-SCORE_SCHEDULE_TIME=22:30
-SINA_NEWS_SCHEDULE_ENABLED=1
-SINA_NEWS_INTERVAL_SECONDS=120
-STOCK_MARKET_SCHEDULE_ENABLED=1
-STOCK_MARKET_INTERVAL_SECONDS=300
-```
-
-## 验证与切换
-
-先确认新服务及全部任务定义健康：
+Server 健康后注册工作池、Flow 和 Deployment：
 
 ```bash
-systemctl status crm-task-scheduler --no-pager
-curl -fsS http://127.0.0.1:8088/api/status
-curl -fsS -X POST http://127.0.0.1:8088/api/run \
-  -H 'Content-Type: application/json' \
-  -d '{"trigger":"all","dry_run":true}'
-journalctl -u crm-task-scheduler -n 100 --no-pager
+cd /opt/crm/fund_spider
+sudo -u crm PREFECT_API_URL=http://127.0.0.1:4200/api \
+  ./bin/deploy_prefect.sh
+sudo systemctl enable --now crm-prefect-worker
 ```
 
-状态接口的 `engine` 应为 `APScheduler 3.11.3`，`scheduled_jobs` 应列出
-实际 Trigger；`job_statuses` 应包含 `nav-performance`、`feature`、`score`、
-`sina-news`、`stock-cn` 和 `stock-hk`。确认新服务已持续运行且实际任务日志
-正常后，再删除或注释 CentOS 上对应的旧 crontab 项，并停用同名旧 timer。
-切换前后不要让旧任务与 APScheduler 同时运行，否则会产生重复抓取；不要
-删除数据库或日志作为迁移步骤。
+数据库密码、请求节流等业务配置继续放在
+`/etc/crm/fund-spider.env`。Prefect 常用覆盖项如下：
+
+```env
+PREFECT_API_URL=http://127.0.0.1:4200/api
+PREFECT_SERVER_HOST=127.0.0.1
+PREFECT_SERVER_PORT=4200
+PREFECT_UI_API_URL=http://127.0.0.1:4200/api
+PREFECT_SERVER_DATABASE_CONNECTION_URL=postgresql+asyncpg://prefect:URL_ENCODED_PASSWORD@127.0.0.1:5433/prefect
+PREFECT_WORK_POOL=crm-process-pool
+PREFECT_WORKER_NAME=crm-centos-worker
+PREFECT_WORKER_LIMIT=1
+```
+
+持久化 Deployment 和运行历史存储在 PostgreSQL 命名卷
+`crm-prefect-postgres-data`。生产环境必须修改 Compose 默认密码，并确保
+连接 URL 中的密码已进行 URL 编码。业务调度的版本化默认值位于
+`fund_spider/prefect.yaml`。
+
+## 验证
+
+```bash
+curl -fsS http://127.0.0.1:4200/api/health
+cd /opt/crm/fund_spider
+PREFECT_API_URL=http://127.0.0.1:4200/api \
+  .venv/bin/prefect deployment ls
+PREFECT_API_URL=http://127.0.0.1:4200/api \
+  .venv/bin/prefect work-pool inspect crm-process-pool
+PREFECT_API_URL=http://127.0.0.1:4200/api \
+  .venv/bin/prefect deployment run \
+  'fund-feature-refresh/feature-refresh-manual' \
+  --param dry_run=true --watch
+systemctl status crm-prefect-server crm-prefect-worker --no-pager
+journalctl -u crm-prefect-worker -n 100 --no-pager
+```
+
+本地电脑可用 SSH 隧道打开控制台：
+
+```bash
+ssh -L 4200:127.0.0.1:4200 user@centos-host
+```
+
+随后访问 `http://127.0.0.1:4200/`。控制台中可以暂停/恢复调度、修改参数、
+手动执行、取消运行，并查看 Flow/Task 状态和完整日志。
+
+## 从旧任务切换
+
+先完成上述 dry-run 和一次真实任务验证，再停用旧调度器，避免同一任务重复
+写库：
+
+```bash
+sudo systemctl disable --now crm-task-scheduler 2>/dev/null || true
+sudo systemctl disable --now crm-fund-scheduler 2>/dev/null || true
+sudo systemctl disable --now crm-sina-news 2>/dev/null || true
+sudo systemctl disable --now crm-stock-market 2>/dev/null || true
+```
+
+同时清理旧 `crontab` 和同类 timer。不要删除业务数据库或历史日志作为迁移
+步骤。

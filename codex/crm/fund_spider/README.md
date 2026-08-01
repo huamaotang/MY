@@ -1,13 +1,17 @@
 # Fund Spider
 
+完整中文开发、测试、Prefect 与生产运维教程见
+[`docs/manuals/PYTHON.md`](../docs/manuals/PYTHON.md)；CLI/Deployment 摘要见
+[`docs/reference/API.md`](../docs/reference/API.md#python-cli-接口)。
+
 EastMoney/Tiantian Fund crawler with one supported command entrypoint:
 
 ```bash
 python cli.py <command>
 ```
 
-The crawler is single-threaded, uses bounded retries and random request pacing,
-and writes idempotently to MySQL.
+The crawler uses bounded concurrency where configured, bounded retries and
+random request pacing, and writes idempotently to MySQL.
 
 ## Directory layout
 
@@ -226,7 +230,9 @@ Recurring execution is managed by the self-hosted `Prefect==3.7.7` Server and
 Process Worker. The built-in dashboard at `http://127.0.0.1:4200/` provides
 deployment management, pause/resume, manual runs, parameters, run history,
 task states, logs, retries, cancellation, and work-pool health. The previous
-custom scheduler page and APScheduler runtime are not used.
+custom scheduler page and APScheduler runtime have been removed.
+Prefect metadata is persisted in a dedicated PostgreSQL container configured
+by `deploy/prefect/docker-compose.yml`; CRM business data remains in MySQL.
 
 Version-controlled defaults live in `prefect.yaml`:
 
@@ -246,6 +252,7 @@ concurrent flow and the task runner adds a cross-process lock.
 Start and register the local platform:
 
 ```bash
+docker compose -f ../deploy/prefect/docker-compose.yml up -d
 ./bin/run_prefect_server.sh
 ./bin/deploy_prefect.sh
 ./bin/run_prefect_worker.sh

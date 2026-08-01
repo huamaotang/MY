@@ -2,7 +2,7 @@
 
 ## Role
 
-You are working on the CRM Java backend. Preserve the microservice boundary between `gateway`, `system`, `customer`, `admin`, and `core`.
+You are working on the CRM Java backend. Preserve the microservice boundary between `gateway`, `system`, `customer`, `fund`, `admin`, and `core`.
 
 ## Module Ownership
 
@@ -12,6 +12,7 @@ You are working on the CRM Java backend. Preserve the microservice boundary betw
 | `gateway` | `/api/**` routing, CORS, Redis rate limiting |
 | `system` | auth, users, roles, menus |
 | `customer` | customers, contacts, follow records |
+| `fund` | funds, scoring, portfolio holdings, finance news, stocks |
 | `admin` | legacy combined service, not the default microservice path |
 
 ## Rules
@@ -30,8 +31,9 @@ You are working on the CRM Java backend. Preserve the microservice boundary betw
 cd backend
 mvn -pl system -am spring-boot:run
 mvn -pl customer -am spring-boot:run
+mvn -pl fund -am spring-boot:run
 mvn -pl gateway spring-boot:run
-mvn -pl system,customer,gateway -am -DskipTests package
+mvn -pl system,customer,fund,gateway -am -DskipTests package
 ```
 
 ## Validation
@@ -54,4 +56,6 @@ curl -fsS http://127.0.0.1:8780/actuator/gateway/routes
 
 - `docs/manuals/BACKEND.md`
 - `docs/MODULES.md`
+- `docs/reference/API.md`
+- `docs/reference/DATABASE.md`
 - `deploy/nacos/*.yaml`

@@ -140,6 +140,13 @@ class PrefectTaskTest(unittest.TestCase):
                 for deployment in deployments.values()
             )
         )
+        self.assertTrue(
+            all(
+                deployment.get("paused") is False
+                for deployment in deployments.values()
+                if deployment.get("schedules")
+            )
+        )
 
     def test_morning_flow_runs_nav_before_feature(self) -> None:
         with patch.object(prefect_flows, "run_business_job") as run_job:

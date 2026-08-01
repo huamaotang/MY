@@ -1,8 +1,14 @@
 # Nginx 部署说明
 
+统一的生产拓扑、发布顺序、备份、回滚和巡检要求见
+[`docs/manuals/DEPLOYMENT.md`](../docs/manuals/DEPLOYMENT.md)。本文保留仓库内
+Nginx、Jar 重启和 Prefect 的具体操作入口。
+
 CentOS 上的数据抓取和基金计算任务由自托管 Prefect Server + Process
 Worker 统一管理。安装、验证以及从旧 `crontab`/`systemd timer` 切换的步骤见
 [`centos/README.md`](centos/README.md)。
+Prefect 专用 PostgreSQL 配置见
+[`prefect/README.md`](prefect/README.md)。
 
 ## 构建前端
 
@@ -76,7 +82,7 @@ DRAIN_SECONDS=15 STOP_TIMEOUT=60 deploy/graceful-restart.sh system backend/syste
 
 ## 安装 Nginx 配置
 
-将 [nginx.conf](/Users/thm/MY/codex/crm/deploy/nginx.conf) 放到 Nginx 站点配置目录，例如：
+将 [nginx.conf](nginx.conf) 放到 Nginx 站点配置目录，例如：
 
 ```bash
 sudo cp deploy/nginx.conf /etc/nginx/conf.d/crm.conf

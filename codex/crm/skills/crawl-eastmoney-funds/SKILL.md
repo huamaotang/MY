@@ -33,7 +33,7 @@ Supported data areas:
 7. Use `fund_spider/cli.py` as the only command entrypoint.
 8. Use `nav-performance` for the twice-daily NAV/performance snapshot and `feature` for the 08:00 feature refresh.
 9. Keep full basic profiles, holdings, ratings, and historical NAV as manual commands.
-10. All recurring schedules must use APScheduler through `fund_spider/cli.py schedule`, or `fund_spider/cli.py web` when a Web configuration service is needed. Do not add custom polling loops or OS-level per-task timers.
+10. All recurring schedules must use version-controlled Prefect Deployments in `fund_spider/prefect.yaml`. Do not add custom polling loops or OS-level per-task timers.
 
 ## Commands
 
@@ -70,16 +70,16 @@ DB_PASSWORD=qwer8989 fund_spider/.venv/bin/python fund_spider/cli.py nav-perform
 ```
 
 ```bash
-fund_spider/.venv/bin/python fund_spider/cli.py schedule --run-on-start 1 --once 1 --dry-run 1
-```
-
-```bash
-fund_spider/.venv/bin/python fund_spider/cli.py web --host 127.0.0.1 --port 8088
+PREFECT_API_URL=http://127.0.0.1:4200/api \
+fund_spider/.venv/bin/prefect deployment run \
+  'fund-feature-refresh/feature-refresh-manual' \
+  --param dry_run=true --watch
 ```
 
 Shell entrypoints are organized under `fund_spider/bin/`, collectors under
-`fund_spider/spiders/`, APScheduler integration under `fund_spider/runtime/`, and standalone
-tools under `fund_spider/tools/`.
+`fund_spider/spiders/`, Prefect Flow definitions in `fund_spider/prefect_flows.py`,
+business-task execution under `fund_spider/runtime/`, and standalone tools under
+`fund_spider/tools/`.
 
 ## Detailed Reference
 

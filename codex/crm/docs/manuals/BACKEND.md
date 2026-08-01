@@ -1,81 +1,61 @@
-# 后端微服务开发手册
+# Java 后端微服务开发手册
 
-本文覆盖 `backend/` 下所有 Java 服务的本地启动、配置、接口开发、验证和排错。
+本文覆盖 `backend/` 的环境、架构、开发、测试、运行、发布和排错。接口契约见 [API 参考](../reference/API.md)，表与迁移见 [数据库参考](../reference/DATABASE.md)。
 
-## 1. 技术栈
+## 1. 技术栈与模块
 
-| 项 | 说明 |
+| 项目 | 当前版本/实现 |
 | --- | --- |
-| Java | 工程按 Java 8 编译，`backend/pom.xml` 配置了 `source/target=1.8` |
-| 框架 | Spring Boot 2.7.18 |
-| 微服务 | Spring Cloud 2021.0.8 |
-| 注册配置 | Spring Cloud Alibaba Nacos |
-| 网关 | Spring Cloud Gateway |
-| 数据库 | MySQL |
-| ORM | MyBatis-Plus + XML Mapper |
-| 安全 | Spring Security + JWT |
-| 限流 | Gateway + Redis RateLimiter |
+| Java | 源码/字节码目标 1.8 |
+| Spring Boot | 2.7.18 |
+| Spring Cloud | 2021.0.8 |
+| Spring Cloud Alibaba | 2021.0.5.0 |
+| Nacos Client | 2.4.3 |
+| ORM | MyBatis-Plus 3.5.5 + XML Mapper |
+| 安全 | Spring Security + JWT + `@PreAuthorize` |
+| 网关 | Spring Cloud Gateway/WebFlux + Redis RateLimiter |
 | 构建 | Maven 多模块 |
 
-## 2. 模块说明
+| 模块 | 启动类 | 服务名 | 端口 | 数据库 |
+| --- | --- | --- | ---: | --- |
+| `core` | 无 | 无 | - | 无 |
+| `gateway` | `CrmGatewayApplication` | `gateway` | 8780 | 无 |
+| `system` | `CrmSystemApplication` | `system` | 8782 | `crm` |
+| `customer` | `CrmCustomerApplication` | `customer` | 8783 | `crm` |
+| `fund` | `CrmFundApplication` | `fund` | 8784 | `fund` |
+| `admin` | `CrmApplication` | `admin` | 8781 | `crm` |
 
-| 模块 | 启动类 | 服务名 | 端口 | 职责 |
-| --- | --- | --- | --- | --- |
-| `core` | 无 | 无 | 无 | 公共库，不单独启动 |
-| `gateway` | `CrmGatewayApplication` | `gateway` | `8780` | 统一入口、路由、CORS、限流 |
-| `system` | `CrmSystemApplication` | `system` | `8782` | 登录、用户、角色、菜单 |
-| `customer` | `CrmCustomerApplication` | `customer` | `8783` | 客户、联系人、跟进记录 |
-| `admin` | `CrmApplication` | `admin` | `8781` | 原单体兼容服务 |
+默认在线链路依赖 `system/customer/fund/gateway`。`admin` 是原单体兼容服务并接收 Gateway 访问日志，不应作为新业务默认归属。
 
-默认业务访问走 `gateway`，不要让前端和移动端直连 `system` 或 `customer`。
+## 2. 环境准备
 
-## 3. 本地环境准备
+需要：
 
-必须准备：
-
-```text
-JDK 8 或更高版本
-Maven
-MySQL
-Docker Desktop
-```
-
-本机 Java 版本高于 8 也能编译，因为 Maven 已指定目标字节码为 1.8。如果生产要求严格 Java 8，先切换：
+- JDK 8 或能生成 Java 8 字节码的更高 JDK。
+- Maven 3.8+。
+- MySQL、Docker/Docker Compose。
+- 本地 Nacos 2.4.3 和 Redis 7（仓库 Compose 已提供）。
 
 ```bash
-export JAVA_HOME=$(/usr/libexec/java_home -v 1.8)
 java -version
+mvn -version
+docker version
+docker compose version
 ```
 
-## 4. 初始化数据库
+父 POM 的 `source/target=1.8` 不保证所有高版本 JDK 行为与生产 JDK 8 完全一致。生产使用 Java 8 时，应在 Java 8 CI/环境做最终构建验证。
 
-登录 MySQL 后执行：
+## 3. 初始化数据库
 
-```sql
-CREATE DATABASE crm CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE crm;
-SOURCE sql/schema.sql;
-```
+新环境按 [数据库参考](../reference/DATABASE.md#本地初始化) 初始化 `crm` 和 `fund`。不要对生产执行 `sql/schema.sql`，因为它会删表重建。
 
-如果已经有旧库，`schema.sql` 会先 `DROP TABLE`，不要在生产库直接执行。
+确认 Nacos 中：
 
-关键表：
+- `system/customer/admin` 使用 `MYSQL_URL` 指向 `crm`。
+- `fund` 使用 `FUND_MYSQL_URL` 指向 `fund`。
+- 所有校验 JWT 的服务使用同一个 `CRM_JWT_SECRET`。
 
-| 表 | 说明 |
-| --- | --- |
-| `sys_user` | 用户 |
-| `sys_role` | 角色 |
-| `sys_menu` | 菜单和按钮权限 |
-| `sys_user_role` | 用户角色关系 |
-| `sys_role_menu` | 角色菜单关系 |
-| `crm_customer` | 客户 |
-| `crm_contact` | 联系人 |
-| `crm_follow_record` | 跟进记录 |
-| `sys_api_log` | 接口访问日志 |
-
-## 5. 启动基础设施
-
-启动 Nacos 和 Redis：
+## 4. 启动基础设施与发布配置
 
 ```bash
 cd deploy/nacos
@@ -83,41 +63,14 @@ docker compose up -d
 docker compose ps
 ```
 
-确认 Nacos：
+期望 `crm-nacos` 和 `crm-redis` 为运行/健康状态。
 
-```bash
-curl -fsS http://127.0.0.1:8848/nacos/v1/ns/operator/metrics
-```
-
-确认 Redis：
-
-```bash
-redis-cli -h 127.0.0.1 -p 6379 -a qwer8989 ping
-```
-
-期望输出：
-
-```text
-PONG
-```
-
-## 6. 发布 Nacos 配置
-
-配置文件在 `deploy/nacos/`：
-
-```text
-gateway-dev.yaml
-system-dev.yaml
-customer-dev.yaml
-admin-dev.yaml
-```
-
-导入全部配置：
+发布全部开发配置：
 
 ```bash
 cd deploy/nacos
-for data_id in gateway-dev.yaml admin-dev.yaml system-dev.yaml customer-dev.yaml; do
-  curl -X POST 'http://127.0.0.1:8848/nacos/v1/cs/configs' \
+for data_id in gateway-dev.yaml admin-dev.yaml system-dev.yaml customer-dev.yaml fund-dev.yaml; do
+  curl -fsS -X POST 'http://127.0.0.1:8848/nacos/v1/cs/configs' \
     --data-urlencode "dataId=${data_id}" \
     --data-urlencode 'group=DEFAULT_GROUP' \
     --data-urlencode 'type=yaml' \
@@ -125,63 +78,42 @@ for data_id in gateway-dev.yaml admin-dev.yaml system-dev.yaml customer-dev.yaml
 done
 ```
 
-读取某个配置验证：
+读取验证：
 
 ```bash
 curl -fsS 'http://127.0.0.1:8848/nacos/v1/cs/configs?dataId=gateway-dev.yaml&group=DEFAULT_GROUP'
 ```
 
-## 7. 配置项说明
+本地 YAML 是版本库事实来源，Nacos 中的内容是运行态事实来源。两者必须分别检查。
 
-数据库配置在 `system-dev.yaml`、`customer-dev.yaml`、`admin-dev.yaml`：
+## 5. 配置加载
 
-```yaml
-spring:
-  datasource:
-    url: "${MYSQL_URL:jdbc:mysql://localhost:3306/crm?...}"
-    username: "${MYSQL_USER:root}"
-    password: "${MYSQL_PASSWORD:qwer8989}"
+每个 `bootstrap.yml` 只定义应用名、profile、Nacos 地址和 Config/Discovery 连接。Nacos Data ID 为：
+
+```text
+<spring.application.name>-<spring.profiles.active>.yaml
 ```
 
-JWT 配置：
+常用环境变量：
 
-```yaml
-crm:
-  jwt:
-    secret: "${CRM_JWT_SECRET:change-this-nacos-development-secret}"
-    expire-seconds: "${CRM_JWT_EXPIRE_SECONDS:86400}"
-```
+| 变量 | 服务 | 作用 |
+| --- | --- | --- |
+| `NACOS_SERVER_ADDR` | 全部 | Nacos 地址 |
+| `NACOS_GROUP` | 全部 | 配置/注册分组 |
+| `SPRING_PROFILES_ACTIVE` | 全部 | `dev/test/prod` |
+| `MYSQL_URL/USER/PASSWORD` | system/customer/admin | CRM 数据库 |
+| `FUND_MYSQL_URL/USER/PASSWORD` | fund | 基金数据库 |
+| `CRM_JWT_SECRET` | 业务服务 | JWT 签名密钥 |
+| `CRM_JWT_EXPIRE_SECONDS` | 业务服务 | Token 有效期 |
+| `REDIS_HOST/PORT/PASSWORD` | gateway | 限流 Redis |
+| `GATEWAY_RATE_LIMIT_*` | gateway | 令牌桶参数 |
+| `CRM_ACCESS_LOG_ADMIN_URL/TOKEN` | gateway/admin | 访问日志写入 |
 
-Gateway Redis 限流配置在 `gateway-dev.yaml`：
+生产不要依赖 `${VAR:development-default}` 的默认密码或密钥。
 
-```yaml
-spring:
-  redis:
-    host: ${REDIS_HOST:127.0.0.1}
-    port: ${REDIS_PORT:6379}
-    password: ${REDIS_PASSWORD:qwer8989}
-  cloud:
-    gateway:
-      default-filters:
-        - name: RequestRateLimiter
-          args:
-            key-resolver: "#{@ipKeyResolver}"
-            redis-rate-limiter.replenishRate: ${GATEWAY_RATE_LIMIT_REPLENISH_RATE:20}
-            redis-rate-limiter.burstCapacity: ${GATEWAY_RATE_LIMIT_BURST_CAPACITY:40}
-```
+## 6. 本地启动
 
-含义：
-
-| 配置 | 说明 |
-| --- | --- |
-| `replenishRate` | 每秒补充多少令牌 |
-| `burstCapacity` | 令牌桶最大容量 |
-| `requestedTokens` | 每个请求消耗令牌数 |
-| `ipKeyResolver` | 按客户端 IP 做限流 key |
-
-## 8. 启动服务
-
-建议开三个终端：
+分别打开终端：
 
 ```bash
 cd backend
@@ -195,247 +127,229 @@ mvn -pl customer -am spring-boot:run
 
 ```bash
 cd backend
+mvn -pl fund -am spring-boot:run
+```
+
+```bash
+cd backend
 mvn -pl gateway spring-boot:run
 ```
 
-注意：`gateway` 可以用 `mvn -pl gateway spring-boot:run` 启动。不要用 `mvn -pl gateway -am spring-boot:run`，否则 Maven 可能会先在父 POM 上执行 Boot 插件并报没有 main class。
-
-可选启动兼容单体：
+可选兼容服务：
 
 ```bash
 cd backend
 mvn -pl admin -am spring-boot:run
 ```
 
-## 9. 启动后验证
+Gateway 使用 `mvn -pl gateway spring-boot:run`。对父聚合项目执行 Boot 插件可能因没有 main class 失败。
 
-检查 Nacos 注册：
+## 7. 启动验证
 
-```bash
-curl -fsS 'http://127.0.0.1:8848/nacos/v1/ns/instance/list?serviceName=system&groupName=DEFAULT_GROUP'
-curl -fsS 'http://127.0.0.1:8848/nacos/v1/ns/instance/list?serviceName=customer&groupName=DEFAULT_GROUP'
-curl -fsS 'http://127.0.0.1:8848/nacos/v1/ns/instance/list?serviceName=gateway&groupName=DEFAULT_GROUP'
-```
-
-检查健康：
+### 进程健康
 
 ```bash
-curl -i http://127.0.0.1:8780/actuator/health
-curl -i http://127.0.0.1:8782/actuator/health
-curl -i http://127.0.0.1:8783/actuator/health
+curl -fsS http://127.0.0.1:8780/actuator/health
+curl -fsS http://127.0.0.1:8782/actuator/health
+curl -fsS http://127.0.0.1:8783/actuator/health
+curl -fsS http://127.0.0.1:8784/actuator/health
 ```
 
-登录拿 token：
+### Nacos 注册
 
 ```bash
-curl -s -X POST 'http://127.0.0.1:8780/api/auth/login' \
-  -H 'Content-Type: application/json' \
-  -H 'X-Client-Source: curl' \
-  -d '{"username":"admin","password":"admin123"}'
+for service in gateway system customer fund; do
+  curl -fsS "http://127.0.0.1:8848/nacos/v1/ns/instance/list?serviceName=${service}&groupName=DEFAULT_GROUP"
+done
 ```
 
-访问客户列表：
+检查响应中的实例 `healthy=true`。
 
-```bash
-TOKEN='把登录返回的 token 放这里'
-curl -s 'http://127.0.0.1:8780/api/customers?current=1&size=10' \
-  -H "Authorization: Bearer ${TOKEN}" \
-  -H 'X-Client-Source: curl'
-```
-
-## 10. 网关路由
-
-外部统一带 `/api`，网关通过 `StripPrefix=1` 去掉 `/api` 后转给下游。
-
-| 外部路径 | 下游服务 | 下游路径 |
-| --- | --- | --- |
-| `/api/auth/**` | `system` | `/auth/**` |
-| `/api/users/**` | `system` | `/users/**` |
-| `/api/roles/**` | `system` | `/roles/**` |
-| `/api/menus/**` | `system` | `/menus/**` |
-| `/api/customers/**` | `customer` | `/customers/**` |
-| `/api/contacts/**` | `customer` | `/contacts/**` |
-| `/api/follow-records/**` | `customer` | `/follow-records/**` |
-| `/api/funds/**` | `fund` | `/funds/**` |
-
-新增接口后，如果路径不在这些谓词内，必须改 `deploy/nacos/gateway-dev.yaml` 并重新发布到 Nacos。
-
-## 11. 当前接口清单
-
-系统服务：
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `POST` | `/api/auth/login` | 登录 |
-| `GET` | `/api/auth/me` | 当前用户 |
-| `GET` | `/api/users` | 用户列表 |
-| `POST` | `/api/users` | 新增用户 |
-| `PUT` | `/api/users/{id}` | 修改用户 |
-| `DELETE` | `/api/users/{id}` | 删除用户 |
-| `GET` | `/api/roles` | 角色列表 |
-| `POST` | `/api/roles` | 新增角色 |
-| `PUT` | `/api/roles/{id}` | 修改角色 |
-| `DELETE` | `/api/roles/{id}` | 删除角色 |
-| `GET` | `/api/menus/mine` | 当前用户菜单 |
-| `GET` | `/api/menus` | 菜单树 |
-| `POST` | `/api/menus` | 新增菜单 |
-| `PUT` | `/api/menus/{id}` | 修改菜单 |
-| `DELETE` | `/api/menus/{id}` | 删除菜单 |
-
-客户服务：
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/api/customers` | 客户分页 |
-| `GET` | `/api/customers/{id}` | 客户详情 |
-| `POST` | `/api/customers` | 新增客户 |
-| `PUT` | `/api/customers/{id}` | 修改客户 |
-| `DELETE` | `/api/customers/{id}` | 删除客户 |
-| `GET` | `/api/contacts` | 联系人列表 |
-| `POST` | `/api/contacts` | 新增联系人 |
-| `GET` | `/api/follow-records` | 跟进记录列表 |
-| `POST` | `/api/follow-records` | 新增跟进记录 |
-
-基金服务：
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/api/funds` | 基金分页，返回当前用户的 `favorite` 状态 |
-| `GET` | `/api/funds/favorites` | 当前用户自选基金分页 |
-| `POST` | `/api/funds/{fundCode}/favorite` | 加入当前用户自选 |
-| `DELETE` | `/api/funds/{fundCode}/favorite` | 取消当前用户自选 |
-
-## 12. 新增接口流程
-
-以在 `customer` 服务新增客户标签接口为例：
-
-1. 数据库加表或加字段，放到新的 `sql/yyyymmdd_xxx.sql`。
-2. 在 `backend/customer/src/main/java/com/example/crm/entity/` 增加实体。
-3. 在 `mapper/` 增加 Mapper 接口。
-4. 在 `resources/mapper/` 增加 XML SQL。
-5. 在 `service/` 定义接口。
-6. 在 `service/impl/` 实现业务逻辑。
-7. 在 `controller/` 增加 REST 接口。
-8. 如果路径是新前缀，比如 `/customer-tags/**`，更新 `gateway-dev.yaml`：
-
-```yaml
-predicates:
-  - Path=/api/customers/**,/api/contacts/**,/api/follow-records/**,/api/customer-tags/**
-```
-
-9. 发布 Nacos 配置。
-10. 重启或刷新 gateway。
-11. 用 curl 验证。
-12. 前端或移动端接入。
-
-## 13. 安全与鉴权
-
-所有服务引入 `core` 后都会使用统一安全配置。默认除登录和健康检查外都需要 JWT。
-
-请求头格式：
-
-```text
-Authorization: Bearer <token>
-```
-
-调用来源建议带：
-
-```text
-X-Client-Source: web
-X-Client-Source: ios
-X-Client-Source: android
-```
-
-访问日志会记录到 `sys_api_log.source`，方便区分调用端。
-
-## 14. 限流验证
-
-查看 Gateway 路由是否挂了限流过滤器：
+### 路由与业务
 
 ```bash
 curl -fsS http://127.0.0.1:8780/actuator/gateway/routes
 ```
 
-并发测试：
+然后按 [API 登录示例](../reference/API.md#登录示例) 获取 Token，并从 Gateway 访问客户和基金列表。
+
+## 8. 分层开发
+
+### 新增普通 CRUD
+
+1. 确认模块和数据库归属。
+2. 新增增量 SQL，不改历史迁移；更新数据库文档。
+3. 增加 Entity/DTO。对外请求不要直接复用包含敏感或内部字段的 Entity。
+4. 增加 Mapper 接口及 XML/Plus 查询。
+5. 在 Service 实现校验、事务和业务规则。
+6. Controller 只负责 HTTP 映射、参数和权限，返回 `ApiResponse<T>`。
+7. 新路径前缀才更新 Gateway Nacos 路由。
+8. 更新 Web/iOS/Android 模型和接口。
+9. 补单元测试、接口示例和手册。
+
+示意：
+
+```java
+@GetMapping("/{id}")
+@PreAuthorize("hasAuthority('domain:item:list')")
+public ApiResponse<ItemResponse> detail(@PathVariable Long id) {
+    return ApiResponse.ok(itemService.detail(id));
+}
+```
+
+### 事务
+
+- 一次用户动作需要多表一致时在 Service 层使用 `@Transactional`。
+- 不在事务中做不可控的长时间外部网络请求。
+- 捕获异常后若仍需回滚，重新抛出或显式标记 rollback-only。
+- 批量导入先验证，再在短事务内确认写入。
+
+### Mapper
+
+- Mapper XML 的 `namespace` 必须等于接口全限定名。
+- 参数名和 `@Param` 一致；列名显式映射驼峰字段。
+- 排序字段必须白名单映射，不能拼接用户输入。
+- 分页和批量查询避免 N+1。
+
+## 9. 安全模型
+
+### JWT
+
+登录由 `system` 签发，`core` 中的过滤器在 `system/customer/fund` 校验。Token 至少包含用户名、角色/权限及过期时间。密钥轮换会使旧 Token 失效，应纳入发布通知。
+
+### 权限
+
+- `hasRole('ADMIN')` 实际匹配 `ROLE_ADMIN`。
+- `hasAuthority('fund:list')` 精确匹配权限字符串。
+- 新权限码需以增量 SQL 加入 `sys_menu` 并授权角色。
+- 授权变更后重新登录，旧 JWT 不刷新。
+- 当前 `data_scope` 主要保存于角色，客户查询尚未实现完整数据范围过滤；不要把它描述成已完成的数据隔离。
+
+### 输入与错误
+
+- 请求 DTO 使用 Bean Validation；不要只依赖前端校验。
+- 业务异常不应泄露 SQL、文件路径、密钥或第三方原始响应。
+- 当前 `ApiResponse.fail` 的业务码为 500，且部分业务异常 HTTP 状态仍为 200；新增客户端必须检查两层状态。
+- OCR 文件需限制格式、数量、尺寸和解析资源；当前规则变化时同步接口文档。
+
+## 10. Gateway 与访问日志
+
+Gateway 是 WebFlux 应用，不得放 Servlet Filter。它负责：
+
+- Nacos 负载均衡路由。
+- `/api` 前缀移除。
+- CORS。
+- Redis 令牌桶限流，当前按客户端 IP 取 key。
+- 访问日志，并可向 Admin 的内部 `/api/api-logs` 写入。
+
+限流验证：
 
 ```bash
-seq 1 80 | xargs -n 1 -P 40 -I {} \
-  curl -s -o /dev/null -w '%{http_code}\n' \
-  -H 'X-Forwarded-For: 198.51.100.120' \
+seq 1 60 | xargs -n1 -P20 -I{} \
+  curl -sS -o /dev/null -w '%{http_code}\n' \
   http://127.0.0.1:8780/api/customers | sort | uniq -c
 ```
 
-看到 `429` 说明限流生效。看到 `403` 通常是未带 token 进入了业务鉴权。
+运行前需准备 Token，否则结果可能首先是鉴权失败。需要精确验证时使用带 Token 的测试脚本，并在非生产环境临时降低限流参数。
 
-## 15. 常见问题
+## 11. 基金服务维护要点
 
-| 问题 | 原因 | 处理 |
-| --- | --- | --- |
-| `gateway` health 是 `DOWN` | Redis 不通或密码错误 | `redis-cli -a qwer8989 ping`，检查 `spring.redis.password` |
-| 请求返回 `503` | Nacos 找不到下游实例 | 检查 `system/customer` 是否注册且 healthy |
-| 请求返回 `403` | 未带 token 或 token 无效 | 重新登录，带 `Authorization` |
-| 登录返回 500 | 数据库、密码、用户数据异常 | 看 `system` 日志和 `sys_user` 初始化数据 |
-| 修改 Nacos YAML 不生效 | 没发布到 Nacos 或服务未刷新 | 重新 POST 配置，必要时重启服务 |
-| Mapper SQL 不生效 | XML 路径或方法名不匹配 | 检查 `mapper-locations` 和 Mapper 方法 |
-| 时间格式不对 | Jackson 配置不一致 | 检查 Nacos YAML 的 `time-zone` 和 `date-format` |
+- `fund` 使用独立 `fund` MySQL。
+- 基础/净值/评级/资讯/股票主要由 Python 写，Java 以读和用户交互为主。
+- 评分 API 创建异步任务，Python pipeline 才执行回测/推荐。
+- 激活评分配置必须满足代码中的回测门槛，不能人工只改数据库状态。
+- 用户持仓按用户名和来源平台隔离；OCR 预览后才确认。
+- 股票 Controller 当前用 `JdbcTemplate` 和排序白名单，新增字段需同步 SQL alias、Web/移动模型。
 
-## 16. 提交前检查
+## 12. 测试与构建
 
-```bash
-cd backend
-mvn -pl system,customer,gateway -am -DskipTests package
-```
-
-如果改了 `admin`：
+### 最小模块构建
 
 ```bash
 cd backend
-mvn -pl admin -am -DskipTests package
+mvn -pl system -am -DskipTests package
+mvn -pl customer -am -DskipTests package
+mvn -pl fund -am -DskipTests package
+mvn -pl gateway -am -DskipTests package
 ```
 
-文档、配置、SQL 和代码要一起提交，不要只提交 Java 文件。
+### 全量
 
-## 17. 支付宝与腾讯理财通截图导入
-
-持仓页支持支付宝、腾讯理财通两种账户来源，以及两类截图：
-
-- `holding`：完整持仓快照。确认后覆盖当前用户同一 `sourceLabel` 的持仓，其他平台不受影响。
-- `trade`：交易明细。只调整同平台已有基金的 `holdingAmount`，不会新建或删除持仓。
-
-OCR 预览接口：
-
-```text
-POST /api/portfolio/imports/ocr?sourceLabel=alipay|tencent&importType=holding|trade
-Content-Type: multipart/form-data
-images: 1 至 3 张 JPG/PNG
+```bash
+cd backend
+mvn test
+mvn -DskipTests package
 ```
 
-两个查询参数为兼容旧客户端分别默认 `alipay`、`holding`。运行时按查询参数选择版式，
-不使用上传文件名判断平台。
-
-确认接口：
-
-```text
-POST /api/portfolio/imports/{importId}/confirm
-```
-
-快照确认提交 `items`；交易确认只提交 `tradeMappings` 中的 `groupKey` 和 `fundCode`。
-交易金额由服务端根据已保存的逐笔 OCR 记录重新计算，客户端展示的净额不作为入账依据。
-失败、关闭、撤销、重复、未匹配和不晚于最近快照日期的交易会被跳过；卖出最低减到 0，
-持仓行继续保留。
-
-升级已有数据库时执行：
-
-```text
-fund_spider/sql/20260730_add_portfolio_trade_import.sql
-```
-
-该迁移为批次增加 `import_type`，并创建逐笔交易导入表和已应用指纹唯一约束。
-
-验证基金服务：
+基金已有计算测试：
 
 ```bash
 cd backend
 mvn -pl fund -am test
-mvn -pl fund -am package
 ```
+
+修改鉴权、SQL 或网关时还需实际启动依赖并走 Gateway 做端到端测试。
+
+## 13. 打包与产物
+
+```bash
+cd backend
+mvn -DskipTests package
+```
+
+主要产物：
+
+```text
+gateway/target/gateway-0.1.0.jar
+system/target/system-0.1.0.jar
+customer/target/customer-0.1.0.jar
+fund/target/fund-0.1.0.jar
+admin/target/admin-0.1.0.jar
+```
+
+发布前记录 Git commit、JDK、Maven、依赖锁定状态和每个 Jar 的 SHA-256；不同环境不得现场重新编译出不同 Jar。
+
+## 14. 生产发布与回滚
+
+完整顺序见 [部署手册](DEPLOYMENT.md#生产发布)。Java 部分要点：
+
+1. 先备份并执行已审阅的数据库增量迁移。
+2. 发布生产 Nacos 配置，读回核对，不使用 dev 默认值。
+3. 上传带版本号或校验和的 Jar，不覆盖唯一可回滚副本。
+4. 按 `system/customer/fund/admin/gateway` 的影响评估滚动重启；同服务多实例时始终保留健康实例。
+5. 每个实例验证 Actuator、Nacos healthy、关键 API 和日志后再继续。
+6. 发布后做登录、客户列表、基金列表、评分任务读取、OCR 预览（测试账号）冒烟。
+
+仓库脚本示例：
+
+```bash
+deploy/graceful-restart.sh system backend/system/target/system-0.1.0.jar 8782
+```
+
+回滚：停止新实例、恢复上一 Jar、恢复匹配配置并重启。数据库回滚只能按迁移预案执行；不要在故障中临时逆写破坏性 SQL。
+
+## 15. 常见故障
+
+| 现象 | 常见原因 | 检查 |
+| --- | --- | --- |
+| 启动提示配置为空 | Data ID/group/profile 不匹配 | 读 Nacos 配置，核对应用名 |
+| Gateway `503` | 服务未注册或 unhealthy | Nacos 实例、下游 Actuator/日志 |
+| Gateway health `DOWN` | Redis 地址/密码错误 | `redis-cli`、Gateway 日志 |
+| `401/403` | Token 缺失/过期、角色或权限不足 | 重新登录、JWT、`sys_role_menu` |
+| `429` | 令牌桶生效 | Redis、限流参数、来源 IP |
+| MyBatis binding error | XML namespace/方法/参数不一致 | Mapper 接口与 XML |
+| 基金为空 | `fund` 库错误或 Python 未刷新 | JDBC URL、表新鲜度、Prefect |
+| 评分任务一直 pending | Python pipeline/worker 未运行 | Prefect Deployment 与 Worker |
+| 日志写入失败 | Admin 未启动或 token 不一致 | Gateway 的 admin URL/token |
+
+## 16. 提交前检查
+
+- [ ] 修改在正确模块，未把新业务塞进 `admin` 或 `core`。
+- [ ] 数据库只使用增量迁移，并在副本验证。
+- [ ] Controller、Service、Mapper、事务和权限都有对应测试。
+- [ ] Gateway 路由仅在新前缀时修改并发布验证。
+- [ ] Java DTO 与所有受影响客户端类型一致。
+- [ ] 模块/全量 Maven 构建通过。
+- [ ] 通过 Gateway 完成成功、无 Token、无权限和错误输入验证。
+- [ ] API、数据库、项目和部署文档已同步。
+- [ ] 没有提交密码、Token、Cookie、日志或本机配置。

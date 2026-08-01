@@ -9,6 +9,7 @@ You are working in the CRM monorepo. Treat this repository as a multi-project pr
 | Area | Path | Guide |
 | --- | --- | --- |
 | Backend microservices | `backend/` | `backend/agent.md`, `backend/skill.md`, `docs/manuals/BACKEND.md` |
+| Python data tasks | `fund_spider/` | `fund_spider/README.md`, `docs/manuals/PYTHON.md` |
 | Web admin | `frontend/` | `frontend/agent.md`, `frontend/skill.md`, `docs/manuals/FRONTEND.md` |
 | iOS app | `ios/CrmMobile/` | `ios/CrmMobile/agent.md`, `ios/CrmMobile/skill.md`, `docs/manuals/IOS.md` |
 | Android app | `android/CrmMobileAndroid/` | `android/CrmMobileAndroid/agent.md`, `android/CrmMobileAndroid/skill.md`, `docs/manuals/ANDROID.md` |
@@ -30,6 +31,7 @@ Use the narrowest validation that proves the change:
 | Change | Minimum validation |
 | --- | --- |
 | Backend Java | `mvn -pl <module> -am -DskipTests package` |
+| Python tasks | `python -m unittest discover -s tests -p 'test_*.py'` |
 | Gateway/Nacos | Read Nacos config, start gateway if needed, test route or actuator |
 | Frontend | `npm run build` |
 | iOS | Xcode build or document why unavailable |
@@ -49,3 +51,5 @@ Use the narrowest validation that proves the change:
 - `README.md`
 - `docs/MODULES.md`
 - `docs/manuals/README.md`
+- `docs/reference/API.md`
+- `docs/reference/DATABASE.md`
