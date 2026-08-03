@@ -11,7 +11,7 @@ deployments:
   - name: morning-fund-refresh
     version: "1"
     paused: false
-    description: 每天 08:00 依次刷新基金净值/阶段收益和基金特征数据。
+    description: 每天 08:00 依次刷新基金净值/阶段收益和最久未刷新的基金特征批次。
     tags: [crm, fund, daily]
     entrypoint: prefect_flows.py:morning_fund_refresh_flow
     schedules:
@@ -23,9 +23,11 @@ deployments:
       collision_strategy: ENQUEUE
     work_pool:
       name: crm-process-pool
-      work_queue_name: default
+      work_queue_name: batch
       job_variables:
         working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
+        env:
+          FEATURE_SCHEDULE_FUND_LIMIT: "2000"
 
   - name: evening-nav-performance
     version: "1"
@@ -42,7 +44,7 @@ deployments:
       collision_strategy: ENQUEUE
     work_pool:
       name: crm-process-pool
-      work_queue_name: default
+      work_queue_name: batch
       job_variables:
         working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
 
@@ -56,17 +58,20 @@ deployments:
       collision_strategy: ENQUEUE
     work_pool:
       name: crm-process-pool
-      work_queue_name: default
+      work_queue_name: batch
       job_variables:
         working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
 
   - name: score-pipeline
     version: "1"
     paused: false
-    description: 每天 22:30 标注历史样本、计算基金评分并处理待执行评分任务。
+    description: 每天 10:00 和 22:30 标注历史样本、计算基金评分并处理待执行评分任务。
     tags: [crm, fund, score, daily]
     entrypoint: prefect_flows.py:score_pipeline_flow
     schedules:
+      - cron: "0 10 * * *"
+        timezone: Asia/Shanghai
+        slug: daily-1000
       - cron: "30 22 * * *"
         timezone: Asia/Shanghai
         slug: daily-2230
@@ -75,7 +80,7 @@ deployments:
       collision_strategy: ENQUEUE
     work_pool:
       name: crm-process-pool
-      work_queue_name: default
+      work_queue_name: batch
       job_variables:
         working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
 
@@ -91,10 +96,10 @@ deployments:
         slug: every-120-seconds
     concurrency_limit:
       limit: 1
-      collision_strategy: ENQUEUE
+      collision_strategy: CANCEL_NEW
     work_pool:
       name: crm-process-pool
-      work_queue_name: default
+      work_queue_name: realtime
       job_variables:
         working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
 
@@ -125,10 +130,10 @@ deployments:
         slug: cn-1500-1530
     concurrency_limit:
       limit: 1
-      collision_strategy: ENQUEUE
+      collision_strategy: CANCEL_NEW
     work_pool:
       name: crm-process-pool
-      work_queue_name: default
+      work_queue_name: realtime
       job_variables:
         working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
 
@@ -159,9 +164,9 @@ deployments:
         slug: hk-1600-1610
     concurrency_limit:
       limit: 1
-      collision_strategy: ENQUEUE
+      collision_strategy: CANCEL_NEW
     work_pool:
       name: crm-process-pool
-      work_queue_name: default
+      work_queue_name: realtime
       job_variables:
         working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"

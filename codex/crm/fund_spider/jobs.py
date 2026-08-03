@@ -10,9 +10,11 @@ from db import (
     database_config_from_env,
     ensure_schema,
     list_fund_codes,
+    list_fund_codes_for_refresh,
     update_fund_profile,
     upsert_feature_data,
     upsert_fund_rankings,
+    upsert_fund_refresh_state,
     upsert_fund_ratings,
     upsert_fund_summaries,
     upsert_nav_history,
@@ -21,7 +23,7 @@ from db import (
     upsert_stock_quotes,
     upsert_yangjibao_news,
 )
-from settings import normalize_query_date, parse_optional_int, request_config_from_env
+from settings import normalize_query_date, parse_bool, parse_optional_int, request_config_from_env
 from spiders.feature_spider import EastMoneyFeatureSpider
 from spiders.fund_ranking_spider import EastMoneyFundSpider, RequestConfig
 from spiders.holding_spider import EastMoneyHoldingSpider
@@ -82,6 +84,7 @@ class NavHistoryOptions:
 @dataclass(frozen=True)
 class FeatureOptions:
     selector: BatchSelector
+    stale_first: bool = False
 
 
 @dataclass(frozen=True)
@@ -347,7 +350,12 @@ def crawl_feature_data(
     request_config = request_config or request_config_from_env()
 
     ensure_schema(db_config)
-    fund_codes = load_selected_fund_codes(db_config, options.selector, require_existing=True)
+    fund_codes = load_feature_fund_codes(db_config, options)
+    logger.info(
+        "step=feature action=select_funds selected=%s stale_first=%s",
+        len(fund_codes),
+        options.stale_first,
+    )
     spider = EastMoneyFeatureSpider(request_config)
     succeeded = 0
     failed = 0
@@ -358,6 +366,7 @@ def crawl_feature_data(
             try:
                 rows = spider.fetch_feature_data(fund_code)
                 saved = upsert_feature_data(connection, rows)
+                upsert_fund_refresh_state(connection, fund_code, "feature", len(rows))
                 total_saved += saved
                 succeeded += 1
                 logger.info(
@@ -586,6 +595,35 @@ def load_selected_fund_codes(
         connection.close()
 
 
+def load_feature_fund_codes(
+    db_config: DatabaseConfig,
+    options: FeatureOptions,
+) -> list[str]:
+    if not options.stale_first:
+        return load_selected_fund_codes(
+            db_config,
+            options.selector,
+            require_existing=True,
+        )
+
+    selector = options.selector
+    if selector.fund_limit is None:
+        raise ValueError("FEATURE_STALE_FIRST requires FUND_LIMIT")
+    if selector.fund_code or selector.fund_start_code or selector.fund_offset:
+        raise ValueError(
+            "FEATURE_STALE_FIRST cannot be combined with fund code, start code, or offset"
+        )
+    connection = connect(db_config)
+    try:
+        return list_fund_codes_for_refresh(
+            connection,
+            data_type="feature",
+            limit=selector.fund_limit,
+        )
+    finally:
+        connection.close()
+
+
 def validate_date_range(start_date: str, end_date: str) -> None:
     if start_date and end_date and start_date > end_date:
         raise ValueError("NAV_START_DATE must not be later than NAV_END_DATE")
@@ -636,7 +674,10 @@ def nav_history_options_from_env() -> NavHistoryOptions:
 
 
 def feature_options_from_env() -> FeatureOptions:
-    return FeatureOptions(selector=selector_from_env("FEATURE_FUND_CODE"))
+    return FeatureOptions(
+        selector=selector_from_env("FEATURE_FUND_CODE"),
+        stale_first=parse_bool(os.getenv("FEATURE_STALE_FIRST")),
+    )
 
 
 def rating_options_from_env() -> RatingOptions:

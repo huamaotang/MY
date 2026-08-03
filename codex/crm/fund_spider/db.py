@@ -419,6 +419,38 @@ def list_fund_codes(
     return [str(row["fund_code"]) for row in rows]
 
 
+def list_fund_codes_for_refresh(
+    connection: Connection,
+    data_type: str,
+    limit: int,
+) -> list[str]:
+    """Return the least recently refreshed funds first.
+
+    Funds without a successful refresh are selected before funds that already
+    have refresh-state rows.  This keeps scheduled batches bounded while still
+    guaranteeing that the whole fund universe is eventually revisited.
+    """
+    _validate_refresh_data_type(data_type)
+    if limit < 1:
+        raise ValueError("refresh limit must be greater than or equal to 1")
+    sql = """
+        SELECT d.fund_code
+        FROM fund_detail d
+        LEFT JOIN fund_refresh_state r
+          ON r.fund_code = d.fund_code
+         AND r.data_type = %s
+        ORDER BY
+          CASE WHEN r.last_success_at IS NULL THEN 0 ELSE 1 END,
+          r.last_success_at ASC,
+          d.fund_code ASC
+        LIMIT %s
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(sql, (data_type, limit))
+        rows = cursor.fetchall()
+    return [str(row["fund_code"]) for row in rows]
+
+
 def update_fund_profile(connection: Connection, profile: FundProfile) -> int:
     sql = """
         UPDATE fund_detail

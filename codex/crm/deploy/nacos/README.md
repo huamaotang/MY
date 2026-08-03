@@ -59,6 +59,18 @@ export GATEWAY_RATE_LIMIT_BURST_CAPACITY=40
 当前使用 `nacos/nacos-server:v2.4.3`，Maven 父工程中也显式覆盖 `nacos-client` 到 `2.4.3`，避免 2.2.x 客户端读取 2.4.x 服务端配置为空。
 网关限流使用 Redis，Compose 会同时启动 `crm-redis`。
 
+当前 Compose 的 Redis 没有启用密码，但 `gateway-dev.yaml` 的回退密码是
+`qwer8989`。必须给 Redis 配置相同 `requirepass`，或者启动 Gateway 时传空值：
+
+```bash
+cd backend
+REDIS_PASSWORD='' mvn -pl gateway -am spring-boot:run
+```
+
+此外 Compose 固定了 `linux/arm64`，适合当前 Apple Silicon 开发环境；x86_64
+机器如不支持该平台，需要调整 `platform` 并重新验证镜像。Nacos 鉴权关闭且端口
+发布到宿主机，因此只能用于可信本地网络。
+
 ```bash
 cd deploy/nacos
 docker compose up -d
@@ -93,7 +105,7 @@ cd backend
 # 分别在三个终端执行
 mvn -pl system -am spring-boot:run
 mvn -pl customer -am spring-boot:run
-mvn -pl gateway -am spring-boot:run
+REDIS_PASSWORD='' mvn -pl gateway -am spring-boot:run
 mvn -pl fund -am spring-boot:run
 
 # 可选：原单体迁移后的 admin 服务

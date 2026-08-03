@@ -25,6 +25,18 @@ if ! "${prefect_executable}" work-pool inspect "${work_pool}" >/dev/null 2>&1; t
     "${work_pool}"
 fi
 
+if ! "${prefect_executable}" work-queue inspect realtime --pool "${work_pool}" >/dev/null 2>&1; then
+  "${prefect_executable}" work-queue create realtime \
+    --pool "${work_pool}" \
+    --priority 1
+fi
+
+if ! "${prefect_executable}" work-queue inspect batch --pool "${work_pool}" >/dev/null 2>&1; then
+  "${prefect_executable}" work-queue create batch \
+    --pool "${work_pool}" \
+    --priority 10
+fi
+
 exec "${prefect_executable}" deploy \
   --all \
   --prefect-file "${project_dir}/prefect.yaml" \

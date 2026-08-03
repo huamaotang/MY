@@ -11,43 +11,50 @@
 3. 按 [Java 后端手册](BACKEND.md) 启动 `system/customer/fund/gateway`。
 4. 选择 [Web](FRONTEND.md)、[iOS](IOS.md) 或 [Android](ANDROID.md) 运行一个客户端。
 5. 用 [API 参考](../reference/API.md) 完成登录和一个受保护请求。
+6. 用 [配置参考](../reference/CONFIGURATION.md) 核对实际环境，不把开发默认值当作生产事实。
 
 ### 第一周：能安全修改代码
 
 - Java 开发者：阅读 [Java 学习教程](../learning/JAVA.md)，再从 Controller 追到 Service、Mapper 和表。
 - Python 开发者：阅读 [Python 数据任务手册](PYTHON.md) 和 [Python 学习教程](../learning/PYTHON.md)。
+- Web 前端开发者：按 [前端学习路线](../learning/README.md#web-前端学习路线) 补齐 JavaScript、TypeScript、HTML/CSS、React 和工程化，再阅读 [Web 前端手册](FRONTEND.md)。
 - iOS 开发者：阅读 [iOS 手册](IOS.md) 与 [iOS 学习教程](../learning/IOS.md)。
 - Android 开发者：阅读 [Android 手册](ANDROID.md) 与 [Android 学习教程](../learning/ANDROID.md)。
 - 所有人：知道如何查 [数据库参考](../reference/DATABASE.md) 和执行发布前检查。
+- 接手生产维护：继续阅读 [维护与交接手册](MAINTENANCE.md) 和 [已知限制](../reference/KNOWN_LIMITATIONS.md)。
 
 ## 文档地图
 
-| 文档 | 解决的问题 |
-| --- | --- |
-| [系统架构与模块说明](../MODULES.md) | 服务为什么这样拆、请求和数据怎样流动、哪里是唯一事实来源 |
-| [Java 后端手册](BACKEND.md) | Java 环境、分层开发、鉴权、构建、运行与排错 |
-| [Python 数据任务手册](PYTHON.md) | 爬虫、评分、数据库、Prefect、测试与发布 |
-| [Web 前端手册](FRONTEND.md) | React 管理台、API 封装、页面开发与发布 |
-| [iOS 手册](IOS.md) | SwiftUI、网络、登录态、真机和 App Store 发布 |
-| [Android 手册](ANDROID.md) | Java Activity、网络、线程、签名和多渠道发布 |
-| [部署与运维手册](DEPLOYMENT.md) | 本地/生产拓扑、发布顺序、备份、回滚和巡检 |
-| [API 参考](../reference/API.md) | REST、客户端覆盖、Python CLI 与 Prefect 运维接口 |
-| [数据库参考](../reference/DATABASE.md) | CRM/Fund 表、归属、初始化、迁移与备份 |
-| [学习教程总览](../learning/README.md) | 四条从基础到能提交代码的学习路线 |
+| 文档                                        | 解决的问题                                |
+| ----------------------------------------- | ------------------------------------ |
+| [系统架构与模块说明](../MODULES.md)                | 服务为什么这样拆、请求和数据怎样流动、哪里是唯一事实来源         |
+| [Java 后端手册](BACKEND.md)                   | Java 环境、分层开发、鉴权、构建、运行与排错             |
+| [Python 数据任务手册](PYTHON.md)                | 爬虫、评分、数据库、Prefect、测试与发布              |
+| [Web 前端手册](FRONTEND.md)                   | React 管理台、API 封装、页面开发与发布             |
+| [iOS 手册](IOS.md)                          | SwiftUI、网络、登录态、真机和 App Store 发布      |
+| [Android 手册](ANDROID.md)                  | Java Activity、网络、线程、签名和多渠道发布         |
+| [部署与运维手册](DEPLOYMENT.md)                  | 本地/生产拓扑、发布顺序、备份、回滚和巡检                |
+| [维护与交接手册](MAINTENANCE.md)                 | 日/周/月巡检、事故止损、恢复、RPO/RTO、交接模板         |
+| [API 参考](../reference/API.md)             | REST、客户端覆盖、Python CLI 与 Prefect 运维接口 |
+| [API 数据模型](../reference/API_MODELS.md)    | DTO 字段、类型、null/日期/金额、OCR/评分 JSON 示例  |
+| [数据库参考](../reference/DATABASE.md)         | CRM/Fund 表、归属、初始化、迁移与备份              |
+| [配置参考](../reference/CONFIGURATION.md)     | Java/Python/Prefect/Web/移动端全部配置与优先级  |
+| [已知限制](../reference/KNOWN_LIMITATIONS.md) | 上线阻塞项、数据完整性风险、测试与平台技术债               |
+| [学习教程总览](../learning/README.md)           | Web、后端、数据任务和移动端的项目导向学习路线                 |
 
 ## 系统组件与默认地址
 
-| 组件 | 默认地址 | 是否对公网开放 |
-| --- | --- | --- |
-| Nacos | `http://127.0.0.1:8848/nacos` | 否；生产必须启用鉴权并限制网络 |
-| Redis | `127.0.0.1:6379` | 否 |
-| Gateway | `http://127.0.0.1:8780` | 生产只通过 HTTPS/Nginx 暴露 |
-| System | `http://127.0.0.1:8782` | 否 |
-| Customer | `http://127.0.0.1:8783` | 否 |
-| Fund | `http://127.0.0.1:8784` | 否 |
-| Admin | `http://127.0.0.1:8781/api` | 否；兼容与日志接收用途 |
-| Frontend | 通常 `http://127.0.0.1:5173` | 开发环境 |
-| Prefect | `http://127.0.0.1:4200` | 否；经 SSH/VPN/认证代理访问 |
+| 组件       | 默认地址                          | 是否对公网开放              |
+| -------- | ----------------------------- | -------------------- |
+| Nacos    | `http://127.0.0.1:8848/nacos` | 否；生产必须启用鉴权并限制网络      |
+| Redis    | `127.0.0.1:6379`              | 否                    |
+| Gateway  | `http://127.0.0.1:8780`       | 生产只通过 HTTPS/Nginx 暴露 |
+| System   | `http://127.0.0.1:8782`       | 否                    |
+| Customer | `http://127.0.0.1:8783`       | 否                    |
+| Fund     | `http://127.0.0.1:8784`       | 否                    |
+| Admin    | `http://127.0.0.1:8781/api`   | 否；兼容与日志接收用途          |
+| Frontend | 通常 `http://127.0.0.1:5173`    | 开发环境                 |
+| Prefect  | `http://127.0.0.1:4200`       | 否；经 SSH/VPN/认证代理访问   |
 
 ## 新功能的标准顺序
 
@@ -61,14 +68,14 @@
 
 ## 常见故障入口
 
-| 现象 | 第一检查点 | 详细说明 |
-| --- | --- | --- |
-| Gateway `503` | 下游是否注册到 Nacos | [BACKEND.md](BACKEND.md) |
-| Gateway `429` | Redis 与限流参数 | [DEPLOYMENT.md](DEPLOYMENT.md) |
-| API `401/403` | Token、角色、权限码 | [API.md](../reference/API.md) |
-| Python 任务失败 | Prefect Flow 日志与 `.env` | [PYTHON.md](PYTHON.md) |
-| 真机连不上 | 地址是否用了电脑局域网 IP | [IOS.md](IOS.md) / [ANDROID.md](ANDROID.md) |
-| 数据字段为空 | 爬虫刷新时间、表和 Java DTO | [DATABASE.md](../reference/DATABASE.md) |
+| 现象            | 第一检查点                   | 详细说明                                        |
+| ------------- | ----------------------- | ------------------------------------------- |
+| Gateway `503` | 下游是否注册到 Nacos           | [BACKEND.md](BACKEND.md)                    |
+| Gateway `429` | Redis 与限流参数             | [DEPLOYMENT.md](DEPLOYMENT.md)              |
+| API `401/403` | Token、角色、权限码            | [API.md](../reference/API.md)               |
+| Python 任务失败   | Prefect Flow 日志与 `.env` | [PYTHON.md](PYTHON.md)                      |
+| 真机连不上         | 地址是否用了电脑局域网 IP          | [IOS.md](IOS.md) / [ANDROID.md](ANDROID.md) |
+| 数据字段为空        | 爬虫刷新时间、表和 Java DTO      | [DATABASE.md](../reference/DATABASE.md)     |
 
 ## 文档变更检查
 

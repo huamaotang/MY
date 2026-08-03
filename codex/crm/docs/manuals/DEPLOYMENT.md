@@ -1,6 +1,6 @@
 # CRM 部署与运维手册
 
-本文覆盖本地基础设施、生产拓扑、发布、备份、回滚、巡检和故障处理。Java/Python/移动端细节分别见对应项目手册。
+本文覆盖本地基础设施、生产拓扑、发布、备份、回滚、巡检和故障处理。Java/Python/移动端细节分别见对应项目手册；完整变量、日常值班和生产阻塞项见 [配置参考](../reference/CONFIGURATION.md)、[维护与交接手册](MAINTENANCE.md) 和 [已知限制](../reference/KNOWN_LIMITATIONS.md)。
 
 ## 1. 环境与责任边界
 
@@ -53,10 +53,11 @@ docker compose ps
 
 ```bash
 curl -fsS http://127.0.0.1:8848/nacos/v1/ns/operator/metrics
-redis-cli -h 127.0.0.1 -p 6379 -a '<local-redis-password>' ping
+redis-cli -h 127.0.0.1 -p 6379 ping
+# 如果已启用密码，再按受保护的密码注入方式执行认证检查。
 ```
 
-期望 `PONG`。仓库开发 Compose 的默认值不可用于生产。
+期望 `PONG`。当前 Compose Redis 没有密码，而 Gateway 开发 YAML 默认密码为 `qwer8989`；本地必须给 Redis 设置同一密码，或以空 `REDIS_PASSWORD` 启动 Gateway。未对齐时容器虽正常，Gateway health 仍会失败。仓库开发 Compose 的默认值不可用于生产。
 
 ### Prefect PostgreSQL
 
@@ -68,6 +69,8 @@ docker compose -f deploy/prefect/docker-compose.yml ps
 ```
 
 数据库只绑定 `127.0.0.1:5433`。命名卷 `crm-prefect-postgres-data` 保存调度元数据，正常停机不要使用 `down -v`。
+
+Compose `.env` 不会自动进入 Prefect Server Shell。Server 的 `PREFECT_SERVER_DATABASE_CONNECTION_URL` 必须使用同一个、已 URL 编码的密码；CentOS 由 `/etc/crm/fund-spider.env` 注入，本地终端需显式 export。
 
 ## 4. Nacos 配置管理
 
@@ -232,7 +235,7 @@ ACTUATOR_BASE=http://127.0.0.1:8781/api/actuator \
   deploy/graceful-restart.sh admin backend/admin/target/admin-0.1.0.jar 8781
 ```
 
-脚本会先从注册中心摘流再发 SIGTERM。多实例逐个执行，确认当前实例 healthy 和关键接口成功后再继续。生产应由 systemd/进程管理器托管；仓库当前没有完整 Java systemd unit，部署方需维护其权威配置。
+脚本会先从注册中心摘流再发 SIGTERM。它不会等待新实例健康，单实例也无法做到零停机；多实例需逐个执行，并在每次启动后确认 healthy 和关键接口成功。生产应由 systemd/进程管理器托管；仓库当前没有完整 Java systemd unit，部署方需维护其权威配置。
 
 ### 8.4 Python/Prefect
 
@@ -244,7 +247,7 @@ ACTUATOR_BASE=http://127.0.0.1:8781/api/actuator \
 4. 执行 `deploy_prefect.sh`。
 5. dry-run 和小批次真实任务。
 6. 启动/重启 Worker。
-7. 明确启用需要的计划，确认旧调度已停。
+7. 核对全部 Deployment 的计划、时区和启停状态。
 
 ### 8.5 Web/Nginx
 
@@ -363,7 +366,7 @@ ssh -L 4200:127.0.0.1:4200 '<user>@<server>'
 | 登录全部失败 | System、CRM MySQL、JWT 配置 |
 | 只有基金为空 | Fund MySQL、Python 数据新鲜度 |
 | Prefect Flow 不启动 | Server、Worker、Pool/Queue、计划 paused |
-| 同任务重复跑 | Prefect + 旧 systemd/crontab 同时启用 |
+| 同任务重复跑 | Deployment 重复注册或并发配置失效 |
 | Web 新旧资源混合 | 非原子发布/缓存策略 |
 | 真机失败但 Web 正常 | HTTPS/证书、Base URL、移动网络策略 |
 | 磁盘快速增长 | Java/Python/Nginx 日志、MySQL、Prefect PostgreSQL |
@@ -374,7 +377,7 @@ ssh -L 4200:127.0.0.1:4200 '<user>@<server>'
 - [ ] 备份、恢复和回滚已验证，不删除 Docker volume。
 - [ ] Nacos 文件和运行态均核对，生产秘密未写回仓库。
 - [ ] 服务滚动、每实例健康和端到端冒烟完成。
-- [ ] Prefect 新旧调度不会重复运行。
+- [ ] Prefect Deployment、计划、工作池和并发配置唯一且一致。
 - [ ] Web 原子切换，移动端保持服务端兼容。
 - [ ] 监控、告警、日志和数据新鲜度正常。
 - [ ] 发布记录包含 commit、产物校验和、迁移、配置、操作者和结果。

@@ -84,10 +84,17 @@ def build_parser() -> argparse.ArgumentParser:
     nav_history.add_argument("--start-date", dest="NAV_START_DATE")
     nav_history.add_argument("--end-date", dest="NAV_END_DATE")
 
-    subparsers.add_parser(
+    feature = subparsers.add_parser(
         "feature",
         parents=[request_parent, db_parent, batch_parent],
         help="refresh feature data for selected funds",
+    )
+    feature.add_argument(
+        "--stale-first",
+        dest="FEATURE_STALE_FIRST",
+        choices=["0", "1"],
+        default=None,
+        help="select the least recently refreshed funds; requires --fund-limit",
     )
 
     rating = subparsers.add_parser(

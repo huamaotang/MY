@@ -108,8 +108,9 @@ curl -fsS 'http://127.0.0.1:8848/nacos/v1/cs/configs?dataId=gateway-dev.yaml&gro
 | `REDIS_HOST/PORT/PASSWORD` | gateway | 限流 Redis |
 | `GATEWAY_RATE_LIMIT_*` | gateway | 令牌桶参数 |
 | `CRM_ACCESS_LOG_ADMIN_URL/TOKEN` | gateway/admin | 访问日志写入 |
+| `CRM_PYTHON_EXECUTABLE/CRM_PYTHON_OCR_SCRIPT` | fund | OCR Python 解释器和脚本 |
 
-生产不要依赖 `${VAR:development-default}` 的默认密码或密钥。
+完整变量、默认值和 Redis 本地密码不一致问题见 [配置参考](../reference/CONFIGURATION.md)。生产不要依赖 `${VAR:development-default}` 的默认密码或密钥。
 
 ## 6. 本地启动
 
@@ -132,8 +133,10 @@ mvn -pl fund -am spring-boot:run
 
 ```bash
 cd backend
-mvn -pl gateway spring-boot:run
+REDIS_PASSWORD='' mvn -pl gateway spring-boot:run
 ```
+
+上面的空密码只匹配仓库当前“无密码 Redis”本地 Compose；如果已经为 Redis 设置密码，必须给 Gateway 传相同值。
 
 可选兼容服务：
 
@@ -260,6 +263,31 @@ seq 1 60 | xargs -n1 -P20 -I{} \
 - 激活评分配置必须满足代码中的回测门槛，不能人工只改数据库状态。
 - 用户持仓按用户名和来源平台隔离；OCR 预览后才确认。
 - 股票 Controller 当前用 `JdbcTemplate` 和排序白名单，新增字段需同步 SQL alias、Web/移动模型。
+- 客户和基金删除当前都不是完整业务级联，生产操作前阅读 [已知限制](../reference/KNOWN_LIMITATIONS.md)。
+
+### OCR 运行链路
+
+`fund` 服务不是在 JVM 内完成 OCR，而是启动 Python 子进程：
+
+```text
+multipart 图片 -> Java 临时文件 -> Python RapidOCR -> JSON -> Java 预览 DTO
+```
+
+生产显式配置：
+
+```env
+CRM_PYTHON_EXECUTABLE=/opt/crm/fund_spider/.venv/bin/python
+CRM_PYTHON_OCR_SCRIPT=/opt/crm/fund_spider/tools/portfolio_holding_ocr.py
+```
+
+验证解释器和脚本：
+
+```bash
+/opt/crm/fund_spider/.venv/bin/python \
+  /opt/crm/fund_spider/tools/portfolio_holding_ocr.py --help
+```
+
+当前一次最多 3 张 JPG/JPEG/PNG，单文件 10 MB、总请求 20 MB，子进程超时 120 秒。图片临时文件会尝试删除，但识别文本/哈希会入库；OCR 预览必须由用户确认。
 
 ## 12. 测试与构建
 

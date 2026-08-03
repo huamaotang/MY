@@ -12,7 +12,6 @@ from zoneinfo import ZoneInfo
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 LOG_DIR = BASE_DIR / "logs"
-LOCK_FILE = LOG_DIR / "crm_business_task.lock"
 TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 logger = logging.getLogger(__name__)
@@ -23,6 +22,7 @@ class Job:
     name: str
     script: str
     args: list[str]
+    lock_key: str
     env: dict[str, str] = field(default_factory=dict)
 
 
@@ -42,78 +42,113 @@ def run_scheduled_jobs(
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     started_at = datetime.now(TIMEZONE)
     log_file = LOG_DIR / f"prefect_task_{started_at.strftime('%Y%m%d_%H%M%S')}.log"
-    lock_fd = acquire_lock()
-    if lock_fd is None:
-        logger.warning("status=skipped_overlap jobs=%s", ",".join(job_names))
-        return False
-
+    selected_jobs = build_jobs(job_names)
     succeeded = True
-    try:
-        selected_jobs = build_jobs(job_names)
-        with log_file.open("a", encoding="utf-8") as log_handle:
-            write_log(log_handle, f"[TRIGGER] jobs={','.join(job_names)}")
-            for job in selected_jobs:
-                if dry_run:
-                    command = " ".join([job.script, *job.args])
-                    write_log(log_handle, f"[DRY-RUN] {job.name}: {command}")
-                    if status_callback:
-                        status_callback(job.name, "dry-run")
-                    continue
+    with log_file.open("a", encoding="utf-8") as log_handle:
+        write_log(log_handle, f"[TRIGGER] jobs={','.join(job_names)}")
+        for job in selected_jobs:
+            if dry_run:
+                command = " ".join([job.script, *job.args])
+                write_log(log_handle, f"[DRY-RUN] {job.name}: {command}")
+                if status_callback:
+                    status_callback(job.name, "dry-run")
+                continue
+
+            lock_file = lock_file_for(job)
+            lock_fd = acquire_lock(lock_file)
+            if lock_fd is None:
+                succeeded = False
+                write_log(
+                    log_handle,
+                    f"[SKIPPED-OVERLAP] {job.name}, lock={lock_file.name}",
+                )
+                logger.warning(
+                    "status=skipped_overlap job=%s lock=%s",
+                    job.name,
+                    lock_file,
+                )
+                if status_callback:
+                    status_callback(job.name, "overlapped")
+                continue
+
+            try:
                 return_code = run_subprocess_job(
                     job,
                     log_handle,
                     runtime_env=extra_env,
                 )
-                if return_code != 0:
-                    succeeded = False
-                    write_log(
-                        log_handle,
-                        f"[FAILED] {job.name}, return_code={return_code}",
-                    )
-                    if status_callback:
-                        status_callback(job.name, "failed")
-                elif status_callback:
-                    status_callback(job.name, "success")
-            write_log(
-                log_handle,
-                f"[FINISH] status={'success' if succeeded else 'failed'}",
-            )
-        return succeeded
-    finally:
-        release_lock(lock_fd)
+            finally:
+                release_lock(lock_fd, lock_file)
+
+            if return_code != 0:
+                succeeded = False
+                write_log(
+                    log_handle,
+                    f"[FAILED] {job.name}, return_code={return_code}",
+                )
+                if status_callback:
+                    status_callback(job.name, "failed")
+            elif status_callback:
+                status_callback(job.name, "success")
+        write_log(
+            log_handle,
+            f"[FINISH] status={'success' if succeeded else 'failed'}",
+        )
+    return succeeded
 
 
 def build_jobs(job_names: tuple[str, ...] | list[str]) -> list[Job]:
+    scheduled_feature_limit = os.getenv("FEATURE_SCHEDULE_FUND_LIMIT", "2000")
+    if not scheduled_feature_limit.isdigit() or int(scheduled_feature_limit) < 1:
+        raise ValueError("FEATURE_SCHEDULE_FUND_LIMIT must be a positive integer")
     definitions = {
         "nav-performance": Job(
             name="nav-performance",
             script="./bin/run_nav_performance.sh",
             args=["--foreground"],
+            lock_key="nav-performance",
         ),
         "feature": Job(
             name="feature",
             script="./bin/run_feature.sh",
             args=["--foreground"],
+            lock_key="feature",
+        ),
+        "feature-scheduled": Job(
+            name="feature-scheduled",
+            script="./bin/run_feature.sh",
+            args=[
+                "--foreground",
+                "--fund-limit",
+                scheduled_feature_limit,
+                "--stale-first",
+                "1",
+            ],
+            lock_key="feature",
         ),
         "score": Job(
             name="score",
             script="./bin/run_score.sh",
             args=["--foreground"],
+            lock_key="score",
         ),
         "sina-news": Job(
             name="sina-news",
             script="./bin/run_sina_news.sh",
             args=["--foreground"],
+            lock_key="sina-news",
         ),
         "stock-cn": Job(
             name="stock-cn",
             script="./bin/run_stock.sh",
             args=["cn", "--foreground"],
+            lock_key="stock-cn",
         ),
         "stock-hk": Job(
             name="stock-hk",
             script="./bin/run_stock.sh",
             args=["hk", "--foreground"],
+            lock_key="stock-hk",
         ),
     }
     jobs: list[Job] = []
@@ -157,19 +192,51 @@ def run_subprocess_job(
     return return_code
 
 
-def acquire_lock() -> int | None:
+def lock_file_for(job: Job) -> Path:
+    return LOG_DIR / f"crm_business_task_{job.lock_key}.lock"
+
+
+def acquire_lock(lock_file: Path) -> int | None:
+    for _ in range(3):
+        try:
+            lock_fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            os.write(lock_fd, str(os.getpid()).encode("ascii"))
+            return lock_fd
+        except FileExistsError:
+            owner_pid = read_lock_pid(lock_file)
+            if owner_pid is not None and process_is_running(owner_pid):
+                return None
+            try:
+                lock_file.unlink()
+            except FileNotFoundError:
+                continue
+    return None
+
+
+def read_lock_pid(lock_file: Path) -> int | None:
     try:
-        lock_fd = os.open(str(LOCK_FILE), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.write(lock_fd, str(os.getpid()).encode("ascii"))
-        return lock_fd
-    except FileExistsError:
+        value = lock_file.read_text(encoding="ascii").strip()
+        return int(value) if value else None
+    except (FileNotFoundError, OSError, ValueError):
         return None
 
 
-def release_lock(lock_fd: int) -> None:
+def process_is_running(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def release_lock(lock_fd: int, lock_file: Path) -> None:
     os.close(lock_fd)
     try:
-        LOCK_FILE.unlink()
+        lock_file.unlink()
     except FileNotFoundError:
         pass
 

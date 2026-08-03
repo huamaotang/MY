@@ -6,10 +6,30 @@
 
 | 教程 | 适合谁 | 学完应能做到 |
 | --- | --- | --- |
+| [JavaScript](JAVASCRIPT.md) | Web 初学者 | 理解运行时、异步、浏览器存储、HTTP 与调试 |
+| [TypeScript](TYPESCRIPT.md) | 已有 JavaScript 基础的前端开发者 | 准确建模 API、Props、state 和外部数据边界 |
+| [React](REACT.md) | React 初学者、Web 页面维护者 | 管理组件状态/Effect/竞态并完成业务页面 |
+| [HTML 与 CSS](HTML_CSS.md) | 需要补齐页面结构和布局基础的开发者 | 维护语义、响应式、Ant Design 外层样式与可访问性 |
+| [前端工程化](FRONTEND_ENGINEERING.md) | 需要完整交付 Web 需求的开发者 | 使用 Vite/Ant Design，完成联调、测试、构建、发布和排障 |
 | [Java](JAVA.md) | 后端初学者、Android 开发者补语言基础 | 追踪 Spring 请求、修改 Service/Mapper、理解鉴权和事务 |
 | [Python](PYTHON.md) | 数据采集/任务维护者 | 增加解析规则、做幂等写入、测试并部署 Prefect Flow |
 | [iOS](IOS.md) | Swift/SwiftUI 初学者 | 修改 Codable/API/View，真机构建并理解签名发布 |
 | [Android](ANDROID.md) | Java Android 初学者 | 修改 Activity/ApiClient/模型，正确处理线程并生成签名包 |
+
+## Web 前端学习路线
+
+按以下顺序从语言基础走到真实交付：
+
+```text
+JavaScript 运行时与浏览器
+-> TypeScript 类型与 API 契约
+-> HTML/CSS 结构、布局与可访问性
+-> React 组件、状态、Effect 与异步竞态
+-> Vite/Ant Design/联调/测试/安全/发布
+-> 在 frontend/ 完成一个小型分页管理页
+```
+
+每篇都包含基础、进阶、项目场景和完成标准。已有前端经验可先读 [前端工程化](FRONTEND_ENGINEERING.md)，再按薄弱点回补专题；实际开发规范以 [Web 管理台手册](../manuals/FRONTEND.md) 为准。
 
 ## 学习方法
 

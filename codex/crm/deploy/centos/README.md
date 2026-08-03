@@ -2,7 +2,6 @@
 
 CRM 的基金、评分、资讯和行情任务统一注册为 Prefect 3 Deployment。Prefect
 Server 提供任务控制台和 API，Process Worker 负责启动实际 Python Flow。
-自研调度页面和 APScheduler 均已废弃。
 
 控制台默认只监听 `127.0.0.1:4200`。生产环境建议通过 SSH 隧道、VPN 或带
 认证的 Nginx 访问，不要直接把无认证的控制台暴露到公网。
@@ -11,16 +10,16 @@ Server 提供任务控制台和 API，Process Worker 负责启动实际 Python F
 
 | Deployment | 默认时间/间隔 | 实际任务 |
 | --- | --- | --- |
-| `morning-fund-refresh` | 每天 08:00 | 净值/业绩完成后串行执行特征刷新 |
+| `morning-fund-refresh` | 每天 08:00 | 净值/业绩完成后刷新最久未更新的特征批次 |
 | `evening-nav-performance` | 每天 21:00 | 净值与阶段收益 |
 | `feature-refresh-manual` | 仅手动 | 特征数据 |
-| `score-pipeline` | 每天 22:30 | 历史标签、评分计算、评分队列 |
+| `score-pipeline` | 每天 10:00、22:30 | 历史标签、评分计算、评分队列 |
 | `sina-news` | 每 120 秒 | 新浪财经资讯 |
 | `stock-cn` | A 股交易窗口每 5 分钟 | A 股行情 |
 | `stock-hk` | 港股交易窗口每 5 分钟 | 港股行情 |
 
-所有 Cron 使用 `Asia/Shanghai` 时区。Worker 默认限制为单并发，业务执行器
-另有跨进程锁，避免数据任务重叠。
+所有 Cron 使用 `Asia/Shanghai` 时区。Worker 默认提供 4 个槽位，实时行情/资讯
+使用高优先级队列，批处理使用低优先级队列；业务执行器按数据类型加锁。
 
 ## 安装
 
@@ -64,7 +63,8 @@ PREFECT_UI_API_URL=http://127.0.0.1:4200/api
 PREFECT_SERVER_DATABASE_CONNECTION_URL=postgresql+asyncpg://prefect:URL_ENCODED_PASSWORD@127.0.0.1:5433/prefect
 PREFECT_WORK_POOL=crm-process-pool
 PREFECT_WORKER_NAME=crm-centos-worker
-PREFECT_WORKER_LIMIT=1
+PREFECT_WORKER_LIMIT=4
+FEATURE_SCHEDULE_FUND_LIMIT=2000
 ```
 
 持久化 Deployment 和运行历史存储在 PostgreSQL 命名卷
@@ -97,18 +97,3 @@ ssh -L 4200:127.0.0.1:4200 user@centos-host
 
 随后访问 `http://127.0.0.1:4200/`。控制台中可以暂停/恢复调度、修改参数、
 手动执行、取消运行，并查看 Flow/Task 状态和完整日志。
-
-## 从旧任务切换
-
-先完成上述 dry-run 和一次真实任务验证，再停用旧调度器，避免同一任务重复
-写库：
-
-```bash
-sudo systemctl disable --now crm-task-scheduler 2>/dev/null || true
-sudo systemctl disable --now crm-fund-scheduler 2>/dev/null || true
-sudo systemctl disable --now crm-sina-news 2>/dev/null || true
-sudo systemctl disable --now crm-stock-market 2>/dev/null || true
-```
-
-同时清理旧 `crontab` 和同类 timer。不要删除业务数据库或历史日志作为迁移
-步骤。

@@ -21,5 +21,5 @@ exec "${prefect_executable}" worker start \
   --pool "${PREFECT_WORK_POOL:-crm-process-pool}" \
   --type process \
   --name "${PREFECT_WORKER_NAME:-crm-worker}" \
-  --limit "${PREFECT_WORKER_LIMIT:-1}" \
+  --limit "${PREFECT_WORKER_LIMIT:-4}" \
   --install-policy never

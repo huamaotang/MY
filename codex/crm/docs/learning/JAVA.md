@@ -30,12 +30,12 @@ GET /api/customers
 
 Java 区分基本类型与引用类型：
 
-| 基本类型 | 包装类型 | 项目常见用途 |
-| --- | --- | --- |
-| `long` | `Long` | ID、分页；包装类型可为 null |
-| `int` | `Integer` | 状态、标签 |
+| 基本类型      | 包装类型      | 项目常见用途                |
+| --------- | --------- | --------------------- |
+| `long`    | `Long`    | ID、分页；包装类型可为 null     |
+| `int`     | `Integer` | 状态、标签                 |
 | `boolean` | `Boolean` | 查询条件中的“未传”和 false 要区分 |
-| `double` | `Double` | 不适合精确金额 |
+| `double`  | `Double`  | 不适合精确金额               |
 
 金额/净值优先 `BigDecimal`，不要用 `double` 累计。数据库可空列映射包装类型，不要用基本类型把 null 偷偷变成 0。
 
@@ -86,11 +86,11 @@ public interface ExampleService {
 
 ### 集合
 
-| 类型 | 特点 | 项目用途 |
-| --- | --- | --- |
-| `List<T>` | 有序、可重复 | 查询结果、DTO 列表 |
-| `Set<T>` | 去重 | 权限码、菜单 ID |
-| `Map<K,V>` | Key 查找 | 白名单、聚合 |
+| 类型         | 特点     | 项目用途        |
+| ---------- | ------ | ----------- |
+| `List<T>`  | 有序、可重复 | 查询结果、DTO 列表 |
+| `Set<T>`   | 去重     | 权限码、菜单 ID   |
+| `Map<K,V>` | Key 查找 | 白名单、聚合      |
 
 选择集合前明确顺序、重复和查找需求。不要在循环中不断查询数据库形成 N+1。
 
@@ -111,11 +111,11 @@ Java 8 的 `Optional` 适合返回“可能不存在”，不建议用作 Entity
 
 ## 5. 异常
 
-| 类型 | 例子 | 处理原则 |
-| --- | --- | --- |
-| Checked | `IOException` | 调用者必须处理/声明 |
+| 类型      | 例子                         | 处理原则           |
+| ------- | -------------------------- | -------------- |
+| Checked | `IOException`              | 调用者必须处理/声明     |
 | Runtime | `IllegalArgumentException` | 参数/编程错误，统一转换响应 |
-| 业务异常 | `BusinessException` | 给用户可理解信息 |
+| 业务异常    | `BusinessException`        | 给用户可理解信息       |
 
 `GlobalExceptionHandler` 将异常转成 `ApiResponse`。不要 `catch (Exception) {}` 静默吞掉，也不要把数据库堆栈发给客户端。
 
@@ -162,16 +162,16 @@ Spring 创建 Controller/Service/Mapper 等 Bean，通过构造器注入依赖�
 
 ### 常用注解
 
-| 注解 | 作用 |
-| --- | --- |
-| `@SpringBootApplication` | 启动、扫描、自动配置 |
-| `@RestController` | JSON Controller |
-| `@RequestMapping/GetMapping/...` | 路由 |
-| `@RequestBody/PathVariable/RequestParam` | 参数绑定 |
-| `@Service` | 业务 Bean |
-| `@Transactional` | 事务边界 |
-| `@Configuration/@Bean` | 显式配置 |
-| `@PreAuthorize` | 方法权限 |
+| 注解                                       | 作用              |
+| ---------------------------------------- | --------------- |
+| `@SpringBootApplication`                 | 启动、扫描、自动配置      |
+| `@RestController`                        | JSON Controller |
+| `@RequestMapping/GetMapping/...`         | 路由              |
+| `@RequestBody/PathVariable/RequestParam` | 参数绑定            |
+| `@Service`                               | 业务 Bean         |
+| `@Transactional`                         | 事务边界            |
+| `@Configuration/@Bean`                   | 显式配置            |
+| `@PreAuthorize`                          | 方法权限            |
 
 注解不是魔法：遇到问题要知道 Bean 扫描、代理、过滤器链和异常处理在哪一步发生。
 

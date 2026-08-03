@@ -3,8 +3,10 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import call
+from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import yaml
@@ -57,6 +59,11 @@ class CliTest(unittest.TestCase):
         self.assertEqual("000001", history_alias.FUND_CODE)
         self.assertEqual("8", history_alias.NAV_PAGE_WORKERS)
         self.assertEqual("500", history_alias.NAV_WRITE_BATCH_SIZE)
+        scheduled_feature = parser.parse_args(
+            ["feature", "--fund-limit", "2000", "--stale-first", "1"]
+        )
+        self.assertEqual("2000", scheduled_feature.FUND_LIMIT)
+        self.assertEqual("1", scheduled_feature.FEATURE_STALE_FIRST)
 
     def test_old_commands_are_removed(self) -> None:
         parser = cli.build_parser()
@@ -147,6 +154,28 @@ class PrefectTaskTest(unittest.TestCase):
                 if deployment.get("schedules")
             )
         )
+        for name in ("sina-news", "stock-cn", "stock-hk"):
+            self.assertEqual(
+                "CANCEL_NEW",
+                deployments[name]["concurrency_limit"]["collision_strategy"],
+            )
+            self.assertEqual("realtime", deployments[name]["work_pool"]["work_queue_name"])
+        for name in (
+            "morning-fund-refresh",
+            "evening-nav-performance",
+            "feature-refresh-manual",
+            "score-pipeline",
+        ):
+            self.assertEqual("batch", deployments[name]["work_pool"]["work_queue_name"])
+
+        score_schedules = deployments["score-pipeline"]["schedules"]
+        self.assertEqual(
+            {("0 10 * * *", "daily-1000"), ("30 22 * * *", "daily-2230")},
+            {(schedule["cron"], schedule["slug"]) for schedule in score_schedules},
+        )
+        self.assertTrue(
+            all(schedule["timezone"] == "Asia/Shanghai" for schedule in score_schedules)
+        )
 
     def test_morning_flow_runs_nav_before_feature(self) -> None:
         with patch.object(prefect_flows, "run_business_job") as run_job:
@@ -155,19 +184,34 @@ class PrefectTaskTest(unittest.TestCase):
         self.assertEqual(
             [
                 call("nav-performance", dry_run=True),
-                call("feature", dry_run=True),
+                call("feature-scheduled", dry_run=True),
             ],
             run_job.call_args_list,
+        )
+
+    def test_stale_realtime_run_detection(self) -> None:
+        scheduled = datetime(2026, 8, 3, 1, 0, tzinfo=timezone.utc)
+        self.assertFalse(
+            prefect_flows.scheduled_run_is_stale(
+                600,
+                scheduled_start_time=scheduled,
+                now=datetime(2026, 8, 3, 1, 9, 59, tzinfo=timezone.utc),
+            )
+        )
+        self.assertTrue(
+            prefect_flows.scheduled_run_is_stale(
+                600,
+                scheduled_start_time=scheduled,
+                now=datetime(2026, 8, 3, 1, 10, 1, tzinfo=timezone.utc),
+            )
         )
 
     def test_job_failure_does_not_stop_following_job(self) -> None:
         statuses: list[tuple[str, str]] = []
         with tempfile.TemporaryDirectory() as temp_dir:
             log_dir = Path(temp_dir)
-            lock_file = log_dir / "scheduler.lock"
             with (
                 patch.object(task_runner, "LOG_DIR", log_dir),
-                patch.object(task_runner, "LOCK_FILE", lock_file),
                 patch.object(
                     task_runner,
                     "run_subprocess_job",
@@ -196,11 +240,45 @@ class PrefectTaskTest(unittest.TestCase):
             [job.script for job in built],
         )
 
+    def test_scheduled_feature_batch_is_bounded_and_stale_first(self) -> None:
+        with patch.dict("os.environ", {"FEATURE_SCHEDULE_FUND_LIMIT": "321"}):
+            job = task_runner.build_jobs(("feature-scheduled",))[0]
+
+        self.assertEqual("feature", job.lock_key)
+        self.assertEqual(
+            ["--foreground", "--fund-limit", "321", "--stale-first", "1"],
+            job.args,
+        )
+
+    def test_different_job_locks_do_not_block_each_other(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir)
+            feature_job = task_runner.build_jobs(("feature",))[0]
+            feature_lock = log_dir / "crm_business_task_feature.lock"
+            with patch.object(task_runner, "LOG_DIR", log_dir):
+                lock_fd = task_runner.acquire_lock(feature_lock)
+                self.assertIsNotNone(lock_fd)
+                try:
+                    with patch.object(task_runner, "run_subprocess_job", return_value=0):
+                        self.assertTrue(task_runner.run_scheduled_jobs(("stock-cn",)))
+                finally:
+                    task_runner.release_lock(lock_fd, task_runner.lock_file_for(feature_job))
+
+    def test_stale_lock_is_reclaimed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            lock_file = Path(temp_dir) / "stale.lock"
+            lock_file.write_text("999999", encoding="ascii")
+            with patch.object(task_runner, "process_is_running", return_value=False):
+                lock_fd = task_runner.acquire_lock(lock_file)
+            self.assertIsNotNone(lock_fd)
+            task_runner.release_lock(lock_fd, lock_file)
+
     def test_all_migrated_job_commands_are_available(self) -> None:
         built = task_runner.build_jobs(
             (
                 "nav-performance",
                 "feature",
+                "feature-scheduled",
                 "score",
                 "sina-news",
                 "stock-cn",
@@ -211,6 +289,7 @@ class PrefectTaskTest(unittest.TestCase):
             [
                 "nav-performance",
                 "feature",
+                "feature-scheduled",
                 "score",
                 "sina-news",
                 "stock-cn",
@@ -219,6 +298,30 @@ class PrefectTaskTest(unittest.TestCase):
             [job.name for job in built],
         )
         self.assertTrue(all("--foreground" in job.args for job in built))
+
+    def test_stale_first_feature_selection_uses_refresh_state(self) -> None:
+        connection = MagicMock()
+        options = jobs.FeatureOptions(
+            selector=jobs.BatchSelector(fund_limit=25),
+            stale_first=True,
+        )
+        with (
+            patch.object(jobs, "connect", return_value=connection),
+            patch.object(
+                jobs,
+                "list_fund_codes_for_refresh",
+                return_value=["000001", "000002"],
+            ) as select_codes,
+        ):
+            selected = jobs.load_feature_fund_codes(MagicMock(), options)
+
+        self.assertEqual(["000001", "000002"], selected)
+        select_codes.assert_called_once_with(
+            connection,
+            data_type="feature",
+            limit=25,
+        )
+        connection.close.assert_called_once()
 
 
 if __name__ == "__main__":

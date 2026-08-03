@@ -19,14 +19,14 @@ LoginActivity 点击登录
 
 ## 2. Android 项目结构
 
-| 概念 | 当前工程 |
-| --- | --- |
-| application module | `app/` |
-| package/namespace | `com.example.crm.android` |
-| source | `app/src/main/java/...` |
-| resources | `app/src/main/res/` |
-| manifest | 权限、Application、Activity |
-| Gradle | 根插件版本 + app Android 配置 |
+| 概念                 | 当前工程                      |
+| ------------------ | ------------------------- |
+| application module | `app/`                    |
+| package/namespace  | `com.example.crm.android` |
+| source             | `app/src/main/java/...`   |
+| resources          | `app/src/main/res/`       |
+| manifest           | 权限、Application、Activity   |
+| Gradle             | 根插件版本 + app Android 配置    |
 
 `local.properties` 通常包含本机 SDK 路径，不应作为团队通用配置或提交秘密。
 
@@ -117,11 +117,11 @@ Header：JSON、`X-Client-Source: android`、User-Agent、Bearer Token。Base UR
 
 ## 8. URL 与联调
 
-| 场景 | 地址 |
-| --- | --- |
+| 场景           | 地址                         |
+| ------------ | -------------------------- |
 | Emulator 到宿主 | `http://10.0.2.2:8780/api` |
-| 真机到电脑 | `http://<LAN-IP>:8780/api` |
-| 生产 | `https://<domain>/api` |
+| 真机到电脑        | `http://<LAN-IP>:8780/api` |
+| 生产           | `https://<domain>/api`     |
 
 query 使用 `URLEncoder`，路径段如 fundCode/stockCode 若来源不受控也需正确编码。不要简单字符串替换处理 URL。
 

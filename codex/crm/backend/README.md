@@ -4,7 +4,9 @@ Maven 多模块后端，包含 `core`、`gateway`、`system`、`customer`、`fun
 
 - 完整开发、测试、构建和发布：[Java 后端手册](../docs/manuals/BACKEND.md)
 - REST 契约：[API 参考](../docs/reference/API.md)
+- JSON 字段：[API 数据模型](../docs/reference/API_MODELS.md)
 - 表与迁移：[数据库参考](../docs/reference/DATABASE.md)
+- 配置与环境变量：[配置参考](../docs/reference/CONFIGURATION.md)
 - Java 基础与进阶：[项目导向教程](../docs/learning/JAVA.md)
 
 ## 快速构建
@@ -36,7 +38,9 @@ mvn -pl fund -am spring-boot:run
 
 ```bash
 cd backend
-mvn -pl gateway spring-boot:run
+REDIS_PASSWORD='' mvn -pl gateway spring-boot:run
 ```
+
+空密码只匹配仓库当前本地 Redis Compose；如果 Redis 已启用密码，Gateway 必须使用相同密码。
 
 外部请求统一访问 `http://127.0.0.1:8780/api/**`，不要让客户端直连下游服务。

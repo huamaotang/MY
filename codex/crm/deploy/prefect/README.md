@@ -18,6 +18,12 @@ password, and set the matching URL in `/etc/crm/fund-spider.env`:
 PREFECT_SERVER_DATABASE_CONNECTION_URL=postgresql+asyncpg://prefect:URL_ENCODED_PASSWORD@127.0.0.1:5433/prefect
 ```
 
+Docker Compose reads `deploy/prefect/.env`, but the scripts under
+`fund_spider/bin/` do not source that file or `fund_spider/.env`. For local
+interactive startup, export the same connection URL before running
+`run_prefect_server.sh`. If the passwords differ, PostgreSQL can be healthy
+while Prefect Server still fails to start.
+
 Back up the named volume `crm-prefect-postgres-data`. Do not use
 `docker compose down -v` during normal upgrades because `-v` removes the
 Prefect metadata volume.

@@ -7,9 +7,13 @@
 - 第一次接手：阅读 [开发手册总览](docs/manuals/README.md)。
 - 理解服务关系：阅读 [系统架构与模块说明](docs/MODULES.md)。
 - 查接口：阅读 [API 参考](docs/reference/API.md)。
+- 查字段结构：阅读 [API 数据模型](docs/reference/API_MODELS.md)。
 - 查表和迁移：阅读 [数据库参考](docs/reference/DATABASE.md)。
+- 查环境变量：阅读 [配置参考](docs/reference/CONFIGURATION.md)。
 - 上生产：阅读 [部署与运维手册](docs/manuals/DEPLOYMENT.md)。
-- 补基础：从 [项目导向学习教程](docs/learning/README.md) 选择 Java、Python、iOS 或 Android。
+- 日常值班/交接：阅读 [维护与交接手册](docs/manuals/MAINTENANCE.md)。
+- 发布前风险复核：阅读 [已知限制与上线阻塞项](docs/reference/KNOWN_LIMITATIONS.md)。
+- 补基础：从 [项目导向学习教程](docs/learning/README.md) 选择 Web 前端、Java、Python、iOS 或 Android 路线。
 
 ## 项目地图
 
@@ -71,6 +75,8 @@ docker compose up -d
 docker compose ps
 ```
 
+当前 Compose 中 Redis 无密码，而 `gateway-dev.yaml` 的密码回退值为 `qwer8989`。本地需给 Redis 配置相同密码，或按下面示例以空密码启动 Gateway；详见 [配置参考](docs/reference/CONFIGURATION.md)。
+
 按 [Nacos 配置说明](deploy/nacos/README.md) 导入 `gateway-dev.yaml`、`system-dev.yaml`、`customer-dev.yaml`、`fund-dev.yaml` 和可选的 `admin-dev.yaml`。
 
 ### 3. 启动 Java 服务
@@ -94,7 +100,7 @@ mvn -pl fund -am spring-boot:run
 
 ```bash
 cd backend
-mvn -pl gateway spring-boot:run
+REDIS_PASSWORD='' mvn -pl gateway spring-boot:run
 ```
 
 ### 4. 启动 Web
@@ -141,3 +147,4 @@ cp .env.example .env
 3. 文档命令必须标明执行目录、前置条件、预期结果和生产风险。
 4. 不提交真实密码、Token、证书、Cookie、签名文件或开发者本机绝对路径。
 5. 发布文档中的第三方商店要求会变化，执行前必须重新检查文档中链接的官方规则。
+6. 当前限制不能只口头交接；修复或新增风险时同步更新 `docs/reference/KNOWN_LIMITATIONS.md`。

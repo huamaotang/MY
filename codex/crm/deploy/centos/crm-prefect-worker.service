@@ -12,7 +12,7 @@ EnvironmentFile=-/etc/crm/fund-spider.env
 Environment=PREFECT_HOME=/opt/crm/fund_spider/.prefect
 Environment=CRM_FUND_SPIDER_DIR=/opt/crm/fund_spider
 Environment=PREFECT_WORK_POOL=crm-process-pool
-Environment=PREFECT_WORKER_LIMIT=1
+Environment=PREFECT_WORKER_LIMIT=4
 ExecStart=/opt/crm/fund_spider/bin/run_prefect_worker.sh
 Restart=always
 RestartSec=5

@@ -1,25 +1,25 @@
 # Web 管理台开发手册
 
-本文覆盖 `frontend/` 的 React/TypeScript 开发、API 对接、构建与发布。接口字段以 [API 参考](../reference/API.md) 和 Java DTO 为准。
+本文覆盖 `frontend/` 的 React/TypeScript 开发、API 对接、构建与发布。路径与权限见 [API 参考](../reference/API.md)，字段类型与 JSON 示例见 [API 数据模型](../reference/API_MODELS.md)。
 
 ## 1. 技术栈与结构
 
-| 项 | 当前实现 |
-| --- | --- |
-| React | 18.2 |
-| TypeScript | 5.3 |
-| Vite | 5.1 |
-| Ant Design | 5.15 |
-| 请求 | 浏览器 `fetch`，统一封装在 `src/api.ts` |
-| 状态 | 组件状态 + 浏览器存储中的 Token |
+| 项          | 当前实现                           |
+| ---------- | ------------------------------ |
+| React      | 18.2                           |
+| TypeScript | 5.3                            |
+| Vite       | 5.1                            |
+| Ant Design | 5.15                           |
+| 请求         | 浏览器 `fetch`，统一封装在 `src/api.ts` |
+| 状态         | 组件状态 + 浏览器存储中的 Token           |
 
-| 文件 | 职责 |
-| --- | --- |
-| `src/api.ts` | API 类型、Base URL、Token/Header、错误和全部请求函数 |
-| `src/App.tsx` | 登录、菜单、页面、表格、表单、弹窗和业务状态 |
-| `src/styles.css` | 全局与业务布局 |
-| `src/main.tsx` | React 挂载入口 |
-| `vite.config.ts` | Vite 配置 |
+| 文件               | 职责                                     |
+| ---------------- | -------------------------------------- |
+| `src/api.ts`     | API 类型、Base URL、Token/Header、错误和全部请求函数 |
+| `src/App.tsx`    | 登录、菜单、页面、表格、表单、弹窗和业务状态                 |
+| `src/styles.css` | 全局与业务布局                                |
+| `src/main.tsx`   | React 挂载入口                             |
+| `vite.config.ts` | Vite 配置                                |
 
 页面目前较集中，修改前先搜索现有类型/函数/菜单 key，避免重复实现。
 
@@ -73,16 +73,16 @@ VITE_API_BASE=http://127.0.0.1:8780/api
 
 ## 5. 当前功能
 
-| 领域 | Web 能力 |
-| --- | --- |
-| CRM | 客户列表、搜索、新增、编辑、删除 |
-| 权限 | 用户、角色、菜单管理；登录用户菜单 |
-| 基金 | 列表、筛选、排序、详情、净值、持仓、估值、特征、评级、CRUD |
-| 自选 | 加入/移出、独立自选列表 |
-| 评分 | 配置权重、入队回测/推荐、激活、查看任务和结果 |
-| 用户持仓 | OCR 上传、预览校对、确认、批次和持仓列表 |
-| 资讯 | 列表、频道/关键词筛选、删除 |
-| 股票 | 列表、排序、详情、历史行情 |
+| 领域   | Web 能力                          |
+| ---- | ------------------------------- |
+| CRM  | 客户列表、搜索、新增、编辑、删除                |
+| 权限   | 用户、角色、菜单管理；登录用户菜单               |
+| 基金   | 列表、筛选、排序、详情、净值、持仓、估值、特征、评级、CRUD |
+| 自选   | 加入/移出、独立自选列表                    |
+| 评分   | 配置权重、入队回测/推荐、激活、查看任务和结果         |
+| 用户持仓 | OCR 上传、预览校对、确认、批次和持仓列表          |
+| 资讯   | 列表、频道/关键词筛选、删除                  |
+| 股票   | 列表、排序、详情、历史行情                   |
 
 完整接口覆盖见 [API 参考](../reference/API.md)。
 
@@ -159,13 +159,13 @@ curl -fsS http://127.0.0.1:8780/actuator/gateway/routes
 
 浏览器常见状态：
 
-| 状态 | 含义 |
-| --- | --- |
-| `401/403` | 未登录、Token 失效或权限不足 |
-| `404` | Base/路径错误或 Gateway 路由未覆盖 |
-| `429` | Gateway 限流 |
-| `503` | 下游未注册或不健康 |
-| `500` | 服务异常；结合响应 message 和服务日志 |
+| 状态        | 含义                       |
+| --------- | ------------------------ |
+| `401/403` | 未登录、Token 失效或权限不足        |
+| `404`     | Base/路径错误或 Gateway 路由未覆盖 |
+| `429`     | Gateway 限流               |
+| `503`     | 下游未注册或不健康                |
+| `500`     | 服务异常；结合响应 message 和服务日志  |
 
 ## 11. 测试与构建
 
@@ -211,15 +211,15 @@ VITE_API_BASE=/api npm run build
 
 ## 13. 常见故障
 
-| 现象 | 原因 | 处理 |
-| --- | --- | --- |
-| Network Error | Gateway 未启动/Base 错 | 检查 `.env.local` 与健康接口 |
-| URL 出现 `/api/api` | Base 和函数路径重复 | 函数路径移除 `/api` |
-| 刷新页面 404 | Nginx 未配置 SPA fallback | `try_files ... /index.html` |
-| 修改环境变量无效 | Vite 已构建 | 重新 build/deploy |
-| 页面无菜单 | Token 权限或 `/menus/mine` | 重新登录并检查角色菜单 |
-| TypeScript 编译失败 | 后端字段与类型不同步 | 先修 `api.ts` 类型 |
-| 评分一直 pending | Python Worker/pipeline 未消费 | 查 Prefect 和 score jobs |
+| 现象                | 原因                         | 处理                          |
+| ----------------- | -------------------------- | --------------------------- |
+| Network Error     | Gateway 未启动/Base 错         | 检查 `.env.local` 与健康接口       |
+| URL 出现 `/api/api` | Base 和函数路径重复               | 函数路径移除 `/api`               |
+| 刷新页面 404          | Nginx 未配置 SPA fallback     | `try_files ... /index.html` |
+| 修改环境变量无效          | Vite 已构建                   | 重新 build/deploy             |
+| 页面无菜单             | Token 权限或 `/menus/mine`    | 重新登录并检查角色菜单                 |
+| TypeScript 编译失败   | 后端字段与类型不同步                 | 先修 `api.ts` 类型              |
+| 评分一直 pending      | Python Worker/pipeline 未消费 | 查 Prefect 和 score jobs      |
 
 ## 14. 提交前检查
 

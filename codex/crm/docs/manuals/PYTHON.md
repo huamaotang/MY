@@ -1,6 +1,6 @@
 # Python 数据任务开发与运维手册
 
-本文覆盖 `fund_spider/` 的采集、评分、数据库、测试、Prefect 调度和生产发布。表结构见 [数据库参考](../reference/DATABASE.md)，命令摘要见 [API 参考](../reference/API.md)。
+本文覆盖 `fund_spider/` 的采集、评分、数据库、测试、Prefect 调度和生产发布。表结构见 [数据库参考](../reference/DATABASE.md)，命令摘要见 [API 参考](../reference/API.md)，全量环境变量见 [配置参考](../reference/CONFIGURATION.md)。
 
 ## 1. 项目定位
 
@@ -100,6 +100,8 @@ REQUEST_MAX_RETRIES=3
 - `LOG_SQL`：输出紧凑 SQL。
 - `LOG_SQL_PARAMS`：可能输出大量业务数据，生产默认关闭。
 - `LOG_SQL_MAX_PARAMS`：限制参数样本数量。
+
+历史净值、评级、持仓、资讯、股票和 Prefect 的全部变量与默认值不在本节重复，统一维护在 [配置参考](../reference/CONFIGURATION.md)。
 
 ### 第三方凭据
 
@@ -201,6 +203,20 @@ python cli.py score --mode pipeline
 
 Prefect 通过 `task_runner` 启动业务命令，不要再额外包一层后台 `nohup`。
 
+### OCR 支持工具
+
+Java `fund` 服务会调用 `tools/portfolio_holding_ocr.py`。真实图片验证需安装 `rapidocr-onnxruntime`：
+
+```bash
+cd fund_spider
+.venv/bin/python tools/portfolio_holding_ocr.py \
+  --source-label alipay \
+  --import-type holding \
+  '<test-screenshot.png>'
+```
+
+`source-label` 仅支持 `alipay/tencent`，`import-type` 仅支持 `holding/trade`。测试图片必须是授权的脱敏数据，不能提交仓库。
+
 ## 7. 新增或修改 Spider
 
 ### 推荐结构
@@ -273,7 +289,7 @@ flowchart LR
 cd fund_spider
 source .venv/bin/activate
 python -m unittest discover -s tests -p 'test_*.py'
-python -m unittest tools.test_portfolio_holding_ocr
+PYTHONPATH=.. python -m unittest tools.test_portfolio_holding_ocr
 ```
 
 测试分层：
@@ -301,6 +317,12 @@ docker compose -f deploy/prefect/docker-compose.yml ps
 ```
 
 首次使用复制 `deploy/prefect/.env.example` 为 `.env` 并更换密码。生产不得使用示例密码。
+
+注意：Compose 会读取 `deploy/prefect/.env`，但 `run_prefect_server.sh` 不会自动读取该文件或 `fund_spider/.env`。如果修改了 PostgreSQL 密码，本地启动 Server 前必须显式导出匹配且 URL 编码后的连接串：
+
+```bash
+export PREFECT_SERVER_DATABASE_CONNECTION_URL='postgresql+asyncpg://prefect:<url-encoded-password>@127.0.0.1:5433/prefect'
+```
 
 ### Server、注册和 Worker
 
@@ -347,8 +369,9 @@ PREFECT_API_URL=http://127.0.0.1:4200/api \
 
 - `prefect.yaml` 中自动计划默认启用；需要维护时先在 UI 暂停，长期变更再回写 YAML。
 - UI 临时修改立即影响运行态；长期变更要回写 YAML 并重新 deploy。
-- Worker limit 和 Deployment concurrency 都为 1，`task_runner` 还有文件锁。
-- 代码中的旧 APScheduler/自研调度器已删除；迁移生产机时仍要确认遗留 systemd unit、timer 和 crontab 已停用，防止重复写库。
+- Worker 默认 4 个并发槽；行情/资讯进入高优先级 `realtime` 队列，基金/评分进入 `batch` 队列。
+- 每个 Deployment 仍限制为单并发，`task_runner` 按数据类型使用独立文件锁；过期行情/资讯任务不会补抓旧快照。
+- 08:00 特征任务默认按刷新状态选择最久未更新的 2000 只基金，避免全量长任务阻塞其他数据。
 
 ## 12. 日志与可观测性
 
@@ -362,22 +385,20 @@ PREFECT_API_URL=http://127.0.0.1:4200/api \
 
 日志至少包含任务名、run/trace 标识、基金/批次、开始结束、读取/写入/失败数量和耗时。不得记录数据库密码、YJB Header/Cookie 或用户上传图片内容。
 
-## 13. CentOS 生产发布
+## 13. CentOS 完整发布
 
 详细 systemd 文件和命令见 `deploy/centos/README.md`。
 
 标准流程：
 
 1. 备份 `fund` MySQL 和 Prefect PostgreSQL。
-2. 在发布目录检出确定 commit，保留上一版本目录/压缩包。
+2. 在发布目录检出确定 commit。
 3. 创建/更新 `.venv` 并按锁定的 `requirements.txt` 安装。
 4. 更新受保护的 `/etc/crm/fund-spider.env`，权限只给运行用户。
 5. 启动 Prefect PostgreSQL 和 Server，执行健康检查。
-6. `deploy_prefect.sh` 注册/更新 Deployment。
+6. `deploy_prefect.sh` 一次性注册全部 Deployment。
 7. 运行一个 `dry_run=true` 和一个受控小批次真实任务。
-8. 再启用/恢复计划并监控至少一个周期。
-
-不要在验证新平台前停旧调度；验证完成后必须停旧调度，避免双跑。切换操作和计划启停要记录时间、操作者和 Deployment 版本。
+8. 启动 Worker，确认自动计划状态并监控至少一个周期。
 
 ## 14. 回滚
 
@@ -401,7 +422,7 @@ PREFECT_API_URL=http://127.0.0.1:4200/api \
 | 重复数据 | 唯一键或 Upsert 失配 | 停任务，检查自然键和写入 SQL |
 | Flow pending | Worker/Pool/Queue 不在线 | Prefect work-pool 和 Worker journal |
 | Flow 成功但数据旧 | `dry_run`、空批次或子任务未选中 | Flow 参数、业务日志、刷新状态 |
-| 同一任务重复执行 | 旧调度未停或并发配置失效 | 查 Prefect、systemd、crontab、文件锁 |
+| 同一任务重复执行 | Deployment 或并发配置失效 | 查 Prefect Deployment、Worker 和文件锁 |
 | 评分概率不显示 | 配置未通过/未激活 | 回测结果、profile 状态、pipeline |
 
 ## 16. 提交前检查
@@ -412,5 +433,5 @@ PREFECT_API_URL=http://127.0.0.1:4200/api \
 - [ ] 写入有唯一键、事务、幂等和断点策略。
 - [ ] 解析、Job、CLI/Flow 和算法测试通过。
 - [ ] 新自动任务有 Flow、Deployment、时区、并发和 dry-run。
-- [ ] 已说明是否替代旧调度以及切换步骤。
+- [ ] 完整 Deployment 基线、计划和并发配置已同步。
 - [ ] 数据库/API/部署文档已同步。

@@ -1,6 +1,6 @@
 # iOS 开发与发布手册
 
-本文覆盖 `ios/CrmMobile/` 的 SwiftUI 结构、网络、登录态、真机联调、构建、TestFlight 和 App Store 发布。接口契约见 [API 参考](../reference/API.md)。
+本文覆盖 `ios/CrmMobile/` 的 SwiftUI 结构、网络、登录态、真机联调、构建、TestFlight 和 App Store 发布。路径与权限见 [API 参考](../reference/API.md)，Codable 字段见 [API 数据模型](../reference/API_MODELS.md)。
 
 ## 1. 当前工程
 

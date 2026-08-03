@@ -229,14 +229,14 @@ python -m unittest discover -s tests -p 'test_*.py'
 
 ### 概念
 
-| 概念 | 本项目 |
-| --- | --- |
-| Task | `run_business_job`，带 retries |
-| Flow | 一组串行业务任务 |
-| Deployment | Flow + 计划 + 参数 + Work Pool |
-| Worker | 从 Pool 获取 run，启动本地进程 |
-| Server | API/UI/状态编排 |
-| PostgreSQL | Prefect 元数据，不是业务数据 |
+| 概念         | 本项目                          |
+| ---------- | ---------------------------- |
+| Task       | `run_business_job`，带 retries |
+| Flow       | 一组串行业务任务                     |
+| Deployment | Flow + 计划 + 参数 + Work Pool   |
+| Worker     | 从 Pool 获取 run，启动本地进程         |
+| Server     | API/UI/状态编排                  |
+| PostgreSQL | Prefect 元数据，不是业务数据           |
 
 ### 失败语义
 

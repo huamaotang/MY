@@ -5,7 +5,7 @@
 Nginx、Jar 重启和 Prefect 的具体操作入口。
 
 CentOS 上的数据抓取和基金计算任务由自托管 Prefect Server + Process
-Worker 统一管理。安装、验证以及从旧 `crontab`/`systemd timer` 切换的步骤见
+Worker 统一管理。完整安装与验证步骤见
 [`centos/README.md`](centos/README.md)。
 Prefect 专用 PostgreSQL 配置见
 [`prefect/README.md`](prefect/README.md)。

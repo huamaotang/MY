@@ -229,8 +229,7 @@ scores, and processes queued work in that order:
 Recurring execution is managed by the self-hosted `Prefect==3.7.7` Server and
 Process Worker. The built-in dashboard at `http://127.0.0.1:4200/` provides
 deployment management, pause/resume, manual runs, parameters, run history,
-task states, logs, retries, cancellation, and work-pool health. The previous
-custom scheduler page and APScheduler runtime have been removed.
+task states, logs, retries, cancellation, and work-pool health.
 Prefect metadata is persisted in a dedicated PostgreSQL container configured
 by `deploy/prefect/docker-compose.yml`; CRM business data remains in MySQL.
 
@@ -238,16 +237,18 @@ Version-controlled defaults live in `prefect.yaml`:
 
 | Deployment | Default schedule |
 | --- | --- |
-| `morning-fund-refresh` | Daily 08:00; NAV/performance then feature data |
+| `morning-fund-refresh` | Daily 08:00; NAV/performance then a 2,000-fund stale-first feature batch |
 | `evening-nav-performance` | Daily 21:00 |
 | `feature-refresh-manual` | Manual only |
-| `score-pipeline` | Daily 22:30 |
+| `score-pipeline` | Daily 10:00 and 22:30 |
 | `sina-news` | Every 120 seconds |
 | `stock-cn` | Weekdays every 5 minutes during configured A-share windows |
 | `stock-hk` | Weekdays every 5 minutes during configured HK windows |
 
-All schedules use `Asia/Shanghai`. The Process Worker is limited to one
-concurrent flow and the task runner adds a cross-process lock.
+All schedules use `Asia/Shanghai`. The Process Worker has four flow slots.
+Stocks and news use the high-priority `realtime` queue; fund and scoring work
+uses the `batch` queue. The task runner uses one cross-process lock per data
+type, so a long feature refresh cannot block stock quotes.
 
 Start and register the local platform:
 
@@ -299,7 +300,7 @@ OCR runtime is loaded only by the command entry point:
 
 ```bash
 PYTHONPYCACHEPREFIX=/tmp/crm-pycache \
-python -m unittest tools/test_portfolio_holding_ocr.py
+PYTHONPATH=.. python -m unittest tools.test_portfolio_holding_ocr
 ```
 
 For real-image OCR, install `requirements.txt` into a compatible virtual

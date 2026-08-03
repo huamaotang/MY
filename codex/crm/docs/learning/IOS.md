@@ -83,12 +83,12 @@ do {
 
 `Decodable` 按 JSON Key 和类型解码。常见错误：
 
-| 错误 | 含义 |
-| --- | --- |
-| `keyNotFound` | 必填字段缺失/字段名不一致 |
-| `typeMismatch` | 后端 number/string/object 与模型不同 |
-| `valueNotFound` | JSON null 进入非 Optional |
-| `dataCorrupted` | 日期/枚举/自定义解析失败 |
+| 错误              | 含义                            |
+| --------------- | ----------------------------- |
+| `keyNotFound`   | 必填字段缺失/字段名不一致                 |
+| `typeMismatch`  | 后端 number/string/object 与模型不同 |
+| `valueNotFound` | JSON null 进入非 Optional        |
+| `dataCorrupted` | 日期/枚举/自定义解析失败                 |
 
 项目字段多为后端 camelCase，通常无需 CodingKeys。若后端字段不能直接映射，显式 `CodingKeys`，不要在 UI 临时解析字典。
 
@@ -117,13 +117,13 @@ View 是状态的声明式结果，不是一次性构建的传统页面。`body`
 
 ### 状态属性
 
-| 属性 | 用途 | 项目例子 |
-| --- | --- | --- |
-| `@State` | View 自有值 | loading、筛选、列表 |
-| `@Binding` | 父子共享可写值 | 预览行编辑 |
-| `@StateObject` | View 创建并持有 ObservableObject | 根 Session |
-| `@EnvironmentObject` | 环境注入共享对象 | 各 Tab 使用 Session |
-| `@Published` | ObservableObject 触发 UI 更新 | 登录状态 |
+| 属性                   | 用途                          | 项目例子             |
+| -------------------- | --------------------------- | ---------------- |
+| `@State`             | View 自有值                    | loading、筛选、列表    |
+| `@Binding`           | 父子共享可写值                     | 预览行编辑            |
+| `@StateObject`       | View 创建并持有 ObservableObject | 根 Session        |
+| `@EnvironmentObject` | 环境注入共享对象                    | 各 Tab 使用 Session |
+| `@Published`         | ObservableObject 触发 UI 更新   | 登录状态             |
 
 错误选择会造成状态重建、丢失或不刷新。
 

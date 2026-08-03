@@ -1,6 +1,6 @@
 # Android 开发与多渠道发布手册
 
-本文覆盖 `android/CrmMobileAndroid/` 的 Java Activity 架构、网络、线程、构建、签名、Google Play 与国内主流商店发布。接口契约见 [API 参考](../reference/API.md)。
+本文覆盖 `android/CrmMobileAndroid/` 的 Java Activity 架构、网络、线程、构建、签名、Google Play 与国内主流商店发布。路径与权限见 [API 参考](../reference/API.md)，JSON 字段见 [API 数据模型](../reference/API_MODELS.md)。
 
 ## 1. 当前工程
 
