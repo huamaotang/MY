@@ -116,6 +116,8 @@ CRM_PYTHON_OCR_SCRIPT=/opt/crm/fund_spider/tools/portfolio_holding_ocr.py
 | `LOG_SQL` | `0` | SQL 摘要日志 |
 | `LOG_SQL_PARAMS` | `0` | SQL 参数日志，可能含大量业务数据 |
 | `LOG_SQL_MAX_PARAMS` | `3` | 参数日志样本上限 |
+| `CRM_LOG_ROOT` | 仓库根目录 `logs` | 日志根目录；服务、任务、锁和 PID 会写入独立子目录 |
+| `CRM_LOG_RETENTION_DAYS` | `14` | Python 业务任务 `.log` 文件保留天数 |
 
 领域选择器 `NAV_FUND_CODE`、`FEATURE_FUND_CODE`、`RATING_FUND_CODE`、`HOLDING_FUND_CODE` 优先用于对应任务；为空时回退通用批次选择。
 
@@ -198,7 +200,9 @@ iOS 当前 Bundle ID 为 `com.example.crm.mobile`，Android applicationId 为 `c
 | `ACTUATOR_BASE` | 根据 host/port 生成 | Admin 因 context path 需显式 `/api/actuator` |
 | `DRAIN_SECONDS` | `10` | 标记 DOWN 后等待时间 |
 | `STOP_TIMEOUT` | `45` | 超时后会 SIGKILL |
-| `LOG_DIR` | `deploy/logs` | 标准输出日志目录 |
+| `LOG_ROOT` | 仓库根目录 `logs/services` | Java 服务日志根目录 |
+| `LOG_DIR` | `<LOG_ROOT>/<service>` | 单个服务标准输出目录覆盖 |
+| `LOG_PATH` | 与单服务目录相同 | Spring Boot 文件 Appender 目录覆盖 |
 
 该脚本不负责等待新实例健康，也不提供单实例零停机保证；启动后必须人工/自动执行健康与业务冒烟。
 

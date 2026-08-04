@@ -80,6 +80,8 @@ ACTUATOR_BASE=http://127.0.0.1:8781/api/actuator deploy/graceful-restart.sh admi
 DRAIN_SECONDS=15 STOP_TIMEOUT=60 deploy/graceful-restart.sh system backend/system/target/system-0.1.0.jar 8782
 ```
 
+服务日志默认按服务拆分到 `logs/services/<service>/`：Spring Boot 文件日志为 `<service>.log`，脚本捕获的标准输出为 `console.log`。可用 `LOG_ROOT`、`LOG_DIR`、`LOG_PATH` 覆盖目录，不要让多个服务共用同一个文件。
+
 ## 安装 Nginx 配置
 
 将 [nginx.conf](nginx.conf) 放到 Nginx 站点配置目录，例如：

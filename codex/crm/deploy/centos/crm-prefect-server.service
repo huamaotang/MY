@@ -11,6 +11,9 @@ WorkingDirectory=/opt/crm/fund_spider
 EnvironmentFile=-/etc/crm/fund-spider.env
 Environment=PREFECT_HOME=/opt/crm/fund_spider/.prefect
 Environment=CRM_FUND_SPIDER_DIR=/opt/crm/fund_spider
+Environment=CRM_LOG_ROOT=/var/log/crm
+LogsDirectory=crm
+LogsDirectoryMode=0750
 ExecStart=/opt/crm/fund_spider/bin/run_prefect_server.sh
 Restart=always
 RestartSec=5

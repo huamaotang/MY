@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
@@ -211,7 +212,8 @@ class PrefectTaskTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             log_dir = Path(temp_dir)
             with (
-                patch.object(task_runner, "LOG_DIR", log_dir),
+                patch.object(task_runner, "LOG_DIR", log_dir / "jobs"),
+                patch.object(task_runner, "LOCK_DIR", log_dir / "locks"),
                 patch.object(
                     task_runner,
                     "run_subprocess_job",
@@ -252,10 +254,14 @@ class PrefectTaskTest(unittest.TestCase):
 
     def test_different_job_locks_do_not_block_each_other(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            log_dir = Path(temp_dir)
+            log_root = Path(temp_dir)
             feature_job = task_runner.build_jobs(("feature",))[0]
-            feature_lock = log_dir / "crm_business_task_feature.lock"
-            with patch.object(task_runner, "LOG_DIR", log_dir):
+            feature_lock = log_root / "locks" / "feature.lock"
+            feature_lock.parent.mkdir(parents=True)
+            with (
+                patch.object(task_runner, "LOG_DIR", log_root / "jobs"),
+                patch.object(task_runner, "LOCK_DIR", log_root / "locks"),
+            ):
                 lock_fd = task_runner.acquire_lock(feature_lock)
                 self.assertIsNotNone(lock_fd)
                 try:
@@ -272,6 +278,40 @@ class PrefectTaskTest(unittest.TestCase):
                 lock_fd = task_runner.acquire_lock(lock_file)
             self.assertIsNotNone(lock_fd)
             task_runner.release_lock(lock_fd, lock_file)
+
+    def test_job_logs_are_split_by_job_and_day(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir) / "jobs"
+            job = task_runner.build_jobs(("stock-cn",))[0]
+            with patch.object(task_runner, "LOG_DIR", log_dir):
+                log_file = task_runner.log_file_for(
+                    job,
+                    datetime(2026, 8, 3, 9, 30, tzinfo=timezone.utc),
+                )
+
+            self.assertEqual(log_dir / "stock-cn" / "2026-08-03.log", log_file)
+            self.assertTrue(log_file.parent.is_dir())
+
+    def test_old_job_logs_are_pruned(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log_dir = Path(temp_dir)
+            old_log = log_dir / "2026-07-01.log"
+            current_log = log_dir / "2026-08-03.log"
+            old_log.write_text("old", encoding="utf-8")
+            current_log.write_text("current", encoding="utf-8")
+            old_timestamp = datetime(2026, 7, 1, tzinfo=timezone.utc).timestamp()
+            current_timestamp = datetime(2026, 8, 3, tzinfo=timezone.utc).timestamp()
+            os.utime(old_log, (old_timestamp, old_timestamp))
+            os.utime(current_log, (current_timestamp, current_timestamp))
+
+            with patch.dict("os.environ", {"CRM_LOG_RETENTION_DAYS": "14"}):
+                task_runner.prune_old_logs(
+                    log_dir,
+                    datetime(2026, 8, 3, tzinfo=timezone.utc),
+                )
+
+            self.assertFalse(old_log.exists())
+            self.assertTrue(current_log.exists())
 
     def test_all_migrated_job_commands_are_available(self) -> None:
         built = task_runner.build_jobs(

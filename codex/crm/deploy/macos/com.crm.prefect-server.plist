@@ -21,8 +21,8 @@
   <key>ProcessType</key>
   <string>Background</string>
   <key>StandardOutPath</key>
-  <string>/Users/thm/MY/codex/crm/fund_spider/logs/prefect-server-launchd.log</string>
+  <string>/Users/thm/MY/codex/crm/logs/services/prefect-server/stdout.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/thm/MY/codex/crm/fund_spider/logs/prefect-server-launchd-error.log</string>
+  <string>/Users/thm/MY/codex/crm/logs/services/prefect-server/stderr.log</string>
 </dict>
 </plist>

@@ -11,7 +11,10 @@ from zoneinfo import ZoneInfo
 
 
 BASE_DIR = Path(__file__).resolve().parents[1]
-LOG_DIR = BASE_DIR / "logs"
+REPOSITORY_DIR = BASE_DIR.parent
+LOG_ROOT = Path(os.getenv("CRM_LOG_ROOT", str(REPOSITORY_DIR / "logs"))).expanduser()
+LOG_DIR = LOG_ROOT / "jobs"
+LOCK_DIR = LOG_ROOT / "locks" / "fund-spider"
 TIMEZONE = ZoneInfo("Asia/Shanghai")
 
 logger = logging.getLogger(__name__)
@@ -40,13 +43,15 @@ def run_scheduled_jobs(
     status_callback: Callable[[str, str], None] | None = None,
 ) -> bool:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
-    started_at = datetime.now(TIMEZONE)
-    log_file = LOG_DIR / f"prefect_task_{started_at.strftime('%Y%m%d_%H%M%S')}.log"
+    LOCK_DIR.mkdir(parents=True, exist_ok=True)
     selected_jobs = build_jobs(job_names)
     succeeded = True
-    with log_file.open("a", encoding="utf-8") as log_handle:
-        write_log(log_handle, f"[TRIGGER] jobs={','.join(job_names)}")
-        for job in selected_jobs:
+    for job in selected_jobs:
+        started_at = datetime.now(TIMEZONE)
+        log_file = log_file_for(job, started_at)
+        prune_old_logs(log_file.parent, started_at)
+        with log_file.open("a", encoding="utf-8") as log_handle:
+            write_log(log_handle, f"[TRIGGER] job={job.name}")
             if dry_run:
                 command = " ".join([job.script, *job.args])
                 write_log(log_handle, f"[DRY-RUN] {job.name}: {command}")
@@ -90,10 +95,10 @@ def run_scheduled_jobs(
                     status_callback(job.name, "failed")
             elif status_callback:
                 status_callback(job.name, "success")
-        write_log(
-            log_handle,
-            f"[FINISH] status={'success' if succeeded else 'failed'}",
-        )
+            write_log(
+                log_handle,
+                f"[FINISH] status={'success' if return_code == 0 else 'failed'}",
+            )
     return succeeded
 
 
@@ -193,7 +198,30 @@ def run_subprocess_job(
 
 
 def lock_file_for(job: Job) -> Path:
-    return LOG_DIR / f"crm_business_task_{job.lock_key}.lock"
+    return LOCK_DIR / f"{job.lock_key}.lock"
+
+
+def log_file_for(job: Job, started_at: datetime) -> Path:
+    job_log_dir = LOG_DIR / job.name
+    job_log_dir.mkdir(parents=True, exist_ok=True)
+    return job_log_dir / f"{started_at:%Y-%m-%d}.log"
+
+
+def log_retention_days() -> int:
+    raw_value = os.getenv("CRM_LOG_RETENTION_DAYS", "14")
+    if not raw_value.isdigit() or int(raw_value) < 1:
+        raise ValueError("CRM_LOG_RETENTION_DAYS must be a positive integer")
+    return int(raw_value)
+
+
+def prune_old_logs(log_dir: Path, now: datetime) -> None:
+    cutoff = now.timestamp() - (log_retention_days() * 24 * 60 * 60)
+    for log_file in log_dir.glob("*.log"):
+        try:
+            if log_file.stat().st_mtime < cutoff:
+                log_file.unlink()
+        except FileNotFoundError:
+            continue
 
 
 def acquire_lock(lock_file: Path) -> int | None:

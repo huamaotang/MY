@@ -16,7 +16,9 @@ Environment:
   ACTUATOR_BASE  Full actuator base URL. Default: http://ACTUATOR_HOST:port/actuator
   DRAIN_SECONDS  Wait time after marking DOWN. Default: 10
   STOP_TIMEOUT   Wait time for graceful process exit. Default: 45
-  LOG_DIR        Directory for stdout/stderr logs. Default: deploy/logs
+  LOG_ROOT       Root for service logs. Default: <repository>/logs/services
+  LOG_DIR        Override directory for this service.
+  LOG_PATH       Override Spring Boot file-appender directory.
 USAGE
 }
 
@@ -29,16 +31,21 @@ SERVICE="$1"
 JAR_PATH="$2"
 PORT="$3"
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPOSITORY_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
 JAVA_BIN="${JAVA_BIN:-java}"
 JAVA_OPTS="${JAVA_OPTS:-}"
 ACTUATOR_HOST="${ACTUATOR_HOST:-127.0.0.1}"
 DRAIN_SECONDS="${DRAIN_SECONDS:-10}"
 STOP_TIMEOUT="${STOP_TIMEOUT:-45}"
-LOG_DIR="${LOG_DIR:-deploy/logs}"
+LOG_ROOT="${LOG_ROOT:-${REPOSITORY_DIR}/logs/services}"
+SERVICE_LOG_DIR="${LOG_DIR:-${LOG_ROOT}/${SERVICE}}"
+APP_LOG_PATH="${LOG_PATH:-${SERVICE_LOG_DIR}}"
 ACTUATOR_BASE="${ACTUATOR_BASE:-http://${ACTUATOR_HOST}:${PORT}/actuator}"
 JAR_NAME="$(basename "${JAR_PATH}")"
 
-mkdir -p "${LOG_DIR}"
+mkdir -p "${SERVICE_LOG_DIR}"
 
 find_pid() {
   pgrep -f "java .*${JAR_NAME}" || true
@@ -91,9 +98,9 @@ start_new() {
     exit 1
   fi
 
-  local log_file="${LOG_DIR}/${SERVICE}.log"
+  local log_file="${SERVICE_LOG_DIR}/console.log"
   echo "Starting ${SERVICE} from ${JAR_PATH}..."
-  nohup "${JAVA_BIN}" ${JAVA_OPTS} -jar "${JAR_PATH}" >>"${log_file}" 2>&1 &
+  LOG_PATH="${APP_LOG_PATH}" nohup "${JAVA_BIN}" ${JAVA_OPTS} -jar "${JAR_PATH}" >>"${log_file}" 2>&1 &
   local pid="$!"
   echo "Started ${SERVICE} pid=${pid}, log=${log_file}"
 }

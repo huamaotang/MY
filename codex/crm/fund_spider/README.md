@@ -52,7 +52,10 @@ REQUEST_MAX_RETRIES=3
 
 Every fund dataset also has a manually executable shell wrapper. Manual runs
 start with `nohup` in the background, print their PID/log paths, and write
-timestamped logs under `logs/`. Arguments are passed through unchanged to
+daily logs under `../logs/jobs/<job>/`. PID files live under
+`../logs/pids/fund-spider/`, while Prefect service output lives under
+`../logs/services/prefect-server/` and `../logs/services/prefect-worker/`.
+Arguments are passed through unchanged to
 `cli.py`, and the wrapper uses `.venv/bin/python` when available:
 
 ```bash

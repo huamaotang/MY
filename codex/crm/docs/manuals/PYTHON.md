@@ -195,7 +195,7 @@ python cli.py score --mode pipeline
 
 ## 6. Shell wrapper
 
-`bin/run_*.sh` 适合人工后台运行：默认 `nohup`、打印 PID/日志路径，优先使用 `.venv/bin/python`。外部调度器要等待真实退出状态时传内部 `--foreground`：
+`bin/run_*.sh` 适合人工后台运行：默认 `nohup`、打印 PID/日志路径，优先使用 `.venv/bin/python`。日志按任务和日期写入 `logs/jobs/<job>/YYYY-MM-DD.log`，PID 与锁分别放在 `logs/pids/fund-spider/`、`logs/locks/fund-spider/`。外部调度器要等待真实退出状态时传内部 `--foreground`：
 
 ```bash
 ./bin/run_feature.sh --foreground --fund-code 519674
@@ -379,11 +379,13 @@ PREFECT_API_URL=http://127.0.0.1:4200/api \
 
 1. Prefect Flow Run 状态和 Task 日志。
 2. Worker 的 systemd journal/终端日志。
-3. `fund_spider/logs/` 的业务子进程日志。
+3. `logs/jobs/<job>/` 的业务子进程日志。
 4. `fund_refresh_state`、`fund_crawl_cursor` 和目标表新鲜度。
 5. 外部响应状态/解析异常和 MySQL 锁。
 
 日志至少包含任务名、run/trace 标识、基金/批次、开始结束、读取/写入/失败数量和耗时。不得记录数据库密码、YJB Header/Cookie 或用户上传图片内容。
+
+统一目录结构：Java 与 Prefect 服务输出写入 `logs/services/<service>/`，Python 任务写入 `logs/jobs/<job>/`，锁和 PID 不与 `.log` 混放。任务日志按天复用文件，并按 `CRM_LOG_RETENTION_DAYS`（默认 14 天）自动清理。
 
 ## 13. CentOS 完整发布
 

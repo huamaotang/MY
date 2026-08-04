@@ -65,6 +65,8 @@ PREFECT_WORK_POOL=crm-process-pool
 PREFECT_WORKER_NAME=crm-centos-worker
 PREFECT_WORKER_LIMIT=4
 FEATURE_SCHEDULE_FUND_LIMIT=2000
+CRM_LOG_ROOT=/var/log/crm
+CRM_LOG_RETENTION_DAYS=14
 ```
 
 持久化 Deployment 和运行历史存储在 PostgreSQL 命名卷
