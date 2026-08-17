@@ -9,13 +9,13 @@ description: Use when working across the CRM monorepo, choosing the correct subp
 
 Choose the smallest owning project:
 
-| Request type | Use |
-| --- | --- |
-| API, database, security, gateway, logs | `backend/skill.md` |
-| React admin UI | `frontend/skill.md` |
-| iPhone app | `ios/CrmMobile/skill.md` |
-| Android app | `android/CrmMobileAndroid/skill.md` |
-| Nacos, Redis, Nginx, Jar deployment | `deploy/skill.md` |
+| Request type                           | Use                                 |
+| -------------------------------------- | ----------------------------------- |
+| API, database, security, gateway, logs | `backend/skill.md`                  |
+| React admin UI                         | `frontend/skill.md`                 |
+| iPhone app                             | `ios/CrmMobile/skill.md`            |
+| Android app                            | `android/CrmMobileAndroid/skill.md` |
+| Nacos, Redis, Nginx, Jar deployment    | `deploy/skill.md`                   |
 
 ## Required First Steps
 

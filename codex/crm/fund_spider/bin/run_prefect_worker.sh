@@ -15,6 +15,11 @@ export CRM_FUND_SPIDER_DIR="${CRM_FUND_SPIDER_DIR:-${project_dir}}"
 export CRM_LOG_ROOT="${CRM_LOG_ROOT:-${repository_dir}/logs}"
 export PREFECT_HOME="${PREFECT_HOME:-${project_dir}/.prefect}"
 export PREFECT_API_URL="${PREFECT_API_URL:-http://127.0.0.1:4200/api}"
+# macOS system proxy (e.g. 127.0.0.1:7890) can hijack httpx/urllib requests for
+# localhost when NO_PROXY is unset, turning every localhost API call into a
+# 502. launchd does not inherit the user shell's NO_PROXY, so set it here.
+export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost,::1}"
+export no_proxy="${no_proxy:-127.0.0.1,localhost,::1}"
 
 mkdir -p \
   "${PREFECT_HOME}" \

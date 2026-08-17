@@ -343,6 +343,13 @@ cd fund_spider
 ./bin/run_prefect_worker.sh
 ```
 
+> 排障：macOS 系统代理（常见为 `127.0.0.1:7890`，Clash 等代理软件设置）会劫持
+> 未设置 `NO_PROXY` 的 httpx/urllib 请求——包括到 `127.0.0.1:4200` 的本地请求，
+> 表现为 Worker/客户端对本地 API 一律拿到 `502 Bad Gateway`。launchd 不继承终端
+> shell 的 `NO_PROXY`，因此 `run_prefect_server.sh` 和 `run_prefect_worker.sh` 均
+> 已默认导出 `NO_PROXY=127.0.0.1,localhost,::1`。若在 launchd 之外手动跑 Worker
+> 出现 502，先检查 `env | grep -i proxy` 与 `scutil --proxy`。
+
 验证：
 
 ```bash

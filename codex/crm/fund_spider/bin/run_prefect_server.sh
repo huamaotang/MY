@@ -36,6 +36,11 @@ export PREFECT_SERVER_SERVICES_DB_VACUUM_ENABLED="${PREFECT_SERVER_SERVICES_DB_V
 server_host="${PREFECT_SERVER_HOST:-127.0.0.1}"
 server_port="${PREFECT_SERVER_PORT:-4200}"
 export PREFECT_UI_API_URL="${PREFECT_UI_API_URL:-http://${server_host}:${server_port}/api}"
+# macOS system proxy (e.g. 127.0.0.1:7890) can hijack httpx/urllib requests for
+# localhost when NO_PROXY is unset, turning every localhost API call into a
+# 502. launchd does not inherit the user shell's NO_PROXY, so set it here.
+export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost,::1}"
+export no_proxy="${no_proxy:-127.0.0.1,localhost,::1}"
 
 mkdir -p "${PREFECT_HOME}" "${CRM_LOG_ROOT}/services/prefect-server"
 cd "${project_dir}"
