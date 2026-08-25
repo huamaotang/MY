@@ -380,6 +380,7 @@ PREFECT_API_URL=http://127.0.0.1:4200/api \
 - Worker 默认 4 个并发槽；行情/资讯进入高优先级 `realtime` 队列，基金/评分进入 `batch` 队列。
 - 每个 Deployment 仍限制为单并发，`task_runner` 按数据类型使用独立文件锁；过期行情/资讯任务不会补抓旧快照。
 - 08:00 特征任务默认按刷新状态选择最久未更新的 2000 只基金，避免全量长任务阻塞其他数据。
+- `crm-ops-janitor` 每 10 分钟把超过 30 分钟仍处于 Running 的实时任务（新浪资讯/沪深港行情）标记为失败并释放并发槽位。异常中断（休眠、进程被杀）留下的僵尸 Run 不再导致后续计划被 CANCEL_NEW 静默取消。可用 `--param dry_run=true` 试跑，`--param max_age_minutes=N` 调整阈值。
 
 ## 12. 日志与可观测性
 
@@ -432,6 +433,7 @@ PREFECT_API_URL=http://127.0.0.1:4200/api \
 | 重复数据 | 唯一键或 Upsert 失配 | 停任务，检查自然键和写入 SQL |
 | Flow pending | Worker/Pool/Queue 不在线 | Prefect work-pool 和 Worker journal |
 | Flow 成功但数据旧 | `dry_run`、空批次或子任务未选中 | Flow 参数、业务日志、刷新状态 |
+| 定时任务连续 CANCELLED 且无业务日志 | 旧 Run 卡在 Running 占用并发槽位 | 查 Deployment 的 `active_slots` 与卡死 Run；`crm-ops-janitor` 会自动终结实时任务的僵尸 Run，batch 任务需人工终结 |
 | 同一任务重复执行 | Deployment 或并发配置失效 | 查 Prefect Deployment、Worker 和文件锁 |
 | 评分概率不显示 | 配置未通过/未激活 | 回测结果、profile 状态、pipeline |
 

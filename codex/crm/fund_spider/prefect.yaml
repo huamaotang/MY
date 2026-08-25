@@ -103,6 +103,25 @@ deployments:
       job_variables:
         working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
 
+  - name: ops-janitor
+    version: "1"
+    paused: false
+    description: 每 10 分钟巡检并终结卡死的实时任务运行，自动释放并发槽位，避免行情停更。
+    tags: [crm, ops]
+    entrypoint: prefect_flows.py:ops_janitor_flow
+    schedules:
+      - interval: 600
+        timezone: Asia/Shanghai
+        slug: every-10-minutes
+    concurrency_limit:
+      limit: 1
+      collision_strategy: CANCEL_NEW
+    work_pool:
+      name: crm-process-pool
+      work_queue_name: batch
+      job_variables:
+        working_dir: "{{ $CRM_FUND_SPIDER_DIR }}"
+
   - name: stock-cn
     version: "1"
     paused: false

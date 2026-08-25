@@ -4,6 +4,7 @@ import os
 import sys
 import tempfile
 import unittest
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import call
@@ -128,6 +129,7 @@ class PrefectTaskTest(unittest.TestCase):
                 "sina-news",
                 "stock-cn",
                 "stock-hk",
+                "ops-janitor",
             },
             set(deployments),
         )
@@ -168,6 +170,17 @@ class PrefectTaskTest(unittest.TestCase):
             "score-pipeline",
         ):
             self.assertEqual("batch", deployments[name]["work_pool"]["work_queue_name"])
+        janitor = deployments["ops-janitor"]
+        self.assertEqual(
+            600,
+            janitor["schedules"][0]["interval"],
+        )
+        self.assertFalse(janitor["paused"])
+        self.assertEqual("batch", janitor["work_pool"]["work_queue_name"])
+        self.assertEqual(
+            "prefect_flows.py:ops_janitor_flow",
+            janitor["entrypoint"],
+        )
 
         score_schedules = deployments["score-pipeline"]["schedules"]
         self.assertEqual(
@@ -362,6 +375,66 @@ class PrefectTaskTest(unittest.TestCase):
             limit=25,
         )
         connection.close.assert_called_once()
+
+
+class OpsJanitorTest(unittest.TestCase):
+    def make_run(self, name: str) -> MagicMock:
+        run = MagicMock()
+        run.id = uuid.uuid4()
+        run.name = name
+        run.expected_start_time = datetime(2026, 8, 19, 2, 35, tzinfo=timezone.utc)
+        return run
+
+    def test_reaps_stale_running_runs(self) -> None:
+        stale_a = self.make_run("stock-cn-refresh")
+        stale_b = self.make_run("stock-hk-refresh")
+        client = MagicMock()
+        client.read_flow_runs.return_value = [stale_a, stale_b]
+
+        with patch.object(prefect_flows, "REALTIME_FLOW_NAMES", ("sina-news-refresh",)):
+            reaped = prefect_flows.reap_stale_running_runs(
+                client,
+                max_age_minutes=30,
+                now=datetime(2026, 8, 19, 3, 5, tzinfo=timezone.utc),
+            )
+
+        self.assertEqual([str(stale_a.id), str(stale_b.id)], reaped)
+        self.assertEqual(2, client.set_flow_run_state.call_count)
+        _, kwargs = client.read_flow_runs.call_args
+        self.assertEqual(
+            ["sina-news-refresh"],
+            list(kwargs["flow_filter"].name.any_),
+        )
+        state_type = list(kwargs["flow_run_filter"].state.type.any_)[0]
+        before = kwargs["flow_run_filter"].expected_start_time.before_
+        self.assertEqual("RUNNING", str(state_type).split(".")[-1])
+        self.assertEqual(datetime(2026, 8, 19, 2, 35, tzinfo=timezone.utc), before)
+
+    def test_dry_run_reads_without_writing(self) -> None:
+        client = MagicMock()
+        client.read_flow_runs.return_value = [self.make_run("stock-cn-refresh")]
+
+        reaped = prefect_flows.reap_stale_running_runs(client, dry_run=True)
+
+        self.assertEqual([], reaped)
+        client.read_flow_runs.assert_called_once()
+        client.set_flow_run_state.assert_not_called()
+
+    def test_set_state_failure_does_not_block_remaining_runs(self) -> None:
+        first = self.make_run("stock-cn-refresh")
+        second = self.make_run("stock-hk-refresh")
+        client = MagicMock()
+        client.read_flow_runs.return_value = [first, second]
+        client.set_flow_run_state.side_effect = [RuntimeError("transition aborted"), None]
+
+        reaped = prefect_flows.reap_stale_running_runs(client)
+
+        self.assertEqual([str(second.id)], reaped)
+        self.assertEqual(2, client.set_flow_run_state.call_count)
+
+    def test_rejects_non_positive_max_age(self) -> None:
+        with self.assertRaisesRegex(ValueError, "max_age_minutes must be positive"):
+            prefect_flows.reap_stale_running_runs(MagicMock(), max_age_minutes=0)
 
 
 if __name__ == "__main__":
