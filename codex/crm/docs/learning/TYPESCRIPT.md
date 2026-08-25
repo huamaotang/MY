@@ -105,7 +105,7 @@ const weights: Record<string, number> = {};
 `Record<string, number>` 允许任意字符串 key。若 key 集合固定，可更严格：
 
 ```ts
-type FactorKey = 'return_1m' | 'return_1y' | 'scale';
+type FactorKey = 'decline_1d' | 'decline_4w' | 'scale';
 type FactorWeights = Record<FactorKey, number>;
 ```
 

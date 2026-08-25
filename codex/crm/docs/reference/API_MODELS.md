@@ -239,29 +239,34 @@ holdingCount, quotedHoldingCount, quoteUpdatedAt
 {
   "profileName": "稳健配置",
   "weights": {
-    "return_1m": 1,
+    "decline_today": 4,
+    "decline_1d": 6,
+    "decline_1w": 6,
+    "decline_2w": 6,
+    "decline_3w": 6,
+    "decline_4w": 5,
     "return_3m": 3,
-    "return_6m": 5,
-    "return_1y": 7,
-    "return_2y": 5,
+    "return_6m": 4,
+    "return_1y": 5,
+    "return_2y": 4,
     "return_3y": 4,
-    "volatility_1y": 5,
-    "volatility_3y": 10,
-    "sharpe_1y": 10,
-    "sharpe_3y": 15,
-    "drawdown_1y": 8,
-    "drawdown_3y": 12,
-    "rating_zhaoshang": 2,
-    "rating_shanghai_3y": 2,
-    "rating_shanghai_5y": 1,
-    "rating_jian": 2,
-    "rating_morningstar": 3,
-    "scale": 5
+    "volatility_1y": 4,
+    "volatility_3y": 5,
+    "sharpe_1y": 5,
+    "sharpe_3y": 5,
+    "drawdown_1y": 4,
+    "drawdown_3y": 4,
+    "rating_zhaoshang": 3,
+    "rating_shanghai_3y": 4,
+    "rating_shanghai_5y": 3,
+    "rating_jian": 3,
+    "rating_morningstar": 4,
+    "scale": 3
   }
 }
 ```
 
-请求必须恰好包含当前 18 个因子 key，每项为 0～100 的整数且总和为 100。约束由 Java 与 `scoring.py` 共同校验，不要仅靠 UI 拼装未知 key。
+请求必须恰好包含当前 23 个因子 key（其中 `decline_today` 为当日预估跌幅，来自持仓与当日行情估算；`decline_1d/1w/2w/3w/4w` 为净值窗口短期跌幅），上述跌幅因子均为"跌幅越大分值越高"，每项为 0～100 的整数且总和为 100。约束由 Java 与 `scoring.py` 共同校验，不要仅靠 UI 拼装未知 key。
 
 `FundScoreProfile` 字段：
 

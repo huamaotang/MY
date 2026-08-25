@@ -33,7 +33,8 @@ import java.util.Set;
 @Service
 public class FundScoreServiceImpl implements IFundScoreService {
     private static final Set<String> FACTOR_KEYS = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
-            "return_1m", "return_3m", "return_6m", "return_1y", "return_2y", "return_3y",
+            "decline_today", "decline_1d", "decline_1w", "decline_2w", "decline_3w", "decline_4w",
+            "return_3m", "return_6m", "return_1y", "return_2y", "return_3y",
             "volatility_1y", "volatility_3y", "sharpe_1y", "sharpe_3y",
             "drawdown_1y", "drawdown_3y", "rating_zhaoshang", "rating_shanghai_3y",
             "rating_shanghai_5y", "rating_jian", "rating_morningstar", "scale"

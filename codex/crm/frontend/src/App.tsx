@@ -154,7 +154,12 @@ const TREND_PERIOD_OPTIONS: { label: string; value: TrendPeriod }[] = [
 ];
 
 const SCORE_FACTORS = [
-  { key: 'return_1m', label: '近1月收益', block: '历史收益' },
+  { key: 'decline_today', label: '当日预估跌幅', block: '近期跌幅' },
+  { key: 'decline_1d', label: '昨日跌幅', block: '近期跌幅' },
+  { key: 'decline_1w', label: '近1周跌幅', block: '近期跌幅' },
+  { key: 'decline_2w', label: '近2周跌幅', block: '近期跌幅' },
+  { key: 'decline_3w', label: '近3周跌幅', block: '近期跌幅' },
+  { key: 'decline_4w', label: '近4周跌幅', block: '近期跌幅' },
   { key: 'return_3m', label: '近3月收益', block: '历史收益' },
   { key: 'return_6m', label: '近6月收益', block: '历史收益' },
   { key: 'return_1y', label: '近1年收益', block: '历史收益' },
@@ -1183,8 +1188,8 @@ function FundList({ favoritesOnly = false }: { favoritesOnly?: boolean }) {
   const [total, setTotal] = useState(0);
   const [current, setCurrent] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
-  const [sortField, setSortField] = useState<string>();
-  const [sortOrder, setSortOrder] = useState<string>();
+  const [sortField, setSortField] = useState<string | undefined>(favoritesOnly ? undefined : 'fundScore');
+  const [sortOrder, setSortOrder] = useState<string | undefined>(favoritesOnly ? undefined : 'descend');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Fund | null>(null);
   const [detailFundCode, setDetailFundCode] = useState<string | null>(null);
@@ -1289,6 +1294,7 @@ function FundList({ favoritesOnly = false }: { favoritesOnly?: boolean }) {
       key: 'fundScore',
       width: 115,
       sorter: true,
+      defaultSortOrder: favoritesOnly ? undefined : 'descend',
       render: (_, row) => row.latestScore?.totalScore == null
         ? <Tag>数据不足</Tag>
         : <Tag color={row.latestScore.totalScore >= 80 ? 'green' : row.latestScore.totalScore >= 60 ? 'blue' : 'orange'}>

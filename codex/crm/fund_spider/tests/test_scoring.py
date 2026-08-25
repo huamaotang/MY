@@ -13,6 +13,7 @@ from scoring import (  # noqa: E402
     _walk_forward_predictions,
     calculate_nav_factors,
     parse_scale_yi,
+    percentile_scores,
     score_factors,
     validate_weights,
 )
@@ -35,9 +36,55 @@ class ScoringCalculatorTest(unittest.TestCase):
         self.assertIsNotNone(factors["return_3y"])
         self.assertGreater(factors["sharpe_1y"], 0)
         self.assertEqual(0, factors["drawdown_1y"])
+        self.assertIsNotNone(factors["decline_1d"])
+        self.assertIsNotNone(factors["decline_1w"])
+        self.assertIsNotNone(factors["decline_2w"])
+        self.assertIsNotNone(factors["decline_3w"])
+        self.assertIsNotNone(factors["decline_4w"])
 
         earlier = calculate_nav_factors(points, 800)
         self.assertIsNone(earlier["return_3y"])
+        self.assertIsNotNone(earlier["decline_1d"])
+
+    def test_calculates_short_term_decline_windows(self) -> None:
+        start = date(2023, 1, 1)
+        points = [
+            NavPoint(start + timedelta(days=index), 1.0 + index / 100, None)
+            for index in range(35)
+        ]
+        factors = calculate_nav_factors(points)
+
+        self.assertAlmostEqual((1.34 / 1.33 - 1.0) * 100.0, factors["decline_1d"], places=6)
+        self.assertAlmostEqual((1.34 / 1.27 - 1.0) * 100.0, factors["decline_1w"], places=6)
+        self.assertAlmostEqual((1.34 / 1.20 - 1.0) * 100.0, factors["decline_2w"], places=6)
+        self.assertAlmostEqual((1.34 / 1.13 - 1.0) * 100.0, factors["decline_3w"], places=6)
+        self.assertAlmostEqual((1.34 / 1.06 - 1.0) * 100.0, factors["decline_4w"], places=6)
+
+        self.assertIsNone(calculate_nav_factors([NavPoint(start, 1.0, None)])["decline_1d"])
+
+    def test_bigger_decline_scores_higher_percentile(self) -> None:
+        rows = [
+            {"fund_code": "A", "factors": {"decline_4w": -12.0}},
+            {"fund_code": "B", "factors": {"decline_4w": -3.0}},
+            {"fund_code": "C", "factors": {"decline_4w": 1.5}},
+        ]
+        scores = percentile_scores(rows, "decline_4w")
+
+        self.assertEqual(100.0, scores["A"])
+        self.assertEqual(50.0, scores["B"])
+        self.assertEqual(0.0, scores["C"])
+        self.assertGreater(scores["A"], scores["B"])
+
+    def test_bigger_today_decline_scores_higher_percentile(self) -> None:
+        rows = [
+            {"fund_code": "A", "factors": {"decline_today": -4.2}},
+            {"fund_code": "B", "factors": {"decline_today": 0.3}},
+        ]
+        scores = percentile_scores(rows, "decline_today")
+
+        self.assertEqual(100.0, scores["A"])
+        self.assertEqual(0.0, scores["B"])
+        self.assertGreater(scores["A"], scores["B"])
 
     def test_score_requires_one_year_return_and_seventy_percent_coverage(self) -> None:
         normalized = {key: 80.0 for key in DEFAULT_WEIGHTS}

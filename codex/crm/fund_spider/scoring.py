@@ -15,33 +15,43 @@ from pymysql.cursors import SSDictCursor
 from db import DatabaseConfig, connect, database_config_from_env, ensure_schema
 
 
-METHODOLOGY_VERSION = "fund-score-v1"
+METHODOLOGY_VERSION = "fund-score-v4"
 MIN_CATEGORY_SIZE = 30
 MIN_SCORE_COVERAGE = 0.70
 
 DEFAULT_WEIGHTS: dict[str, int] = {
-    "return_1m": 1,
+    "decline_today": 4,
+    "decline_1d": 6,
+    "decline_1w": 6,
+    "decline_2w": 6,
+    "decline_3w": 6,
+    "decline_4w": 5,
     "return_3m": 3,
-    "return_6m": 5,
-    "return_1y": 7,
-    "return_2y": 5,
+    "return_6m": 4,
+    "return_1y": 5,
+    "return_2y": 4,
     "return_3y": 4,
-    "volatility_1y": 5,
-    "volatility_3y": 10,
-    "sharpe_1y": 10,
-    "sharpe_3y": 15,
-    "drawdown_1y": 8,
-    "drawdown_3y": 12,
-    "rating_zhaoshang": 2,
-    "rating_shanghai_3y": 2,
-    "rating_shanghai_5y": 1,
-    "rating_jian": 2,
-    "rating_morningstar": 3,
-    "scale": 5,
+    "volatility_1y": 4,
+    "volatility_3y": 5,
+    "sharpe_1y": 5,
+    "sharpe_3y": 5,
+    "drawdown_1y": 4,
+    "drawdown_3y": 4,
+    "rating_zhaoshang": 3,
+    "rating_shanghai_3y": 4,
+    "rating_shanghai_5y": 3,
+    "rating_jian": 3,
+    "rating_morningstar": 4,
+    "scale": 3,
 }
 
 FACTOR_LABELS: dict[str, str] = {
-    "return_1m": "近1月收益",
+    "decline_today": "当日预估跌幅",
+    "decline_1d": "昨日跌幅",
+    "decline_1w": "近1周跌幅",
+    "decline_2w": "近2周跌幅",
+    "decline_3w": "近3周跌幅",
+    "decline_4w": "近4周跌幅",
     "return_3m": "近3月收益",
     "return_6m": "近6月收益",
     "return_1y": "近1年收益",
@@ -62,6 +72,12 @@ FACTOR_LABELS: dict[str, str] = {
 }
 
 INVERSE_FACTORS = {
+    "decline_today",
+    "decline_1d",
+    "decline_1w",
+    "decline_2w",
+    "decline_3w",
+    "decline_4w",
     "volatility_1y",
     "volatility_3y",
     "drawdown_1y",
@@ -69,9 +85,13 @@ INVERSE_FACTORS = {
 }
 
 BLOCKS: dict[str, tuple[list[str], tuple[int, int]]] = {
+    "recentDecline": (
+        ["decline_today", "decline_1d", "decline_1w", "decline_2w", "decline_3w", "decline_4w"],
+        (15, 45),
+    ),
     "returns": (
-        ["return_1m", "return_3m", "return_6m", "return_1y", "return_2y", "return_3y"],
-        (10, 40),
+        ["return_3m", "return_6m", "return_1y", "return_2y", "return_3y"],
+        (5, 30),
     ),
     "volatility": (["volatility_1y", "volatility_3y"], (10, 30)),
     "sharpe": (["sharpe_1y", "sharpe_3y"], (15, 35)),
@@ -208,7 +228,6 @@ def calculate_nav_factors(points: list[NavPoint], end_index: int | None = None) 
     end = points[index]
     factors: dict[str, float | None] = {}
     periods = {
-        "return_1m": 30,
         "return_3m": 91,
         "return_6m": 182,
         "return_1y": 365,
@@ -216,6 +235,19 @@ def calculate_nav_factors(points: list[NavPoint], end_index: int | None = None) 
         "return_3y": 1095,
     }
     for key, days in periods.items():
+        start_index = _target_index(points, end.nav_date - timedelta(days=days), index)
+        factors[key] = None if start_index is None else _return_between(points[start_index], end)
+    short_windows = {
+        "decline_1d": 1,
+        "decline_1w": 7,
+        "decline_2w": 14,
+        "decline_3w": 21,
+        "decline_4w": 28,
+    }
+    for key, days in short_windows.items():
+        if key == "decline_1d":
+            factors[key] = None if index < 1 else _return_between(points[index - 1], points[index])
+            continue
         start_index = _target_index(points, end.nav_date - timedelta(days=days), index)
         factors[key] = None if start_index is None else _return_between(points[start_index], end)
     for suffix, days in (("1y", 365), ("3y", 1095)):
@@ -376,6 +408,89 @@ def _load_nav_factors(connection, as_of: date) -> dict[str, dict[str, float | No
     return factors
 
 
+def _estimate_change_from_holdings(
+    components: Iterable[tuple[float | None, float | None]],
+) -> float | None:
+    """当日预估涨跌幅 = Σ(持仓权重 × 个股涨跌幅) / 100，仅统计有行情的持仓。"""
+    quoted_weight = 0.0
+    weighted_change = 0.0
+    for weight, change in components:
+        if weight is None or change is None:
+            continue
+        quoted_weight += weight
+        weighted_change += weight * change
+    return round(weighted_change / 100.0, 6) if quoted_weight > 0 else None
+
+
+def _load_valuation_estimates(
+    connection,
+    as_of: date,
+    latest_all: bool = False,
+) -> dict[str, float]:
+    """按与 FundValuationService 一致的口径计算当日预估涨跌幅因子。
+
+    latest_all=True 用于当前快照：取全局最新行情交易日做估值日；
+    历史快照传 False：只使用不晚于 as_of 的行情数据，避免未来信息。
+    """
+    cursor = connection.cursor(SSDictCursor)
+    try:
+        if latest_all:
+            cursor.execute("SELECT MAX(trade_date) AS max_date FROM stock_daily_history")
+        else:
+            cursor.execute(
+                "SELECT MAX(trade_date) AS max_date FROM stock_daily_history WHERE trade_date <= %s",
+                (compact_date(as_of),),
+            )
+        row = cursor.fetchone()
+        if not row or not row["max_date"]:
+            return {}
+        valuation_date = str(row["max_date"])
+        cursor.execute(
+            "SELECT stock_code, change_rate FROM stock_daily_history WHERE trade_date = %s",
+            (valuation_date,),
+        )
+        prices = {str(item["stock_code"]): parse_number(item["change_rate"]) for item in cursor.fetchall()}
+        cursor.execute(
+            """
+            SELECT holding.fund_code, holding.stock_code, holding.net_value_ratio
+            FROM fund_stock_holding holding
+            JOIN (
+              SELECT fund_code, MAX(cutoff_date) AS cutoff_date
+              FROM fund_stock_holding
+              WHERE cutoff_date <= %s
+              GROUP BY fund_code
+            ) latest_cutoff
+              ON latest_cutoff.fund_code = holding.fund_code
+             AND latest_cutoff.cutoff_date = holding.cutoff_date
+            JOIN (
+              SELECT fund_code, cutoff_date, MAX(report_date) AS report_date
+              FROM fund_stock_holding
+              WHERE cutoff_date <= %s
+              GROUP BY fund_code, cutoff_date
+            ) latest_report
+              ON latest_report.fund_code = holding.fund_code
+             AND latest_report.cutoff_date = holding.cutoff_date
+             AND latest_report.report_date = holding.report_date
+            """,
+            (compact_date(as_of), compact_date(as_of)),
+        )
+        grouped: dict[str, list[tuple[float | None, float | None]]] = defaultdict(list)
+        for holding in cursor.fetchall():
+            grouped[str(holding["fund_code"])].append(
+                (
+                    parse_number(holding["net_value_ratio"]),
+                    prices.get(str(holding["stock_code"])),
+                )
+            )
+        return {
+            fund_code: estimate
+            for fund_code, components in grouped.items()
+            if (estimate := _estimate_change_from_holdings(components)) is not None
+        }
+    finally:
+        cursor.close()
+
+
 def _latest_rows_as_of(
     connection,
     table: str,
@@ -504,6 +619,7 @@ def build_historical_factor_snapshot(
             )
             profiles = {str(row["fund_code"]): row for row in cursor.fetchall()}
         nav_factors = _load_nav_factors(connection, as_of)
+        valuation_estimates = _load_valuation_estimates(connection, as_of)
         ratings = _latest_rows_as_of(connection, "fund_rating", "rating_date", as_of_text)
         scales = _latest_rows_as_of(connection, "fund_scale_history", "scale_date", as_of_text)
         forward_returns = _load_forward_returns(connection, as_of)
@@ -517,6 +633,7 @@ def build_historical_factor_snapshot(
             scale = scales.get(fund_code, {})
             factors.update(
                 {
+                    "decline_today": valuation_estimates.get(fund_code),
                     "rating_zhaoshang": parse_number(rating.get("zhaoshang_rating")),
                     "rating_shanghai_3y": parse_number(rating.get("shanghai_rating_3y")),
                     "rating_shanghai_5y": parse_number(rating.get("shanghai_rating_5y")),
@@ -703,6 +820,7 @@ def build_current_factor_snapshot(db_config: DatabaseConfig | None = None) -> tu
 
         as_of = parse_compact_date(as_of_text)
         nav_factors = _load_nav_factors(connection, as_of)
+        valuation_estimates = _load_valuation_estimates(connection, as_of, latest_all=True)
         performances = _latest_rows(connection, "fund_performance_history", "nav_date")
         ratings = _latest_rows(connection, "fund_rating", "rating_date")
         features = _latest_features(connection)
@@ -712,7 +830,6 @@ def build_current_factor_snapshot(db_config: DatabaseConfig | None = None) -> tu
             factors = dict(nav_factors.get(fund_code, {}))
             performance = performances.get(fund_code, {})
             fallbacks = {
-                "return_1m": "monthly_return_rate",
                 "return_3m": "three_month_return_rate",
                 "return_6m": "six_month_return_rate",
                 "return_1y": "one_year_return_rate",
@@ -732,6 +849,7 @@ def build_current_factor_snapshot(db_config: DatabaseConfig | None = None) -> tu
             rating = ratings.get(fund_code, {})
             factors.update(
                 {
+                    "decline_today": valuation_estimates.get(fund_code),
                     "rating_zhaoshang": parse_number(rating.get("zhaoshang_rating")),
                     "rating_shanghai_3y": parse_number(rating.get("shanghai_rating_3y")),
                     "rating_shanghai_5y": parse_number(rating.get("shanghai_rating_5y")),

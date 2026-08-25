@@ -186,12 +186,14 @@ The 0–100 score compares a fund only with funds in the same detailed type
 (groups with fewer than 30 funds fall back to the parent type). The default
 weights total 100:
 
-- returns 25%;
-- standard deviation 15%;
-- Sharpe ratio 25%;
-- maximum drawdown 20%;
-- agency ratings 10%;
-- fund scale 5%.
+- recent decline (same-day estimate via holdings + today's quotes,
+  yesterday/weekly net-value windows) 33%;
+- returns 20%;
+- standard deviation 9%;
+- Sharpe ratio 10%;
+- maximum drawdown 8%;
+- agency ratings 17%;
+- fund scale 3%.
 
 Apply the scoring schema once on an existing database, then calculate current
 scores:
