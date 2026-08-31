@@ -79,6 +79,7 @@ export type FundScoreSummary = {
   profileVersion: number;
   validationStatus: 'UNVERIFIED' | 'PASSED' | 'FAILED';
   asOfDate: string;
+  updatedAt?: string;
   totalScore?: number;
   profitProbability?: number;
   confidence: 'HIGH' | 'MEDIUM' | 'LOW' | 'INSUFFICIENT';

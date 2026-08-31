@@ -262,6 +262,7 @@ public class FundScoreServiceImpl implements IFundScoreService {
         value.setProfileVersion(rs.getInt("version_no"));
         value.setValidationStatus(rs.getString("validation_status"));
         value.setAsOfDate(rs.getString("as_of_date"));
+        value.setUpdatedAt(toLocalDateTime(rs.getTimestamp("updated_at")));
         value.setTotalScore(rs.getBigDecimal("total_score"));
         value.setProfitProbability(rs.getBigDecimal("profit_probability"));
         value.setConfidence(rs.getString("confidence"));

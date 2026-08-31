@@ -282,10 +282,12 @@ approvedAt, createdAt, updatedAt
 
 ```text
 profileId, profileName, profileVersion, validationStatus,
-asOfDate, totalScore, profitProbability, confidence,
+asOfDate, updatedAt, totalScore, profitProbability, confidence,
 dataCoverage, comparisonGroup, categoryRank, categoryCount,
 methodologyVersion
 ```
+
+`updatedAt` 为该评分记录的最近计算时间（`fund_score_result.updated_at`），用于前端展示"评分更新时间"。
 
 `FundScoreDetail` 包含 `summary`、`components` 和 `disclaimer`。每个 component：`factorKey/label/rawValue/normalizedScore/weight/effectiveWeight/contribution`。
 

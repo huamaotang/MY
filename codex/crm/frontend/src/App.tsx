@@ -1297,9 +1297,11 @@ function FundList({ favoritesOnly = false }: { favoritesOnly?: boolean }) {
       defaultSortOrder: favoritesOnly ? undefined : 'descend',
       render: (_, row) => row.latestScore?.totalScore == null
         ? <Tag>数据不足</Tag>
-        : <Tag color={row.latestScore.totalScore >= 80 ? 'green' : row.latestScore.totalScore >= 60 ? 'blue' : 'orange'}>
-            {row.latestScore.totalScore.toFixed(1)}
-          </Tag>
+        : <Tooltip title={`评分日期 ${row.latestScore.asOfDate}${row.latestScore.updatedAt ? ` · 更新于 ${row.latestScore.updatedAt}` : ''}`}>
+            <Tag color={row.latestScore.totalScore >= 80 ? 'green' : row.latestScore.totalScore >= 60 ? 'blue' : 'orange'}>
+              {row.latestScore.totalScore.toFixed(1)}
+            </Tag>
+          </Tooltip>
     },
     {
       title: '未来1年盈利概率',
@@ -1997,6 +1999,7 @@ function FundDetailDrawer({ fundCode, open, onClose }: { fundCode: string | null
                   </Descriptions.Item>
                   <Descriptions.Item label="数据覆盖率">{formatProbability(detail.scoreDetail.summary.dataCoverage)}</Descriptions.Item>
                   <Descriptions.Item label="评分日期">{detail.scoreDetail.summary.asOfDate}</Descriptions.Item>
+                  <Descriptions.Item label="评分更新时间">{detail.scoreDetail.summary.updatedAt ?? '-'}</Descriptions.Item>
                 </Descriptions>
                 <Alert
                   type="warning"

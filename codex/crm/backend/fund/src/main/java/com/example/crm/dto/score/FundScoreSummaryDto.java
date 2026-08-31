@@ -3,6 +3,7 @@ package com.example.crm.dto.score;
 import lombok.Data;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Data
 public class FundScoreSummaryDto {
@@ -11,6 +12,7 @@ public class FundScoreSummaryDto {
     private Integer profileVersion;
     private String validationStatus;
     private String asOfDate;
+    private LocalDateTime updatedAt;
     private BigDecimal totalScore;
     private BigDecimal profitProbability;
     private String confidence;
