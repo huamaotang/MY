@@ -16,11 +16,13 @@ public class ChatController {
 
     @PostMapping("/generate")
     public ResponseEntity<ChatResponse> generate(@RequestBody ChatRequest request) {
-        return ResponseEntity.ok(ollamaService.generate(request));
+        String result = ollamaService.chat(request.getMessage());
+        return ResponseEntity.ok(new ChatResponse(result, request.getModel()));
     }
 
-    @PostMapping("/stream")
-    public ResponseEntity<ChatResponse> stream(@RequestBody ChatRequest request) {
-        return ResponseEntity.ok(ollamaService.generate(request));
+    @PostMapping("/tool-call")
+    public ResponseEntity<ChatResponse> toolCall(@RequestBody ChatRequest request) {
+        String result = ollamaService.chat(request.getMessage());
+        return ResponseEntity.ok(new ChatResponse(result, request.getModel()));
     }
 }

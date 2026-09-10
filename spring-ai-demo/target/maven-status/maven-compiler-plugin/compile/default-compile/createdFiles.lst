@@ -1,0 +1,8 @@
+com/example/ai/dto/ChatRequest.class
+com/example/ai/controller/ChatController.class
+com/example/ai/dto/ChatRequest$ChatRequestBuilder.class
+com/example/ai/service/OllamaService.class
+com/example/ai/dto/ChatResponse$ChatResponseBuilder.class
+com/example/ai/dto/ChatResponse.class
+com/example/ai/config/OllamaConfig.class
+com/example/ai/AiApplication.class
