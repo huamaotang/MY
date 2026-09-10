@@ -9,6 +9,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from scoring import (  # noqa: E402
     DEFAULT_WEIGHTS,
+    BOND_WEIGHTS,
+    _profile_matches_fund_type,
     NavPoint,
     _walk_forward_predictions,
     calculate_nav_factors,
@@ -129,6 +131,44 @@ class ScoringCalculatorTest(unittest.TestCase):
                 f"{fold['testStart'][:4]}-{fold['testStart'][4:6]}-{fold['testStart'][6:]}"
             )
             self.assertGreaterEqual((test_start - train_end).days, 365)
+
+    def test_bond_weights_have_decline_today_zero(self) -> None:
+        self.assertEqual(0, BOND_WEIGHTS["decline_today"])
+        self.assertEqual(100, sum(BOND_WEIGHTS.values()))
+        self.assertEqual(len(DEFAULT_WEIGHTS), len(BOND_WEIGHTS))
+
+    def test_bond_weights_total_100(self) -> None:
+        self.assertEqual(100, sum(BOND_WEIGHTS.values()))
+
+    def test_bond_weights_exclude_decline_today_effect(self) -> None:
+        normalized = {key: 80.0 for key in BOND_WEIGHTS}
+        raw = {key: 1.0 for key in BOND_WEIGHTS}
+        score_bond, coverage_bond, components_bond = score_factors(normalized, raw, BOND_WEIGHTS)
+        self.assertIsNotNone(score_bond)
+        self.assertEqual(1.0, coverage_bond)
+
+        normalized_stock = {key: 80.0 for key in DEFAULT_WEIGHTS}
+        raw_stock = {key: 1.0 for key in DEFAULT_WEIGHTS}
+        score_stock, coverage_stock, _ = score_factors(normalized_stock, raw_stock, DEFAULT_WEIGHTS)
+        self.assertIsNotNone(score_stock)
+        self.assertAlmostEqual(score_bond, score_stock, places=2)
+
+    def test_profile_matches_fund_type(self) -> None:
+        stock_profile = {"profile_name": "股票类配置", "fund_type_scope": "*"}
+        bond_profile = {"profile_name": "债类配置", "fund_type_scope": "债券型,货币型"}
+        self.assertTrue(_profile_matches_fund_type(stock_profile, "股票型"))
+        self.assertTrue(_profile_matches_fund_type(stock_profile, "债券型"))
+        self.assertTrue(_profile_matches_fund_type(bond_profile, "债券型"))
+        self.assertTrue(_profile_matches_fund_type(bond_profile, "货币型"))
+        self.assertFalse(_profile_matches_fund_type(bond_profile, "股票型"))
+        self.assertFalse(_profile_matches_fund_type(bond_profile, "混合型"))
+
+    def test_validate_weights_accepts_bond_weights(self) -> None:
+        self.assertEqual(BOND_WEIGHTS, validate_weights(BOND_WEIGHTS))
+        with self.assertRaises(ValueError):
+            invalid = dict(BOND_WEIGHTS)
+            del invalid["decline_today"]
+            validate_weights(invalid)
 
 
 if __name__ == "__main__":

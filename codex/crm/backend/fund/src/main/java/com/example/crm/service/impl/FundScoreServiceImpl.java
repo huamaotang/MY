@@ -32,8 +32,15 @@ import java.util.Set;
 
 @Service
 public class FundScoreServiceImpl implements IFundScoreService {
-    private static final Set<String> FACTOR_KEYS = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
+    private static final Set<String> STOCK_FACTOR_KEYS = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
             "decline_today", "decline_1d", "decline_1w", "decline_2w", "decline_3w", "decline_4w",
+            "return_3m", "return_6m", "return_1y", "return_2y", "return_3y",
+            "volatility_1y", "volatility_3y", "sharpe_1y", "sharpe_3y",
+            "drawdown_1y", "drawdown_3y", "rating_zhaoshang", "rating_shanghai_3y",
+            "rating_shanghai_5y", "rating_jian", "rating_morningstar", "scale"
+    )));
+    private static final Set<String> BOND_FACTOR_KEYS = Collections.unmodifiableSet(new LinkedHashSet<>(Arrays.asList(
+            "decline_1d", "decline_1w", "decline_2w", "decline_3w", "decline_4w",
             "return_3m", "return_6m", "return_1y", "return_2y", "return_3y",
             "volatility_1y", "volatility_3y", "sharpe_1y", "sharpe_3y",
             "drawdown_1y", "drawdown_3y", "rating_zhaoshang", "rating_shanghai_3y",
@@ -122,10 +129,11 @@ public class FundScoreServiceImpl implements IFundScoreService {
         );
         jdbcTemplate.update(
                 "INSERT INTO fund_score_profile " +
-                        "(profile_name,version_no,status,source_type,target_months,weights_json,validation_status,is_active,created_by) " +
+                        "(profile_name,version_no,status,source_type,target_months,fund_type_scope,weights_json,validation_status,is_active,created_by) " +
                         "VALUES (?,?, 'DRAFT','MANUAL',12,?,'UNVERIFIED',0,?)",
                 name,
                 version,
+                request.getFundTypeScope() != null ? request.getFundTypeScope() : "*",
                 writeJson(request.getWeights()),
                 username
         );
@@ -142,9 +150,10 @@ public class FundScoreServiceImpl implements IFundScoreService {
         }
         String name = validateProfile(request);
         jdbcTemplate.update(
-                "UPDATE fund_score_profile SET profile_name=?,weights_json=?,validation_status='UNVERIFIED'," +
+                "UPDATE fund_score_profile SET profile_name=?,fund_type_scope=?,weights_json=?,validation_status='UNVERIFIED'," +
                         "calibration_json=NULL,status='DRAFT' WHERE id=?",
                 name,
+                request.getFundTypeScope() != null ? request.getFundTypeScope() : "*",
                 writeJson(request.getWeights()),
                 id
         );
@@ -227,7 +236,13 @@ public class FundScoreServiceImpl implements IFundScoreService {
         if (request == null || request.getProfileName() == null || request.getProfileName().trim().isEmpty()) {
             throw new BusinessException("方案名称不能为空");
         }
-        if (request.getWeights() == null || !FACTOR_KEYS.equals(request.getWeights().keySet())) {
+        Set<String> requiredKeys;
+        if (request.getFundTypeScope() != null && request.getFundTypeScope().contains("债券型")) {
+            requiredKeys = BOND_FACTOR_KEYS;
+        } else {
+            requiredKeys = STOCK_FACTOR_KEYS;
+        }
+        if (request.getWeights() == null || !requiredKeys.equals(request.getWeights().keySet())) {
             throw new BusinessException("评分因子不完整或包含未知因子");
         }
         int total = 0;
@@ -282,6 +297,7 @@ public class FundScoreServiceImpl implements IFundScoreService {
         value.setStatus(rs.getString("status"));
         value.setSourceType(rs.getString("source_type"));
         value.setTargetMonths(rs.getInt("target_months"));
+        value.setFundTypeScope(rs.getString("fund_type_scope"));
         value.setWeights(readWeights(rs.getString("weights_json")));
         value.setValidationStatus(rs.getString("validation_status"));
         value.setActive(rs.getBoolean("is_active"));

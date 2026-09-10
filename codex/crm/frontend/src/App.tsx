@@ -122,7 +122,7 @@ type FundFavoriteChangedDetail = {
   favorite: boolean;
 };
 
-const DEFAULT_PAGE_SIZE = 10;
+const DEFAULT_PAGE_SIZE = 20;
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 const CHART_NAV_SIZE = 1000;
 const WORKSPACE_STORAGE_KEY = 'crm_workspace_tabs';
@@ -155,6 +155,31 @@ const TREND_PERIOD_OPTIONS: { label: string; value: TrendPeriod }[] = [
 
 const SCORE_FACTORS = [
   { key: 'decline_today', label: '当日预估跌幅', block: '近期跌幅' },
+  { key: 'decline_1d', label: '昨日跌幅', block: '近期跌幅' },
+  { key: 'decline_1w', label: '近1周跌幅', block: '近期跌幅' },
+  { key: 'decline_2w', label: '近2周跌幅', block: '近期跌幅' },
+  { key: 'decline_3w', label: '近3周跌幅', block: '近期跌幅' },
+  { key: 'decline_4w', label: '近4周跌幅', block: '近期跌幅' },
+  { key: 'return_3m', label: '近3月收益', block: '历史收益' },
+  { key: 'return_6m', label: '近6月收益', block: '历史收益' },
+  { key: 'return_1y', label: '近1年收益', block: '历史收益' },
+  { key: 'return_2y', label: '近2年收益', block: '历史收益' },
+  { key: 'return_3y', label: '近3年收益', block: '历史收益' },
+  { key: 'volatility_1y', label: '近1年标准差', block: '标准差' },
+  { key: 'volatility_3y', label: '近3年标准差', block: '标准差' },
+  { key: 'sharpe_1y', label: '近1年夏普', block: '夏普比率' },
+  { key: 'sharpe_3y', label: '近3年夏普', block: '夏普比率' },
+  { key: 'drawdown_1y', label: '近1年最大回撤', block: '最大回撤' },
+  { key: 'drawdown_3y', label: '近3年最大回撤', block: '最大回撤' },
+  { key: 'rating_zhaoshang', label: '招商评级', block: '基金评级' },
+  { key: 'rating_shanghai_3y', label: '上海3年评级', block: '基金评级' },
+  { key: 'rating_shanghai_5y', label: '上海5年评级', block: '基金评级' },
+  { key: 'rating_jian', label: '济安评级', block: '基金评级' },
+  { key: 'rating_morningstar', label: '晨星评级', block: '基金评级' },
+  { key: 'scale', label: '基金规模', block: '基金规模' }
+] as const;
+
+const SCORE_FACTORS_BOND = [
   { key: 'decline_1d', label: '昨日跌幅', block: '近期跌幅' },
   { key: 'decline_1w', label: '近1周跌幅', block: '近期跌幅' },
   { key: 'decline_2w', label: '近2周跌幅', block: '近期跌幅' },
@@ -1347,16 +1372,19 @@ function FundList({ favoritesOnly = false }: { favoritesOnly?: boolean }) {
     ...performanceListColumns(),
     { title: '标准差（近3年）', key: 'standardDeviation', width: 140, render: (_, row) => threeYearFeatureValue(row.features, 'standardDeviation'), sorter: true },
     { title: '夏普比率（近3年）', key: 'sharpeRatio', width: 150, render: (_, row) => threeYearFeatureValue(row.features, 'sharpeRatio'), sorter: true },
-    {
-      title: '操作',
-      key: 'action',
-      width: 210,
-      fixed: 'right',
-      render: (_, record) => (
-        <Space>
-          <Button type="link" onClick={() => setDetailFundCode(record.fundCode)}>
-            详情
-          </Button>
+{
+        title: '操作',
+        key: 'action',
+        width: 250,
+        fixed: 'right',
+        render: (_, record) => (
+          <Space>
+            <a type="link" href={`https://fund.eastmoney.com/${record.fundCode}.html`} target="_blank" rel="noreferrer" style={{ marginRight: 8 }}>
+              <Typography.Text>天</Typography.Text>
+            </a>
+            <Button type="link" onClick={() => setDetailFundCode(record.fundCode)}>
+              详情
+            </Button>
           <Button
             type="link"
             onClick={() => {
@@ -1518,12 +1546,14 @@ function FundScoreConfigModal({
   const [jobs, setJobs] = useState<FundScoreJob[]>([]);
   const [editing, setEditing] = useState<FundScoreProfile | null | undefined>();
   const [backtest, setBacktest] = useState<FundScoreBacktest>();
-  const [form] = Form.useForm<{ profileName: string; weights: Record<string, number> }>();
+  const [form] = Form.useForm<{ profileName: string; fundTypeScope: string; weights: Record<string, number> }>();
+  const isBondProfile = editing?.fundTypeScope?.includes("债券型") ?? false;
+  const activeFactors = isBondProfile ? SCORE_FACTORS_BOND : SCORE_FACTORS;
   const watchedWeights = Form.useWatch('weights', form) || {};
-  const totalWeight = SCORE_FACTORS.reduce((sum, factor) => sum + Number(watchedWeights[factor.key] || 0), 0);
+  const totalWeight = activeFactors.reduce((sum, factor) => sum + Number(watchedWeights[factor.key] || 0), 0);
   const blockWeights = useMemo(() => {
     const values: Record<string, number> = {};
-    SCORE_FACTORS.forEach((factor) => {
+    activeFactors.forEach((factor) => {
       values[factor.block] = (values[factor.block] || 0) + Number(watchedWeights[factor.key] || 0);
     });
     return values;
@@ -1558,8 +1588,10 @@ function FundScoreConfigModal({
 
   const openEditor = (profile?: FundScoreProfile) => {
     setEditing(profile || null);
+    const scope = profile?.fundTypeScope || (profile?.weights && !profile.weights['decline_today'] ? "债券型,货币型" : "*");
     form.setFieldsValue({
       profileName: profile?.profileName || '自定义评分方案',
+      fundTypeScope: scope,
       weights: { ...(profile?.weights || profiles.find((item) => item.active)?.weights || {}) }
     });
   };
@@ -1573,6 +1605,9 @@ function FundScoreConfigModal({
           <span>{value} v{row.versionNo}</span>
           {row.active && <Tag color="green">当前启用</Tag>}
           {row.sourceType === 'BACKTEST' && <Tag color="blue">系统推荐</Tag>}
+          {row.fundTypeScope && row.fundTypeScope !== '*' && (
+            <Tag color="orange">{row.fundTypeScope}</Tag>
+          )}
         </Space>
       )
     },
@@ -1718,6 +1753,12 @@ function FundScoreConfigModal({
           <Form.Item name="profileName" label="方案名称" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
+          <Form.Item name="fundTypeScope" label="适用基金类型" rules={[{ required: true }]}>
+            <Select>
+              <Select.Option value="*">全部类型</Select.Option>
+              <Select.Option value="债券型,货币型">债类（债券型、货币型）</Select.Option>
+            </Select>
+          </Form.Item>
           <div className="score-weight-summary">
             <Progress
               type="circle"
@@ -1733,7 +1774,7 @@ function FundScoreConfigModal({
             </Space>
           </div>
           <div className="score-weight-grid">
-            {SCORE_FACTORS.map((factor) => (
+            {activeFactors.map((factor) => (
               <Form.Item
                 key={factor.key}
                 name={['weights', factor.key]}

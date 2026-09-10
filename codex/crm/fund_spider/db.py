@@ -1445,7 +1445,7 @@ def _ensure_default_score_profile(cursor: Any) -> None:
     row = cursor.fetchone()
     if row and int(row["count_value"]) > 0:
         return
-    weights = (
+    stock_weights = (
         '{"decline_today":4,"decline_1d":6,"decline_1w":6,"decline_2w":6,'
         '"decline_3w":6,"decline_4w":5,'
         '"return_3m":3,"return_6m":4,'
@@ -1457,15 +1457,37 @@ def _ensure_default_score_profile(cursor: Any) -> None:
         '"rating_shanghai_5y":3,"rating_jian":3,'
         '"rating_morningstar":4,"scale":3}'
     )
+    bond_weights = (
+        '{"decline_today":0,"decline_1d":6,"decline_1w":6,"decline_2w":6,'
+        '"decline_3w":6,"decline_4w":5,'
+        '"return_3m":4,"return_6m":5,"return_1y":6,'
+        '"return_2y":5,"return_3y":4,'
+        '"volatility_1y":4,"volatility_3y":5,'
+        '"sharpe_1y":5,"sharpe_3y":5,'
+        '"drawdown_1y":4,"drawdown_3y":4,'
+        '"rating_zhaoshang":3,"rating_shanghai_3y":4,'
+        '"rating_shanghai_5y":3,"rating_jian":3,'
+        '"rating_morningstar":4,"scale":3}'
+    )
     cursor.execute(
         """
         INSERT INTO fund_score_profile (
-          profile_name, version_no, status, source_type, target_months,
+          profile_name, version_no, status, source_type, target_months, fund_type_scope,
           weights_json, validation_status, is_active, created_by
         )
-        VALUES ('保守初始权重', 1, 'ACTIVE', 'SEED', 12, %s, 'UNVERIFIED', 1, 'system')
+        VALUES ('股票类配置', 1, 'ACTIVE', 'SEED', 12, '*', %s, 'UNVERIFIED', 1, 'system')
         """,
-        (weights,),
+        (stock_weights,),
+    )
+    cursor.execute(
+        """
+        INSERT INTO fund_score_profile (
+          profile_name, version_no, status, source_type, target_months, fund_type_scope,
+          weights_json, validation_status, is_active, created_by
+        )
+        VALUES ('债类配置', 1, 'ACTIVE', 'SEED', 12, '债券型,货币型', %s, 'UNVERIFIED', 1, 'system')
+        """,
+        (bond_weights,),
     )
 
 

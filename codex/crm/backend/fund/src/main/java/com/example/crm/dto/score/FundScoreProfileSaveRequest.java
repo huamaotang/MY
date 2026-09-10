@@ -8,4 +8,5 @@ import java.util.Map;
 public class FundScoreProfileSaveRequest {
     private String profileName;
     private Map<String, Integer> weights;
+    private String fundTypeScope;
 }

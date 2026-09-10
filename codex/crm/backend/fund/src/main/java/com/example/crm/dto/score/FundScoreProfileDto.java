@@ -21,4 +21,5 @@ public class FundScoreProfileDto {
     private LocalDateTime approvedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private String fundTypeScope;
 }

@@ -113,6 +113,7 @@ export type FundScoreProfile = {
   status: string;
   sourceType: string;
   targetMonths: number;
+  fundTypeScope?: string;
   weights: Record<string, number>;
   validationStatus: string;
   active: boolean;
@@ -601,11 +602,11 @@ export function listFundScoreProfiles() {
   return request<FundScoreProfile[]>('/funds/scoring/profiles');
 }
 
-export function saveFundScoreProfile(profile: { id?: number; profileName: string; weights: Record<string, number> }) {
+export function saveFundScoreProfile(profile: { id?: number; profileName: string; fundTypeScope?: string; weights: Record<string, number> }) {
   const path = profile.id ? `/funds/scoring/profiles/${profile.id}` : '/funds/scoring/profiles';
   return request<FundScoreProfile>(path, {
     method: profile.id ? 'PUT' : 'POST',
-    body: JSON.stringify({ profileName: profile.profileName, weights: profile.weights })
+    body: JSON.stringify({ profileName: profile.profileName, fundTypeScope: profile.fundTypeScope, weights: profile.weights })
   });
 }
 

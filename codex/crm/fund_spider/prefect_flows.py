@@ -21,6 +21,11 @@ REALTIME_FLOW_NAMES: tuple[str, ...] = (
     "stock-hk-refresh",
 )
 DEFAULT_STALE_RUN_MINUTES = 30
+STALE_LATENESS_SECONDS = {
+    "sina-news-refresh": 300,
+    "stock-cn-refresh": 3600,
+    "stock-hk-refresh": 3600,
+}
 
 
 @task(
@@ -69,7 +74,7 @@ def sina_news_flow(dry_run: bool = False) -> None:
 @flow(name="stock-cn-refresh", log_prints=True)
 def stock_cn_flow(dry_run: bool = False) -> None:
     """Refresh mainland China stock quotes."""
-    if scheduled_run_is_stale(max_lateness_seconds=600):
+    if scheduled_run_is_stale(max_lateness_seconds=STALE_LATENESS_SECONDS["stock-cn-refresh"]):
         get_run_logger().warning("Skipping stale mainland stock run")
         return
     run_business_job("stock-cn", dry_run=dry_run)
@@ -78,7 +83,7 @@ def stock_cn_flow(dry_run: bool = False) -> None:
 @flow(name="stock-hk-refresh", log_prints=True)
 def stock_hk_flow(dry_run: bool = False) -> None:
     """Refresh Hong Kong stock quotes."""
-    if scheduled_run_is_stale(max_lateness_seconds=600):
+    if scheduled_run_is_stale(max_lateness_seconds=STALE_LATENESS_SECONDS["stock-hk-refresh"]):
         get_run_logger().warning("Skipping stale Hong Kong stock run")
         return
     run_business_job("stock-hk", dry_run=dry_run)

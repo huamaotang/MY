@@ -45,6 +45,42 @@ DEFAULT_WEIGHTS: dict[str, int] = {
     "scale": 3,
 }
 
+BOND_WEIGHTS: dict[str, int] = {
+    "decline_today": 0,
+    "decline_1d": 6,
+    "decline_1w": 6,
+    "decline_2w": 6,
+    "decline_3w": 6,
+    "decline_4w": 5,
+    "return_3m": 4,
+    "return_6m": 5,
+    "return_1y": 6,
+    "return_2y": 5,
+    "return_3y": 4,
+    "volatility_1y": 4,
+    "volatility_3y": 5,
+    "sharpe_1y": 5,
+    "sharpe_3y": 5,
+    "drawdown_1y": 4,
+    "drawdown_3y": 4,
+    "rating_zhaoshang": 3,
+    "rating_shanghai_3y": 4,
+    "rating_shanghai_5y": 3,
+    "rating_jian": 3,
+    "rating_morningstar": 4,
+    "scale": 3,
+}
+
+STOCK_WEIGHTS = DEFAULT_WEIGHTS
+
+FUND_TYPE_SCOPE: dict[str, str] = {
+    "债类配置": "债券型,货币型",
+    "股票类配置": "*",
+}
+
+BOND_FACTOR_KEYS = frozenset(k for k in DEFAULT_WEIGHTS if k != "decline_today")
+STOCK_FACTOR_KEYS = frozenset(DEFAULT_WEIGHTS.keys())
+
 FACTOR_LABELS: dict[str, str] = {
     "decline_today": "当日预估跌幅",
     "decline_1d": "昨日跌幅",
@@ -283,9 +319,10 @@ def percentile_scores(rows: list[dict[str, Any]], factor: str) -> dict[str, floa
 
 
 def validate_weights(weights: dict[str, Any]) -> dict[str, int]:
-    if set(weights) != set(DEFAULT_WEIGHTS):
-        missing = sorted(set(DEFAULT_WEIGHTS) - set(weights))
-        extra = sorted(set(weights) - set(DEFAULT_WEIGHTS))
+    valid_keys = set(DEFAULT_WEIGHTS) | BOND_FACTOR_KEYS
+    if set(weights) != valid_keys and set(weights) != set(DEFAULT_WEIGHTS):
+        missing = sorted(valid_keys - set(weights))
+        extra = sorted(set(weights) - valid_keys)
         raise ValueError(f"invalid factor keys, missing={missing}, extra={extra}")
     normalized: dict[str, int] = {}
     for key, value in weights.items():
@@ -946,6 +983,20 @@ def _load_profiles(connection, profile_id: int | None = None) -> list[dict[str, 
         return list(cursor.fetchall())
 
 
+def _profile_matches_fund_type(profile: dict[str, Any], comparison_group: str) -> bool:
+    scope = profile.get("fund_type_scope", "*")
+    if scope == "*" or not scope:
+        return True
+    return comparison_group in [s.strip() for s in scope.split(",")]
+
+
+def _get_profile_weights(profile: dict[str, Any]) -> dict[str, int]:
+    profile_name = profile.get("profile_name", "")
+    weights_json = profile["weights_json"]
+    weights = validate_weights(json.loads(weights_json))
+    return weights
+
+
 def _calibrated_probability(calibration: Any, score: float) -> float | None:
     if not calibration:
         return None
@@ -987,6 +1038,9 @@ def calculate_current_scores(
             weights = validate_weights(json.loads(profile["weights_json"]))
             results: list[dict[str, Any]] = []
             for snapshot in snapshots:
+                comparison_group = str(snapshot["comparison_group"])
+                if not _profile_matches_fund_type(profile, comparison_group):
+                    continue
                 raw = json.loads(snapshot["factors_json"])
                 normalized = json.loads(snapshot["normalized_json"] or "{}")
                 total_score, coverage, components = score_factors(normalized, raw, weights)
@@ -1001,7 +1055,7 @@ def calculate_current_scores(
                 results.append(
                     {
                         "fund_code": str(snapshot["fund_code"]),
-                        "group": snapshot["comparison_group"],
+                        "group": comparison_group,
                         "score": total_score,
                         "probability": probability,
                         "coverage": coverage,

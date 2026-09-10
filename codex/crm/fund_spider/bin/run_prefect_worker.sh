@@ -11,6 +11,18 @@ if [[ ! -x "${prefect_executable}" ]]; then
   exit 1
 fi
 
+if [[ -f "${project_dir}/.env" ]]; then
+  "${project_dir}/.venv/bin/python" -c "
+import os
+with open('${project_dir}/.env') as f:
+    for line in f:
+        line = line.strip()
+        if line and '=' in line and not line.startswith('#'):
+            key, value = line.split('=', 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('\"').strip(\"'\"))
+"
+fi
+
 export CRM_FUND_SPIDER_DIR="${CRM_FUND_SPIDER_DIR:-${project_dir}}"
 export CRM_LOG_ROOT="${CRM_LOG_ROOT:-${repository_dir}/logs}"
 export PREFECT_HOME="${PREFECT_HOME:-${project_dir}/.prefect}"
