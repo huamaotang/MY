@@ -7,6 +7,7 @@ import random
 import time
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -33,6 +34,15 @@ MARKET_FILTERS = {
 FIELDS = "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13,f14,f15,f16,f17,f18,f20,f21,f22,f23,f24,f25,f26,f62,f115,f124,f128,f136,f152"
 MAX_PAGE_SIZE = 100
 STABLE_SORT_FIELD = "f12"
+SINA_CN_STOCK_URL = (
+    "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php"
+    "/Market_Center.getHQNodeData"
+)
+SINA_HK_STOCK_URL = (
+    "https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php"
+    "/Market_Center.getHKStockData"
+)
+SINA_MAX_PAGES = 300
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 
 
@@ -121,7 +131,18 @@ class EastMoneyStockSpider:
                         market,
                         exc,
                     )
-        raise RuntimeError(f"failed to fetch complete {market} stock market") from last_error
+        logger.warning(
+            "%s EastMoney stock crawl failed; falling back to Sina market data: %s",
+            market,
+            last_error,
+        )
+        try:
+            return SinaStockSpider(self.config).fetch_all(
+                page_size=effective_page_size,
+                market=market,
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(f"failed to fetch complete {market} stock market") from exc
 
     def _fetch_market(
         self,
@@ -237,6 +258,220 @@ class EastMoneyStockSpider:
         return random.uniform(minimum, maximum)
 
 
+class SinaStockSpider:
+    def __init__(self, config: RequestConfig) -> None:
+        self.config = config
+        self.session = requests.Session()
+        self.session.trust_env = False
+        self.session.headers.update(
+            {
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/126.0.0.0 Safari/537.36"
+                ),
+                "Accept": "application/json,text/plain,*/*",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "Connection": "close",
+                "Referer": "https://vip.stock.finance.sina.com.cn/mkt/",
+            }
+        )
+
+    def fetch_all(self, page_size: int = MAX_PAGE_SIZE, market: str = "cn") -> list[StockQuote]:
+        market = market.strip().lower()
+        if market not in {"cn", "hk"}:
+            raise ValueError(f"unsupported Sina stock market: {market}")
+
+        effective_page_size = min(max(1, int(page_size)), MAX_PAGE_SIZE)
+        market_page_size = min(effective_page_size, 60) if market == "hk" else effective_page_size
+        unique: dict[str, StockQuote] = {}
+        page = 1
+        while page <= SINA_MAX_PAGES:
+            values = self._fetch_page(page, market_page_size, market)
+            if not values:
+                if page == 1:
+                    raise RuntimeError("Sina stock response did not contain any quotes")
+                break
+            for row in parse_sina_stock_quotes(values, market):
+                unique[row.stock_code] = row
+            logger.info(
+                "sina %s stock page fetched, page=%s rows=%s unique=%s",
+                market,
+                page,
+                len(values),
+                len(unique),
+            )
+            if len(values) < market_page_size:
+                break
+            page += 1
+            self._polite_delay()
+
+        if not unique:
+            raise RuntimeError("Sina stock response did not contain any quotes")
+        return sorted(unique.values(), key=lambda row: row.stock_code)
+
+    def _fetch_page(self, page: int, page_size: int, market: str) -> list[Any]:
+        if market == "hk":
+            url = SINA_HK_STOCK_URL
+            params = {
+                "page": page,
+                "num": page_size,
+                "sort": "symbol",
+                "asc": 1,
+                "node": "qbgg_hk",
+                "_s_r_a": "page",
+            }
+        else:
+            url = SINA_CN_STOCK_URL
+            params = {
+                "page": page,
+                "num": page_size,
+                "sort": "symbol",
+                "asc": 1,
+                "node": "hs_a",
+                "symbol": "",
+                "_s_r_a": "page",
+            }
+        attempts = max(1, self.config.max_retries + 1)
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                response = self.session.get(url, params=params, timeout=self.config.timeout_seconds)
+                response.raise_for_status()
+                payload = response.json()
+                if not isinstance(payload, list):
+                    raise RuntimeError("Sina stock API returned a non-array payload")
+                return payload
+            except Exception as exc:
+                last_error = exc
+                logger.warning(
+                    "sina stock page request failed, market=%s page=%s attempt=%s/%s: %s",
+                    market,
+                    page,
+                    attempt,
+                    attempts,
+                    exc,
+                )
+            if attempt < attempts:
+                backoff = min(2 ** (attempt - 1), 8) + random.uniform(0.5, 1.5)
+                logger.info(
+                    "waiting %.2f seconds before retrying sina stock page %s",
+                    backoff,
+                    page,
+                )
+                time.sleep(backoff)
+        raise RuntimeError(
+            f"failed to fetch sina stock page {page} after {attempts} attempts"
+        ) from last_error
+
+    def _polite_delay(self) -> None:
+        minimum = max(0.0, self.config.min_delay_seconds)
+        maximum = max(minimum, self.config.max_delay_seconds)
+        delay = random.uniform(minimum, maximum)
+        if delay > 0:
+            logger.info("sleeping %.2f seconds before next sina stock page", delay)
+            time.sleep(delay)
+
+
+def parse_sina_stock_quotes(values: list[Any], market: str = "cn") -> list[StockQuote]:
+    market = market.strip().lower()
+    rows: list[StockQuote] = []
+    for value in values:
+        if not isinstance(value, dict):
+            continue
+        code = str(value.get("code") or value.get("symbol") or "").strip()
+        name = str(value.get("name") or "").strip()
+        if not code or not name:
+            continue
+        if market == "hk":
+            quote_dt = _sina_quote_datetime(value.get("ticktime"))
+            trade_date = (quote_dt or datetime.now(SHANGHAI)).date().isoformat()
+            rows.append(
+                StockQuote(
+                    stock_code=code,
+                    stock_name=name,
+                    market_code=116,
+                    exchange_name="香港",
+                    trade_date=trade_date,
+                    quote_time=quote_dt.strftime("%Y-%m-%d %H:%M:%S") if quote_dt else None,
+                    latest_price=_decimal(value.get("lasttrade")),
+                    change_rate=_decimal(value.get("changepercent")),
+                    change_amount=_decimal(value.get("pricechange")),
+                    volume=_integer(value.get("volume")),
+                    amount=_decimal(value.get("amount")),
+                    amplitude=None,
+                    turnover_rate=None,
+                    pe_dynamic=_decimal(value.get("pe_ratio")),
+                    volume_ratio=None,
+                    five_min_change_rate=None,
+                    high_price=_decimal(value.get("high")),
+                    low_price=_decimal(value.get("low")),
+                    open_price=_decimal(value.get("open")),
+                    previous_close=_decimal(value.get("prevclose")),
+                    total_market_cap=None,
+                    float_market_cap=None,
+                    speed_rate=None,
+                    pb_ratio=None,
+                    change_rate_60d=None,
+                    change_rate_ytd=None,
+                    listing_date=None,
+                    main_net_inflow=None,
+                    pe_ttm=_decimal(value.get("pe_ratio")),
+                    raw_json=json.dumps(value, ensure_ascii=False, separators=(",", ":")),
+                )
+            )
+            continue
+
+        symbol = str(value.get("symbol") or code).strip().lower()
+        quote_dt = _sina_quote_datetime(value.get("ticktime"))
+        trade_date = (quote_dt or datetime.now(SHANGHAI)).date().isoformat()
+        if symbol.startswith("sh") or code.startswith("6"):
+            market_code = 1
+            exchange_name = "上海"
+        elif symbol.startswith("bj") or code.startswith(("4", "8", "9")):
+            market_code = 0
+            exchange_name = "北京"
+        else:
+            market_code = 0
+            exchange_name = "深圳"
+        volume = _integer(value.get("volume"))
+        rows.append(
+            StockQuote(
+                stock_code=code,
+                stock_name=name,
+                market_code=market_code,
+                exchange_name=exchange_name,
+                trade_date=trade_date,
+                quote_time=quote_dt.strftime("%Y-%m-%d %H:%M:%S") if quote_dt else None,
+                latest_price=_decimal(value.get("trade")),
+                change_rate=_decimal(value.get("changepercent")),
+                change_amount=_decimal(value.get("pricechange")),
+                volume=None if volume is None else volume // 100,
+                amount=_decimal(value.get("amount")),
+                amplitude=None,
+                turnover_rate=_decimal(value.get("turnoverratio")),
+                pe_dynamic=_decimal(value.get("per")),
+                volume_ratio=None,
+                five_min_change_rate=None,
+                high_price=_decimal(value.get("high")),
+                low_price=_decimal(value.get("low")),
+                open_price=_decimal(value.get("open")),
+                previous_close=_decimal(value.get("settlement")),
+                total_market_cap=_scaled_decimal(value.get("mktcap"), Decimal("10000")),
+                float_market_cap=_scaled_decimal(value.get("nmc"), Decimal("10000")),
+                speed_rate=None,
+                pb_ratio=_decimal(value.get("pb")),
+                change_rate_60d=None,
+                change_rate_ytd=None,
+                listing_date=None,
+                main_net_inflow=None,
+                pe_ttm=_decimal(value.get("per")),
+                raw_json=json.dumps(value, ensure_ascii=False, separators=(",", ":")),
+            )
+        )
+    return rows
+
+
 def parse_stock_quotes(values: list[Any]) -> list[StockQuote]:
     rows: list[StockQuote] = []
     now = datetime.now(SHANGHAI)
@@ -300,3 +535,27 @@ def _quote_datetime(value: Any) -> datetime | None:
         return datetime.fromtimestamp(timestamp, SHANGHAI) if timestamp > 0 else None
     except (TypeError, ValueError, OSError):
         return None
+
+
+def _sina_quote_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    for fmt in ("%Y/%m/%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=SHANGHAI)
+        except ValueError:
+            continue
+    try:
+        clock = datetime.strptime(text, "%H:%M:%S").time()
+        return datetime.combine(datetime.now(SHANGHAI).date(), clock, tzinfo=SHANGHAI)
+    except ValueError:
+        return None
+
+
+def _scaled_decimal(value: Any, scale: Decimal) -> str | None:
+    text = _decimal(value)
+    if text is None:
+        return None
+    scaled = Decimal(text) * scale
+    return format(scaled.normalize(), "f")

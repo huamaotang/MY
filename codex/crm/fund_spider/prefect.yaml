@@ -106,7 +106,7 @@ deployments:
   - name: ops-janitor
     version: "1"
     paused: false
-    description: 每 10 分钟巡检并终结卡死的实时任务运行，自动释放并发槽位，避免行情停更。
+    description: 每 10 分钟巡检并终结卡死的 Running/Pending 实时任务与定时批处理运行，同时释放泄漏的 Deployment 并发槽位，避免行情停更和每日刷新被长期阻塞。
     tags: [crm, ops]
     entrypoint: prefect_flows.py:ops_janitor_flow
     schedules:
@@ -114,7 +114,7 @@ deployments:
         timezone: Asia/Shanghai
         slug: every-10-minutes
     concurrency_limit:
-      limit: 1
+      limit: 2
       collision_strategy: CANCEL_NEW
     work_pool:
       name: crm-process-pool

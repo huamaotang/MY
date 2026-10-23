@@ -344,6 +344,8 @@ cd fund_spider
 ./bin/run_prefect_worker.sh
 ```
 
+> 同一 work pool 只应保留一个 Worker 进程。用 `pgrep -fl "prefect worker"` 检查；重复启动会导致重复提交、日志膨胀，多出的进程应停止。
+
 > 排障：macOS 系统代理（常见为 `127.0.0.1:7890`，Clash 等代理软件设置）会劫持
 > 未设置 `NO_PROXY` 的 httpx/urllib 请求——包括到 `127.0.0.1:4200` 的本地请求，
 > 表现为 Worker/客户端对本地 API 一律拿到 `502 Bad Gateway`。launchd 不继承终端
@@ -380,7 +382,7 @@ PREFECT_API_URL=http://127.0.0.1:4200/api \
 - Worker 默认 4 个并发槽；行情/资讯进入高优先级 `realtime` 队列，基金/评分进入 `batch` 队列。
 - 每个 Deployment 仍限制为单并发，`task_runner` 按数据类型使用独立文件锁；过期行情/资讯任务不会补抓旧快照。
 - 08:00 特征任务默认按刷新状态选择最久未更新的 2000 只基金，避免全量长任务阻塞其他数据。
-- `crm-ops-janitor` 每 10 分钟把超过 30 分钟仍处于 Running 的实时任务（新浪资讯/沪深港行情）标记为失败并释放并发槽位。异常中断（休眠、进程被杀）留下的僵尸 Run 不再导致后续计划被 CANCEL_NEW 静默取消。可用 `--param dry_run=true` 试跑，`--param max_age_minutes=N` 调整阈值。
+- `crm-ops-janitor` 每 10 分钟巡检 Running 和 Pending/Submitting 状态：实时任务（新浪资讯/沪深港行情）及 Janitor 自身超过 30 分钟、定时批处理（早间刷新/净值/评分）超过 8 小时即标记为失败并释放并发槽位。异常中断（休眠、进程被杀）留下的僵尸 Run 不再导致后续计划被 CANCEL_NEW 或单并发队列长期阻塞。Janitor 并发上限为 2，单个卡死的 Janitor Run 可被下一次巡检回收。它还会比对 Deployment 的 `active_slots` 与真实 `Running/Submitting` Run，释放超过 10 分钟无人持有的泄漏槽位。可用 `--param dry_run=true` 试跑，`--param max_age_minutes=N` 调整实时阈值，`--param batch_max_age_minutes=N` 调整批处理阈值。
 
 ## 12. 日志与可观测性
 
@@ -433,7 +435,7 @@ PREFECT_API_URL=http://127.0.0.1:4200/api \
 | 重复数据 | 唯一键或 Upsert 失配 | 停任务，检查自然键和写入 SQL |
 | Flow pending | Worker/Pool/Queue 不在线 | Prefect work-pool 和 Worker journal |
 | Flow 成功但数据旧 | `dry_run`、空批次或子任务未选中 | Flow 参数、业务日志、刷新状态 |
-| 定时任务连续 CANCELLED 且无业务日志 | 旧 Run 卡在 Running 占用并发槽位 | 查 Deployment 的 `active_slots` 与卡死 Run；`crm-ops-janitor` 会自动终结实时任务的僵尸 Run，batch 任务需人工终结 |
+| 定时任务连续 CANCELLED 且无业务日志 | 旧 Run 卡在 Running/Pending 占用并发槽位 | 查 Deployment 的 `active_slots` 与卡死 Run；`crm-ops-janitor` 会自动终结实时任务、定时批处理和自身卡死的 Run（实时/Pending 超过 30 分钟，批处理超过 8 小时），手工 Flow 仍需人工检查 |
 | 同一任务重复执行 | Deployment 或并发配置失效 | 查 Prefect Deployment、Worker 和文件锁 |
 | 评分概率不显示 | 配置未通过/未激活 | 回测结果、profile 状态、pipeline |
 

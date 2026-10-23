@@ -129,8 +129,33 @@ public class OllamaService {
     }
 
     /**
-     * 调用 Ollama LLM 生成回复
+     * 调用 Ollama LLM 生成回复（使用 Prompt）
      */
+    public String callOllama(Prompt prompt) {
+        try {
+            return ollamaChatClient.call(prompt).getResults().get(0).getOutput().getContent();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
+    /**
+     * 调用 Ollama LLM 生成回复（带自定义系统提示）
+     */
+    public String chat(String userMessage, String systemPrompt) {
+        try {
+            Prompt prompt = new Prompt(List.of(
+                    new SystemMessage(systemPrompt),
+                    new UserMessage(userMessage)
+            ));
+            return ollamaChatClient.call(prompt).getResults().get(0).getOutput().getContent();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+
     /**
      * 调用 Ollama LLM 生成回复
      */

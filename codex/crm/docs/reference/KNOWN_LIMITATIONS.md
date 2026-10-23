@@ -82,7 +82,7 @@
 - 新浪资讯每 120 秒执行，源端限流、许可、网络或解析结构变化都可能使计划持续失败；必须配置失败告警和退避。
 - 养基宝凭据是短期敏感值，`news` 当前未注册自动 Deployment。
 - Prefect Deployment/UI 的运行态修改可能与 `prefect.yaml` 漂移，长期变更必须回写版本库并重新部署。
-- `crm-ops-janitor` 每 10 分钟只终结超过 30 分钟仍处于 Running 的实时任务（新浪资讯/沪深港行情）；batch 队列的长时间任务不在巡检范围，若异常卡死仍需人工终结。Janitor 自身被异常中断时无法自我回收，需要人工处理。
+- `crm-ops-janitor` 每 10 分钟终结超过 30 分钟仍处于 Running/Pending 的实时任务（新浪资讯/沪深港行情）与自身运行，以及超过 8 小时仍处于 Running/Pending 的定时批处理（早间刷新/净值/评分）。手工触发的全量 Feature 等非定时 Flow 不在巡检范围，仍可能长期占用 batch 槽位；Janitor 并发上限为 2，单个 Janitor Run 卡死可被下一次巡检回收，但两个并发槽位同时卡死时仍需人工处理。Janitor 会释放超过 10 分钟无人持有的 Deployment `active_slots`，但若 Prefect Server 或全部 Worker 均不可用，泄漏仍可能在恢复前持续阻塞。
 
 ## 6. OCR 链路限制
 

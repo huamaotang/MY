@@ -1,5 +1,6 @@
 package com.example.ai.config;
 
+import com.example.ai.service.VectorStore;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,5 +19,10 @@ public class OllamaConfig {
         factory.setConnectTimeout(Duration.ofMinutes(2));
         factory.setReadTimeout(Duration.ofMinutes(2));
         return new RestTemplate(factory);
+    }
+
+    @Bean
+    public VectorStore vectorStore() {
+        return new VectorStore();
     }
 }

@@ -8,8 +8,10 @@
 | --- | --- | --- |
 | [JavaScript](JAVASCRIPT.md) | Web 初学者 | 理解运行时、异步、浏览器存储、HTTP 与调试 |
 | [TypeScript](TYPESCRIPT.md) | 已有 JavaScript 基础的前端开发者 | 准确建模 API、Props、state 和外部数据边界 |
-| [React](REACT.md) | React 初学者、Web 页面维护者 | 管理组件状态/Effect/竞态并完成业务页面 |
 | [HTML 与 CSS](HTML_CSS.md) | 需要补齐页面结构和布局基础的开发者 | 维护语义、响应式、Ant Design 外层样式与可访问性 |
+| [Vue](VUE.md) | 想了解另一款前端框架的开发者 | 理解 Vue 3 模板语法、响应式系统，对比 React 差异 |
+| [Bootstrap](BOOTSTRAP.md) | 需要样式框架基础的开发者 | 掌握栅格系统、组件和工具类，对比 Ant Design |
+| [React](REACT.md) | React 初学者、Web 页面维护者 | 管理组件状态/Effect/竞态并完成业务页面 |
 | [前端工程化](FRONTEND_ENGINEERING.md) | 需要完整交付 Web 需求的开发者 | 使用 Vite/Ant Design，完成联调、测试、构建、发布和排障 |
 | [Java](JAVA.md) | 后端初学者、Android 开发者补语言基础 | 追踪 Spring 请求、修改 Service/Mapper、理解鉴权和事务 |
 | [Python](PYTHON.md) | 数据采集/任务维护者 | 增加解析规则、做幂等写入、测试并部署 Prefect Flow |
@@ -24,6 +26,8 @@
 JavaScript 运行时与浏览器
 -> TypeScript 类型与 API 契约
 -> HTML/CSS 结构、布局与可访问性
+-> Vue 模板语法与响应式（对比理解框架差异）
+-> Bootstrap 栅格系统与组件库（对比理解样式方案）
 -> React 组件、状态、Effect 与异步竞态
 -> Vite/Ant Design/联调/测试/安全/发布
 -> 在 frontend/ 完成一个小型分页管理页

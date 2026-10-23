@@ -650,12 +650,17 @@ function NewsAdmin() {
   const [current, setCurrent] = useState(1);
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [total, setTotal] = useState(0);
-  const load = async (page = current, size = pageSize, tag = categoryTag) => {
-    setLoading(true);
+  const load = async (page = current, size = pageSize, tag = categoryTag, silent = false) => {
+    if (!silent) setLoading(true);
     try { const result = await listFinanceNews({ current: page, size, keyword, categoryTag: tag < 0 ? undefined : tag }); setRows(result.records); setCurrent(result.current); setPageSize(result.size); setTotal(result.total); }
-    catch (error) { message.error((error as Error).message); } finally { setLoading(false); }
+    catch (error) { message.error((error as Error).message); } finally { if (!silent) setLoading(false); }
   };
   useEffect(() => { load(1); }, []);
+  useEffect(() => {
+    if (current !== 1 || keyword.trim()) return;
+    const timer = window.setInterval(() => { load(1, pageSize, categoryTag, true); }, 30000);
+    return () => window.clearInterval(timer);
+  }, [current, pageSize, categoryTag, keyword]);
   const columns: ColumnsType<FinanceNews> = [
     { title: '时间', dataIndex: 'createTime', width: 180 },
     { title: '类型', dataIndex: 'categoryName', width: 90, render: (value) => <Tag color={value === 'A股' ? 'red' : 'blue'}>{value}</Tag> },
@@ -1314,20 +1319,21 @@ function FundList({ favoritesOnly = false }: { favoritesOnly?: boolean }) {
         </span>
       )
     },
-    {
-      title: '基金评分',
-      key: 'fundScore',
-      width: 115,
-      sorter: true,
-      defaultSortOrder: favoritesOnly ? undefined : 'descend',
-      render: (_, row) => row.latestScore?.totalScore == null
-        ? <Tag>数据不足</Tag>
-        : <Tooltip title={`评分日期 ${row.latestScore.asOfDate}${row.latestScore.updatedAt ? ` · 更新于 ${row.latestScore.updatedAt}` : ''}`}>
-            <Tag color={row.latestScore.totalScore >= 80 ? 'green' : row.latestScore.totalScore >= 60 ? 'blue' : 'orange'}>
-              {row.latestScore.totalScore.toFixed(1)}
-            </Tag>
-          </Tooltip>
-    },
+{
+        title: '基金评分',
+        key: 'fundScore',
+        dataIndex: 'fundScore',
+        width: 115,
+        sorter: true,
+        defaultSortOrder: favoritesOnly ? undefined : 'descend',
+        render: (_, row) => row.latestScore?.totalScore == null
+          ? <Tag>数据不足</Tag>
+          : <Tooltip title={`评分日期 ${row.latestScore.asOfDate}${row.latestScore.updatedAt ? ` · 更新于 ${row.latestScore.updatedAt}` : ''}`}>
+              <Tag color={row.latestScore.totalScore >= 80 ? 'green' : row.latestScore.totalScore >= 60 ? 'blue' : 'orange'}>
+                {row.latestScore.totalScore.toFixed(1)}
+              </Tag>
+            </Tooltip>
+      },
     {
       title: '未来1年盈利概率',
       key: 'profitProbability',
@@ -1468,7 +1474,8 @@ function FundList({ favoritesOnly = false }: { favoritesOnly?: boolean }) {
         scroll={{ x: 4440 }}
         onChange={(pagination, _filters, sorter) => {
           const selected = Array.isArray(sorter) ? sorter[0] : sorter;
-          const field = selected?.order ? String(selected.field ?? selected.columnKey ?? '') : undefined;
+          const fieldKey = selected?.field ?? selected?.columnKey;
+          const field = selected?.order && fieldKey != null ? String(fieldKey) : undefined;
           const order = selected?.order ?? undefined;
           setSortField(field);
           setSortOrder(order);

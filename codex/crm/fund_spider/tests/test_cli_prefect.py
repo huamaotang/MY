@@ -147,9 +147,11 @@ class PrefectTaskTest(unittest.TestCase):
         self.assertTrue(
             all(
                 deployment["concurrency_limit"]["limit"] == 1
-                for deployment in deployments.values()
+                for name, deployment in deployments.items()
+                if name != "ops-janitor"
             )
         )
+        self.assertEqual(2, deployments["ops-janitor"]["concurrency_limit"]["limit"])
         self.assertTrue(
             all(
                 deployment.get("paused") is False
@@ -383,15 +385,16 @@ class OpsJanitorTest(unittest.TestCase):
         run.id = uuid.uuid4()
         run.name = name
         run.expected_start_time = datetime(2026, 8, 19, 2, 35, tzinfo=timezone.utc)
+        run.start_time = datetime(2026, 8, 19, 2, 35, tzinfo=timezone.utc)
         return run
 
     def test_reaps_stale_running_runs(self) -> None:
         stale_a = self.make_run("stock-cn-refresh")
         stale_b = self.make_run("stock-hk-refresh")
         client = MagicMock()
-        client.read_flow_runs.return_value = [stale_a, stale_b]
+        client.read_flow_runs.side_effect = [[stale_a, stale_b], []]
 
-        with patch.object(prefect_flows, "REALTIME_FLOW_NAMES", ("sina-news-refresh",)):
+        with patch.object(prefect_flows, "FAST_FLOW_NAMES", ("sina-news-refresh",)):
             reaped = prefect_flows.reap_stale_running_runs(
                 client,
                 max_age_minutes=30,
@@ -400,37 +403,175 @@ class OpsJanitorTest(unittest.TestCase):
 
         self.assertEqual([str(stale_a.id), str(stale_b.id)], reaped)
         self.assertEqual(2, client.set_flow_run_state.call_count)
-        _, kwargs = client.read_flow_runs.call_args
+        self.assertEqual(2, client.read_flow_runs.call_count)
+        _, kwargs = client.read_flow_runs.call_args_list[0]
         self.assertEqual(
             ["sina-news-refresh"],
             list(kwargs["flow_filter"].name.any_),
         )
         state_type = list(kwargs["flow_run_filter"].state.type.any_)[0]
-        before = kwargs["flow_run_filter"].expected_start_time.before_
+        before = kwargs["flow_run_filter"].start_time.before_
         self.assertEqual("RUNNING", str(state_type).split(".")[-1])
         self.assertEqual(datetime(2026, 8, 19, 2, 35, tzinfo=timezone.utc), before)
 
     def test_dry_run_reads_without_writing(self) -> None:
         client = MagicMock()
-        client.read_flow_runs.return_value = [self.make_run("stock-cn-refresh")]
+        client.read_flow_runs.side_effect = [[self.make_run("stock-cn-refresh")], []]
 
         reaped = prefect_flows.reap_stale_running_runs(client, dry_run=True)
 
         self.assertEqual([], reaped)
-        client.read_flow_runs.assert_called_once()
+        self.assertEqual(2, client.read_flow_runs.call_count)
         client.set_flow_run_state.assert_not_called()
 
     def test_set_state_failure_does_not_block_remaining_runs(self) -> None:
         first = self.make_run("stock-cn-refresh")
         second = self.make_run("stock-hk-refresh")
         client = MagicMock()
-        client.read_flow_runs.return_value = [first, second]
+        client.read_flow_runs.side_effect = [[first, second], []]
         client.set_flow_run_state.side_effect = [RuntimeError("transition aborted"), None]
 
         reaped = prefect_flows.reap_stale_running_runs(client)
 
         self.assertEqual([str(second.id)], reaped)
         self.assertEqual(2, client.set_flow_run_state.call_count)
+
+    def test_reaps_stale_pending_runs(self) -> None:
+        stale = self.make_run("sina-news-refresh")
+        stale.start_time = None
+        client = MagicMock()
+        client.read_flow_runs.side_effect = [[], [stale]]
+
+        reaped = prefect_flows.reap_stale_running_runs(
+            client,
+            now=datetime(2026, 8, 19, 3, 5, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual([str(stale.id)], reaped)
+        _, kwargs = client.read_flow_runs.call_args
+        state_type = list(kwargs["flow_run_filter"].state.type.any_)[0]
+        self.assertEqual("PENDING", str(state_type).split(".")[-1])
+        self.assertEqual(
+            datetime(2026, 8, 19, 2, 35, tzinfo=timezone.utc),
+            kwargs["flow_run_filter"].expected_start_time.before_,
+        )
+
+    def test_reaps_stale_batch_runs_with_longer_timeout(self) -> None:
+        stale = self.make_run("fund-morning-refresh")
+        client = MagicMock()
+        client.read_flow_runs.side_effect = [[stale], []]
+
+        reaped = prefect_flows.reap_stale_running_runs(
+            client,
+            max_age_minutes=prefect_flows.DEFAULT_BATCH_STALE_RUN_MINUTES,
+            flow_names=prefect_flows.BATCH_FLOW_NAMES,
+            now=datetime(2026, 8, 19, 10, 35, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual([str(stale.id)], reaped)
+        _, kwargs = client.read_flow_runs.call_args_list[0]
+        self.assertEqual(
+            list(prefect_flows.BATCH_FLOW_NAMES),
+            list(kwargs["flow_filter"].name.any_),
+        )
+        self.assertEqual(
+            datetime(2026, 8, 19, 2, 35, tzinfo=timezone.utc),
+            kwargs["flow_run_filter"].start_time.before_,
+        )
+
+    def test_releases_orphaned_deployment_slots(self) -> None:
+        deployment = MagicMock()
+        deployment.id = uuid.uuid4()
+        deployment.name = "morning-fund-refresh"
+        deployment.global_concurrency_limit.name = "deployment:test"
+        deployment.global_concurrency_limit.active_slots = 1
+        deployment.global_concurrency_limit.updated = datetime(
+            2026, 8, 19, 2, 0, tzinfo=timezone.utc
+        )
+        client = MagicMock()
+        client.read_deployments.return_value = [deployment]
+        client.read_flow_runs.return_value = []
+
+        released = prefect_flows.release_orphaned_deployment_slots(
+            client,
+            now=datetime(2026, 8, 19, 2, 15, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual(["deployment:test"], released)
+        client.release_concurrency_slots.assert_called_once()
+        self.assertEqual(1, client.release_concurrency_slots.call_args.kwargs["slots"])
+
+    def test_keeps_slot_held_by_running_run(self) -> None:
+        deployment = MagicMock()
+        deployment.id = uuid.uuid4()
+        deployment.name = "stock-hk-refresh"
+        deployment.global_concurrency_limit.name = "deployment:test"
+        deployment.global_concurrency_limit.active_slots = 1
+        deployment.global_concurrency_limit.updated = datetime(
+            2026, 8, 19, 2, 0, tzinfo=timezone.utc
+        )
+        run = MagicMock()
+        run.state_name = "Running"
+        client = MagicMock()
+        client.read_deployments.return_value = [deployment]
+        client.read_flow_runs.return_value = [run]
+
+        released = prefect_flows.release_orphaned_deployment_slots(
+            client,
+            now=datetime(2026, 8, 19, 2, 15, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual([], released)
+        client.release_concurrency_slots.assert_not_called()
+
+    def test_ignores_recent_concurrency_slot_changes(self) -> None:
+        deployment = MagicMock()
+        deployment.id = uuid.uuid4()
+        deployment.name = "stock-hk-refresh"
+        deployment.global_concurrency_limit.name = "deployment:test"
+        deployment.global_concurrency_limit.active_slots = 1
+        deployment.global_concurrency_limit.updated = datetime(
+            2026, 8, 19, 3, 10, tzinfo=timezone.utc
+        )
+        client = MagicMock()
+        client.read_deployments.return_value = [deployment]
+
+        released = prefect_flows.release_orphaned_deployment_slots(
+            client,
+            now=datetime(2026, 8, 19, 3, 15, tzinfo=timezone.utc),
+        )
+
+        self.assertEqual([], released)
+        client.read_flow_runs.assert_not_called()
+        client.release_concurrency_slots.assert_not_called()
+
+    def test_flow_reaps_realtime_and_batch_with_separate_thresholds(self) -> None:
+        client = MagicMock()
+        client.read_deployments.return_value = []
+        client_context = MagicMock()
+        client_context.__enter__.return_value = client
+        client_context.__exit__.return_value = False
+
+        with (
+            patch.object(prefect_flows, "get_client", return_value=client_context),
+            patch.object(
+                prefect_flows,
+                "reap_stale_running_runs",
+                side_effect=[["realtime-run"], ["batch-run"]],
+            ) as reap,
+        ):
+            reaped = prefect_flows.reap_stale_flow_runs.fn(
+                max_age_minutes=30,
+                batch_max_age_minutes=480,
+            )
+
+        self.assertEqual(["realtime-run", "batch-run"], reaped)
+        self.assertEqual(2, reap.call_count)
+        first_call, second_call = reap.call_args_list
+        self.assertEqual(30, first_call.kwargs["max_age_minutes"])
+        self.assertEqual(prefect_flows.FAST_FLOW_NAMES, first_call.kwargs["flow_names"])
+        self.assertEqual(480, second_call.kwargs["max_age_minutes"])
+        self.assertEqual(prefect_flows.BATCH_FLOW_NAMES, second_call.kwargs["flow_names"])
 
     def test_rejects_non_positive_max_age(self) -> None:
         with self.assertRaisesRegex(ValueError, "max_age_minutes must be positive"):
