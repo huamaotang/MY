@@ -10,6 +10,7 @@ public class SessionStore {
     private static final String KEY_BASE_URL = "base_url";
     private static final String KEY_TOKEN = "token";
     private static final String KEY_USERNAME = "username";
+    private static final String KEY_PORTFOLIO_AMOUNTS_HIDDEN = "portfolio_amounts_hidden";
 
     private final SharedPreferences preferences;
     private final ApiClient apiClient;
@@ -38,6 +39,14 @@ public class SessionStore {
 
     public String getUsername() {
         return preferences.getString(KEY_USERNAME, "");
+    }
+
+    public boolean isPortfolioAmountsHidden() {
+        return preferences.getBoolean(KEY_PORTFOLIO_AMOUNTS_HIDDEN, false);
+    }
+
+    public void setPortfolioAmountsHidden(boolean hidden) {
+        preferences.edit().putBoolean(KEY_PORTFOLIO_AMOUNTS_HIDDEN, hidden).apply();
     }
 
     public void saveLogin(String baseUrl, LoginResult result) {

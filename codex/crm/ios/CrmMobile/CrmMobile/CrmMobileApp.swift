@@ -169,6 +169,10 @@ private func money(_ value: Decimal?) -> String {
     guard let value else { return "-" }
     return moneyFormatter.string(from: NSDecimalNumber(decimal: value)) ?? "-"
 }
+private func portfolioMoney(_ value: Decimal?, hidden: Bool) -> String {
+    guard let value else { return "-" }
+    return hidden ? "****" : money(value)
+}
 private func compact(_ value: Decimal?) -> String {
     guard let value else { return "-" }
     let number = NSDecimalNumber(decimal: value).doubleValue
@@ -240,6 +244,7 @@ struct FinanceNewsView: View {
 
 struct PortfolioHoldingView: View {
     @EnvironmentObject private var session: SessionStore
+    @AppStorage("portfolioAmountsHidden") private var amountsHidden = false
     @State private var selectedTab = 0
     @State private var overview: PortfolioOverview?
     @State private var holdings: [UserFundHolding] = []
@@ -294,7 +299,13 @@ struct PortfolioHoldingView: View {
             }
             .navigationTitle("持仓")
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button {
+                        amountsHidden.toggle()
+                    } label: {
+                        Image(systemName: amountsHidden ? "eye.slash" : "eye")
+                    }
+                    .accessibilityLabel(amountsHidden ? "显示金额" : "隐藏金额")
                     Button {
                         openImport(type: "holding")
                     } label: {
@@ -357,21 +368,27 @@ struct PortfolioHoldingView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             if let summary = selectedSummary {
-                HStack(alignment: .firstTextBaseline, spacing: 5) {
-                    Text("资产").foregroundStyle(.secondary)
-                    Text(money(summary.holdingAmount))
-                        .font(.headline.weight(.semibold))
-                    Spacer()
-                    Text("今日").foregroundStyle(.secondary)
-                    Text(money(summary.todayProfit))
-                        .foregroundStyle(summary.todayProfit.map(signedValueColor) ?? .secondary)
-                    Spacer()
-                    Text("\(summary.holdingCount) 只")
+                HStack(spacing: 0) {
+                    portfolioStat(
+                        "资产",
+                        portfolioMoney(summary.holdingAmount, hidden: amountsHidden),
+                        color: .primary
+                    )
+                    Rectangle().fill(Color(.separator)).frame(width: 1, height: 38)
+                    portfolioStat(
+                        "今日",
+                        portfolioMoney(summary.todayProfit, hidden: amountsHidden),
+                        color: amountsHidden ? .secondary : summary.todayProfit.map(signedValueColor) ?? .secondary
+                    )
+                    Rectangle().fill(Color(.separator)).frame(width: 1, height: 38)
+                    portfolioStat("持仓", "\(summary.holdingCount) 只", color: .primary)
                 }
-                .font(.subheadline)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal, 12)
-                .padding(.bottom, 2)
-                .fixedSize(horizontal: false, vertical: true)
+                .padding(.bottom, 6)
             }
             if selectedTab >= 2 {
                 accountImportActions
@@ -437,6 +454,19 @@ struct PortfolioHoldingView: View {
         showImport = true
     }
 
+    private func portfolioStat(_ title: String, _ value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.bold())
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+    }
+
     private var selectedSummary: PortfolioAccountSummary? {
         if selectedTab == 1 { return overview?.total }
         return overview?.accounts.first { $0.sourceLabel == scope }
@@ -470,6 +500,8 @@ struct PortfolioHoldingView: View {
 }
 
 private struct PortfolioSummaryCard: View {
+    @AppStorage("portfolioAmountsHidden") private var amountsHidden = false
+
     let summary: PortfolioAccountSummary
     let prominent: Bool
 
@@ -481,7 +513,7 @@ private struct PortfolioSummaryCard: View {
                 Text("\(summary.holdingCount) 只").font(.subheadline).foregroundStyle(.secondary)
                 if !prominent { Image(systemName: "chevron.right").font(.subheadline).foregroundStyle(.secondary) }
             }
-            Text(money(summary.holdingAmount))
+            Text(portfolioMoney(summary.holdingAmount, hidden: amountsHidden))
                 .font(prominent ? .system(size: 32, weight: .bold) : .title2.bold())
             HStack {
                 summaryMetric("持有收益", summary.holdingProfit, percentValue: false)
@@ -499,63 +531,105 @@ private struct PortfolioSummaryCard: View {
     private func summaryMetric(_ title: String, _ value: Decimal?, percentValue: Bool) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.subheadline).foregroundStyle(.secondary)
-            Text(percentValue ? (percent(value) ?? "-") : money(value))
+            Text(percentValue ? (percent(value) ?? "-") : portfolioMoney(value, hidden: amountsHidden))
                 .font(.body.bold())
-                .foregroundStyle(value.map(signedValueColor) ?? .secondary)
+                .foregroundStyle((amountsHidden && !percentValue) ? .secondary : value.map(signedValueColor) ?? .secondary)
         }
     }
 }
 
 private struct PortfolioCompactTable: View {
+    @AppStorage("portfolioAmountsHidden") private var amountsHidden = false
+
     let holdings: [UserFundHolding]
     let sortField: String
     let sortOrder: String
     let onSort: (String) -> Void
 
+    private let firstColumnWidth: CGFloat = 140
+
     var body: some View {
-        ScrollView([.horizontal, .vertical], showsIndicators: true) {
-            LazyVStack(spacing: 0) {
-                HStack(spacing: 0) {
-                    header("基金 / 金额", "fundName", 132, .leading)
-                    header("当日收益", "estimatedDailyProfit", 92)
-                    header("类型", "fundType", 76)
-                    header("持有收益 / 率", "holdingProfit", 116)
-                }
-                .background(Color(.secondarySystemGroupedBackground))
-                ForEach(holdings) { holding in
-                    Divider()
-                    NavigationLink {
-                        PortfolioHoldingDetailView(holding: holding)
-                    } label: {
-                        HStack(spacing: 0) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(portfolioFundName(holding.fundName)).font(.subheadline.bold()).foregroundStyle(.blue)
-                                Text(money(holding.holdingAmount)).font(.subheadline).foregroundStyle(.secondary)
+        ScrollView(.vertical, showsIndicators: true) {
+            HStack(alignment: .top, spacing: 0) {
+                fixedColumn
+                ScrollView(.horizontal, showsIndicators: true) {
+                    VStack(spacing: 0) {
+                        metricsHeader
+                        ForEach(holdings) { holding in
+                            Divider()
+                            NavigationLink {
+                                PortfolioHoldingDetailView(holding: holding)
+                            } label: {
+                                metricsRow(holding)
                             }
-                            .frame(width: 132, alignment: .leading)
-                            .frame(minHeight: 54)
-                            .padding(.horizontal, 4)
-                            valueCell(holding.estimatedDailyProfit ?? holding.todayProfit, width: 92)
-                            Text(holding.fundType ?? "-")
-                                .font(.subheadline)
-                                .lineLimit(1)
-                                .frame(width: 76)
-                                .frame(minHeight: 54)
-                                .padding(.horizontal, 4)
-                            VStack(alignment: .trailing, spacing: 2) {
-                                Text(money(holding.holdingProfit))
-                                Text(percent(holding.holdingReturnRate) ?? "-")
-                            }
-                            .font(.subheadline)
-                            .foregroundStyle(holding.holdingProfit.map(signedValueColor) ?? .secondary)
-                            .frame(width: 116, alignment: .trailing)
-                            .frame(minHeight: 54)
-                            .padding(.horizontal, 4)
+                            .buttonStyle(.plain)
                         }
                     }
-                    .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    private var fixedColumn: some View {
+        VStack(spacing: 0) {
+            header("基金 / 金额", "fundName", 132, .leading)
+            ForEach(holdings) { holding in
+                Divider()
+                NavigationLink {
+                    PortfolioHoldingDetailView(holding: holding)
+                } label: {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(portfolioFundName(holding.fundName))
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.blue)
+                            .lineLimit(1)
+                        Text(portfolioMoney(holding.holdingAmount, hidden: amountsHidden))
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                    .frame(width: 132, alignment: .leading)
+                    .frame(minHeight: 54)
+                    .padding(.horizontal, 4)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(width: firstColumnWidth)
+        .background(Color(.systemBackground))
+        .overlay(alignment: .trailing) {
+            Rectangle()
+                .fill(Color(.separator))
+                .frame(width: 1)
+        }
+    }
+
+    private var metricsHeader: some View {
+        HStack(spacing: 0) {
+            header("当日收益", "estimatedDailyProfit", 92)
+            header("类型", "fundType", 76)
+            header("持有收益 / 率", "holdingProfit", 116)
+        }
+    }
+
+    private func metricsRow(_ holding: UserFundHolding) -> some View {
+        HStack(spacing: 0) {
+            valueCell(holding.estimatedDailyProfit ?? holding.todayProfit, width: 92)
+            Text(holding.fundType ?? "-")
+                .font(.subheadline)
+                .lineLimit(1)
+                .frame(width: 76)
+                .frame(minHeight: 54)
+                .padding(.horizontal, 4)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(portfolioMoney(holding.holdingProfit, hidden: amountsHidden))
+                Text(percent(holding.holdingReturnRate) ?? "-")
+            }
+            .font(.subheadline)
+            .foregroundStyle(amountsHidden ? .secondary : holding.holdingProfit.map(signedValueColor) ?? .secondary)
+            .frame(width: 116, alignment: .trailing)
+            .frame(minHeight: 54)
+            .padding(.horizontal, 4)
         }
     }
 
@@ -574,14 +648,15 @@ private struct PortfolioCompactTable: View {
             .frame(width: width, alignment: alignment)
             .frame(minHeight: 40)
             .padding(.horizontal, 4)
+            .background(Color(.secondarySystemGroupedBackground))
         }
         .buttonStyle(.plain)
     }
 
     private func valueCell(_ value: Decimal?, width: CGFloat) -> some View {
-        Text(money(value))
+        Text(portfolioMoney(value, hidden: amountsHidden))
             .font(.subheadline)
-            .foregroundStyle(value.map(signedValueColor) ?? .secondary)
+            .foregroundStyle(amountsHidden ? .secondary : value.map(signedValueColor) ?? .secondary)
             .frame(width: width, alignment: .trailing)
             .frame(minHeight: 54)
             .padding(.horizontal, 4)
@@ -1130,6 +1205,7 @@ private struct PortfolioHoldingsTable: View {
 
 struct PortfolioHoldingDetailView: View {
     @EnvironmentObject private var session: SessionStore
+    @AppStorage("portfolioAmountsHidden") private var amountsHidden = false
 
     let holding: UserFundHolding
 
@@ -1186,22 +1262,22 @@ struct PortfolioHoldingDetailView: View {
             }
 
             Section("持仓数据") {
-                DetailLine(title: "持有金额", value: money(holding.holdingAmount))
-                SignedValueLine(title: "持有收益", value: holding.holdingProfit)
+                DetailLine(title: "持有金额", value: portfolioMoney(holding.holdingAmount, hidden: amountsHidden))
+                SignedValueLine(title: "持有收益", value: holding.holdingProfit, hidden: amountsHidden)
                 SignedPercentLine(title: "持有收益率", value: holding.holdingReturnRate)
-                DetailLine(title: "持有成本", value: money(holding.holdingCost))
-                SignedValueLine(title: "昨日收益", value: holding.yesterdayProfit)
-                SignedValueLine(title: "今日收益", value: holding.todayProfit)
+                DetailLine(title: "持有成本", value: portfolioMoney(holding.holdingCost, hidden: amountsHidden))
+                SignedValueLine(title: "昨日收益", value: holding.yesterdayProfit, hidden: amountsHidden)
+                SignedValueLine(title: "今日收益", value: holding.todayProfit, hidden: amountsHidden)
                 DetailLine(title: "持有份额", value: decimal(holding.holdingShares))
                 DetailLine(title: "净值成本", value: decimal(holding.costNav))
                 DetailLine(title: "估值日期", value: valuationDateTime(holding))
                 DetailLine(title: "重仓报告日", value: holding.holdingReportDate)
                 SignedPercentLine(title: "当日预估涨跌", value: holding.estimatedChangeRate)
-                SignedValueLine(title: "预估当日盈亏", value: holding.estimatedDailyProfit)
-                DetailLine(title: "估值后金额", value: money(holding.estimatedHoldingAmount))
+                SignedValueLine(title: "预估当日盈亏", value: holding.estimatedDailyProfit, hidden: amountsHidden)
+                DetailLine(title: "估值后金额", value: portfolioMoney(holding.estimatedHoldingAmount, hidden: amountsHidden))
                 DetailLine(title: "预估单位净值", value: decimal(holding.estimatedUnitNav))
                 SignedPercentLine(title: "累计预估涨跌", value: holding.estimatedCumulativeChangeRate)
-                SignedValueLine(title: "累计预估盈亏", value: holding.estimatedCumulativeProfit)
+                SignedValueLine(title: "累计预估盈亏", value: holding.estimatedCumulativeProfit, hidden: amountsHidden)
                 DetailLine(title: "行情覆盖率", value: percent(holding.valuationCoverageRate))
                 DetailLine(title: "行情更新时间", value: holding.valuationUpdatedAt)
                 DetailLine(title: "截图日期", value: holding.screenshotDate)
@@ -1336,6 +1412,16 @@ struct PortfolioHoldingDetailView: View {
         }
         .navigationTitle("持仓详情")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    amountsHidden.toggle()
+                } label: {
+                    Image(systemName: amountsHidden ? "eye.slash" : "eye")
+                }
+                .accessibilityLabel(amountsHidden ? "显示金额" : "隐藏金额")
+            }
+        }
         .overlay {
             if isLoading {
                 ProgressView()
@@ -2332,14 +2418,15 @@ private struct SignedPercentLine: View {
 private struct SignedValueLine: View {
     let title: String
     let value: Decimal?
+    var hidden: Bool = false
 
     var body: some View {
         HStack(alignment: .top) {
             Text(title).foregroundStyle(.secondary)
             Spacer()
-            Text(money(value))
+            Text(hidden ? "****" : money(value))
                 .multilineTextAlignment(.trailing)
-                .foregroundStyle(value.map(signedValueColor) ?? .secondary)
+                .foregroundStyle(hidden ? .secondary : value.map(signedValueColor) ?? .secondary)
         }
     }
 }

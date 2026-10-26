@@ -630,8 +630,10 @@ def validate_date_range(start_date: str, end_date: str) -> None:
 
 
 def selector_from_env(single_code_env: str = "FUND_CODE") -> BatchSelector:
+    domain_fund_code = os.getenv(single_code_env, "").strip()
+    generic_fund_code = os.getenv("FUND_CODE", "").strip()
     return BatchSelector(
-        fund_code=os.getenv(single_code_env, os.getenv("FUND_CODE", "")).strip(),
+        fund_code=domain_fund_code or generic_fund_code,
         fund_start_code=os.getenv("FUND_START_CODE", "").strip(),
         fund_limit=parse_optional_int(os.getenv("FUND_LIMIT"), "FUND_LIMIT"),
         fund_offset=int(os.getenv("FUND_OFFSET", "0")),

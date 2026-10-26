@@ -33,6 +33,26 @@ def nav_page(page_index: int, rows: list[FundNavHistory], total_pages: int = 3) 
     )
 
 
+class NavHistorySelectorTest(unittest.TestCase):
+    def test_nav_fund_code_falls_back_to_generic_fund_code(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"NAV_FUND_CODE": "", "FUND_CODE": "005215"},
+            clear=False,
+        ):
+            options = jobs.nav_history_options_from_env()
+        self.assertEqual("005215", options.selector.fund_code)
+
+    def test_nav_fund_code_overrides_generic_fund_code(self) -> None:
+        with patch.dict(
+            os.environ,
+            {"NAV_FUND_CODE": "000001", "FUND_CODE": "005215"},
+            clear=False,
+        ):
+            options = jobs.nav_history_options_from_env()
+        self.assertEqual("000001", options.selector.fund_code)
+
+
 class NavSpiderConcurrencyTest(unittest.TestCase):
     def test_fetches_remaining_pages_concurrently_and_yields_in_page_order(self) -> None:
         active = 0

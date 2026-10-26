@@ -32,10 +32,13 @@ public class PortfolioHoldingDetailActivity extends Activity {
 
     private SessionStore session;
     private UserFundHolding holding;
+    private Button amountToggleButton;
+    private boolean amountsHidden;
     private FundDetail detail;
     private Fund fund;
     private String trendPeriod = "1Y";
     private LinearLayout content;
+    private ScrollView detailScroll;
     private ProgressBar progressBar;
 
     @Override
@@ -51,6 +54,7 @@ public class PortfolioHoldingDetailActivity extends Activity {
             finish();
             return;
         }
+        amountsHidden = session.isPortfolioAmountsHidden();
         fund = fallbackFund();
         buildContent();
         render();
@@ -63,18 +67,50 @@ public class PortfolioHoldingDetailActivity extends Activity {
         root.setPadding(Ui.dp(this, 16), Ui.dp(this, 20), Ui.dp(this, 16), Ui.dp(this, 12));
         setContentView(root);
 
-        root.addView(Ui.text(this, "持仓详情", 24, Ui.TEXT, Typeface.BOLD));
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        header.addView(Ui.text(this, "持仓详情", 24, Ui.TEXT, Typeface.BOLD),
+                new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        amountToggleButton = new Button(this);
+        amountToggleButton.setAllCaps(false);
+        amountToggleButton.setTextSize(13);
+        amountToggleButton.setOnClickListener(v -> toggleAmountVisibility());
+        header.addView(amountToggleButton, new LinearLayout.LayoutParams(
+                Ui.dp(this, 64), Ui.dp(this, 40)));
+        root.addView(header);
+        updateAmountToggle();
+
         progressBar = new ProgressBar(this);
         progressBar.setVisibility(View.GONE);
         root.addView(progressBar, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 42)));
 
         ScrollView scrollView = new ScrollView(this);
+        detailScroll = scrollView;
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
         scrollView.addView(content);
         root.addView(scrollView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+    }
+
+    private void toggleAmountVisibility() {
+        amountsHidden = !amountsHidden;
+        session.setPortfolioAmountsHidden(amountsHidden);
+        updateAmountToggle();
+        int scrollY = detailScroll == null ? 0 : detailScroll.getScrollY();
+        render();
+        if (detailScroll != null) {
+            detailScroll.post(() -> detailScroll.scrollTo(0, scrollY));
+        }
+    }
+
+    private void updateAmountToggle() {
+        if (amountToggleButton == null) {
+            return;
+        }
+        amountToggleButton.setText(amountsHidden ? "显示" : "隐藏");
+        amountToggleButton.setContentDescription(amountsHidden ? "显示金额" : "隐藏金额");
     }
 
     private void loadFundData() {
@@ -278,14 +314,14 @@ public class PortfolioHoldingDetailActivity extends Activity {
     }
 
     private void signedValueRow(String title, Double value) {
-        TextView view = Ui.text(this, title + "： " + format(value), 14,
-                signedColor(value), Typeface.NORMAL);
+        TextView view = Ui.text(this, title + "： " + amount(value), 14,
+                amountsHidden ? Ui.MUTED : signedColor(value), Typeface.NORMAL);
         view.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 4));
         content.addView(view);
     }
 
     private void amountRow(String title, Double value) {
-        TextView view = Ui.text(this, title + "： " + format(value), 14,
+        TextView view = Ui.text(this, title + "： " + amount(value), 14,
                 Ui.MUTED, Typeface.NORMAL);
         view.setPadding(0, Ui.dp(this, 4), 0, Ui.dp(this, 4));
         content.addView(view);
@@ -376,6 +412,13 @@ public class PortfolioHoldingDetailActivity extends Activity {
     private String preciseValuationDate(String timestamp, String fallbackDate) {
         String formatted = PortfolioHoldingActivity.formatDateTimeSeconds(timestamp);
         return "-".equals(formatted) ? fallbackDate : formatted;
+    }
+
+    private String amount(Double value) {
+        if (value == null) {
+            return "-";
+        }
+        return amountsHidden ? "****" : format(value);
     }
 
     private String format(Double value) {

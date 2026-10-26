@@ -4,7 +4,9 @@ import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
@@ -29,8 +31,12 @@ public class PortfolioHoldingActivity extends Activity {
     private final String[] scopes = {"all", "all", "alipay", "tencent"};
 
     private SessionStore session;
+    private ScrollView bodyScroll;
     private LinearLayout body;
     private EditText keywordInput;
+    private Button amountToggleButton;
+    private boolean amountsHidden;
+    private boolean dataReady;
     private PortfolioOverview overview;
     private int selectedTab;
     private String sortField = "holdingAmount";
@@ -44,6 +50,7 @@ public class PortfolioHoldingActivity extends Activity {
             finish();
             return;
         }
+        amountsHidden = session.isPortfolioAmountsHidden();
         buildUi();
     }
 
@@ -51,6 +58,8 @@ public class PortfolioHoldingActivity extends Activity {
     protected void onResume() {
         super.onResume();
         if (session != null && session.isAuthenticated()) {
+            amountsHidden = session.isPortfolioAmountsHidden();
+            updateAmountToggle();
             loadData();
         }
     }
@@ -70,6 +79,15 @@ public class PortfolioHoldingActivity extends Activity {
         importButton.setText("导入");
         importButton.setOnClickListener(v -> openImport(
                 selectedTab >= 2 ? scopes[selectedTab] : "alipay", "holding"));
+        amountToggleButton = new Button(this);
+        amountToggleButton.setAllCaps(false);
+        amountToggleButton.setTextSize(13);
+        amountToggleButton.setOnClickListener(v -> toggleAmountVisibility());
+        LinearLayout.LayoutParams toggleParams = new LinearLayout.LayoutParams(
+                Ui.dp(this, 64), Ui.dp(this, 44));
+        toggleParams.rightMargin = Ui.dp(this, 6);
+        titleRow.addView(amountToggleButton, toggleParams);
+
         titleRow.addView(importButton, new LinearLayout.LayoutParams(
                 Ui.dp(this, 88), Ui.dp(this, 44)));
         root.addView(titleRow);
@@ -94,6 +112,7 @@ public class PortfolioHoldingActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 46)));
 
         ScrollView vertical = new ScrollView(this);
+        bodyScroll = vertical;
         body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
         body.setPadding(0, Ui.dp(this, 6), 0, Ui.dp(this, 10));
@@ -101,6 +120,28 @@ public class PortfolioHoldingActivity extends Activity {
         root.addView(vertical, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
         updateTabStyles();
+        updateAmountToggle();
+    }
+
+    private void toggleAmountVisibility() {
+        amountsHidden = !amountsHidden;
+        session.setPortfolioAmountsHidden(amountsHidden);
+        updateAmountToggle();
+        if (dataReady) {
+            int scrollY = bodyScroll == null ? 0 : bodyScroll.getScrollY();
+            render();
+            if (bodyScroll != null) {
+                bodyScroll.post(() -> bodyScroll.scrollTo(0, scrollY));
+            }
+        }
+    }
+
+    private void updateAmountToggle() {
+        if (amountToggleButton == null) {
+            return;
+        }
+        amountToggleButton.setText(amountsHidden ? "显示" : "隐藏");
+        amountToggleButton.setContentDescription(amountsHidden ? "显示金额" : "隐藏金额");
     }
 
     private void selectTab(int index) {
@@ -121,6 +162,7 @@ public class PortfolioHoldingActivity extends Activity {
     }
 
     private void loadData() {
+        dataReady = false;
         body.removeAllViews();
         TextView loading = Ui.text(this, "加载中…", 14, Ui.MUTED, Typeface.NORMAL);
         loading.setGravity(Gravity.CENTER);
@@ -142,6 +184,7 @@ public class PortfolioHoldingActivity extends Activity {
                     overview = loadedOverview;
                     holdings.clear();
                     holdings.addAll(loadedHoldings);
+                    dataReady = true;
                     render();
                 });
             } catch (Exception ex) {
@@ -199,26 +242,27 @@ public class PortfolioHoldingActivity extends Activity {
         heading.addView(Ui.text(this, summary.holdingCount + " 只" + (prominent ? "" : "  ›"),
                 14, Ui.MUTED, Typeface.NORMAL));
         card.addView(heading);
-        card.addView(Ui.text(this, money(summary.holdingAmount), prominent ? 32 : 24,
+        card.addView(Ui.text(this, amount(summary.holdingAmount), prominent ? 32 : 24,
                 Ui.TEXT, Typeface.BOLD));
 
         LinearLayout metrics = new LinearLayout(this);
         metrics.setOrientation(LinearLayout.HORIZONTAL);
-        metrics.addView(metric("持有收益", money(summary.holdingProfit), summary.holdingProfit),
+        metrics.addView(metric("持有收益", amount(summary.holdingProfit), summary.holdingProfit, true),
                 new LinearLayout.LayoutParams(0, Ui.dp(this, 50), 1));
-        metrics.addView(metric("收益率", percent(summary.holdingReturnRate), summary.holdingReturnRate),
+        metrics.addView(metric("收益率", percent(summary.holdingReturnRate), summary.holdingReturnRate, false),
                 new LinearLayout.LayoutParams(0, Ui.dp(this, 50), 1));
-        metrics.addView(metric("今日收益", money(summary.todayProfit), summary.todayProfit),
+        metrics.addView(metric("今日收益", amount(summary.todayProfit), summary.todayProfit, true),
                 new LinearLayout.LayoutParams(0, Ui.dp(this, 50), 1));
         card.addView(metrics);
         return card;
     }
 
-    private LinearLayout metric(String title, String value, Double sign) {
+    private LinearLayout metric(String title, String value, Double sign, boolean monetary) {
         LinearLayout metric = new LinearLayout(this);
         metric.setOrientation(LinearLayout.VERTICAL);
         metric.addView(Ui.text(this, title, 13, Ui.MUTED, Typeface.NORMAL));
-        metric.addView(Ui.text(this, value, 16, signedColor(sign), Typeface.BOLD));
+        metric.addView(Ui.text(this, value, 16,
+                monetary && amountsHidden ? Ui.MUTED : signedColor(sign), Typeface.BOLD));
         return metric;
     }
 
@@ -237,16 +281,7 @@ public class PortfolioHoldingActivity extends Activity {
 
         PortfolioAccountSummary summary = selectedSummary();
         if (summary != null) {
-            TextView summaryView = Ui.text(this,
-                    "资产 " + money(summary.holdingAmount)
-                            + "    今日 " + money(summary.todayProfit)
-                            + "    " + summary.holdingCount + " 只",
-                    15, Ui.MUTED, Typeface.NORMAL);
-            summaryView.setIncludeFontPadding(false);
-            LinearLayout.LayoutParams summaryParams = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            summaryParams.bottomMargin = Ui.dp(this, 2);
-            body.addView(summaryView, summaryParams);
+            body.addView(summaryStats(summary));
         }
         if (selectedTab >= 2) {
             body.addView(importActions());
@@ -264,22 +299,139 @@ public class PortfolioHoldingActivity extends Activity {
             return;
         }
 
+        int rowHeightDp = 54;
+        LinearLayout tableHost = new LinearLayout(this);
+        tableHost.setOrientation(LinearLayout.HORIZONTAL);
+        tableHost.setBaselineAligned(false);
+
+        LinearLayout fixedColumn = new LinearLayout(this);
+        fixedColumn.setOrientation(LinearLayout.VERTICAL);
+        fixedColumn.setBackgroundColor(Color.WHITE);
+        fixedColumn.setElevation(Ui.dp(this, 2));
+        LinearLayout fixedHeader = tableRow(Color.rgb(238, 240, 244));
+        fixedHeader.addView(sortHeader("基金 / 金额", "fundName", 132, Gravity.START));
+        fixedColumn.addView(fixedHeader);
+        for (int index = 0; index < holdings.size(); index++) {
+            fixedColumn.addView(fixedHoldingRow(holdings.get(index), index));
+        }
+
+        View columnDivider = new View(this);
+        columnDivider.setBackgroundColor(Ui.BORDER);
+
         HorizontalScrollView horizontal = new HorizontalScrollView(this);
         horizontal.setFillViewport(false);
-        LinearLayout table = new LinearLayout(this);
-        table.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout header = tableRow(Color.rgb(238, 240, 244));
-        header.addView(sortHeader("基金 / 金额", "fundName", 132, Gravity.START));
-        header.addView(sortHeader("当日收益", "estimatedDailyProfit", 92, Gravity.END));
-        header.addView(sortHeader("类型", "fundType", 76, Gravity.CENTER));
-        header.addView(sortHeader("持有收益 / 率", "holdingProfit", 116, Gravity.END));
-        table.addView(header);
+        horizontal.setHorizontalScrollBarEnabled(false);
+        LinearLayout metrics = new LinearLayout(this);
+        metrics.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout metricsHeader = tableRow(Color.rgb(238, 240, 244));
+        metricsHeader.addView(sortHeader("当日收益", "estimatedDailyProfit", 92, Gravity.END));
+        metricsHeader.addView(sortHeader("类型", "fundType", 76, Gravity.CENTER));
+        metricsHeader.addView(sortHeader("持有收益 / 率", "holdingProfit", 116, Gravity.END));
+        metrics.addView(metricsHeader);
         for (int index = 0; index < holdings.size(); index++) {
-            table.addView(holdingRow(holdings.get(index), index));
+            metrics.addView(metricsHoldingRow(holdings.get(index), index));
         }
-        horizontal.addView(table);
-        body.addView(horizontal, new LinearLayout.LayoutParams(
+        horizontal.addView(metrics);
+
+        tableHost.addView(fixedColumn, new LinearLayout.LayoutParams(
+                Ui.dp(this, 132), ViewGroup.LayoutParams.WRAP_CONTENT));
+        tableHost.addView(columnDivider, new LinearLayout.LayoutParams(
+                Ui.dp(this, 1), Ui.dp(this, rowHeightDp * (holdings.size() + 1))));
+        tableHost.addView(horizontal, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        body.addView(tableHost, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+    }
+
+    private LinearLayout summaryStats(PortfolioAccountSummary summary) {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.HORIZONTAL);
+        card.setGravity(Gravity.CENTER_VERTICAL);
+        card.setPadding(Ui.dp(this, 14), Ui.dp(this, 12), Ui.dp(this, 14), Ui.dp(this, 12));
+        GradientDrawable background = new GradientDrawable();
+        background.setColor(Color.WHITE);
+        background.setCornerRadius(Ui.dp(this, 12));
+        card.setBackground(background);
+        LinearLayout.LayoutParams cardParams = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        cardParams.bottomMargin = Ui.dp(this, 8);
+        card.setLayoutParams(cardParams);
+
+        card.addView(stat("资产", amount(summary.holdingAmount), Ui.TEXT));
+        card.addView(statDivider());
+        card.addView(stat("今日", amount(summary.todayProfit),
+                amountsHidden ? Ui.MUTED : signedColor(summary.todayProfit)));
+        card.addView(statDivider());
+        card.addView(stat("持仓", summary.holdingCount + " 只", Ui.TEXT));
+        return card;
+    }
+
+    private LinearLayout stat(String title, String value, int color) {
+        LinearLayout stat = new LinearLayout(this);
+        stat.setOrientation(LinearLayout.VERTICAL);
+        stat.setPadding(Ui.dp(this, 10), 0, Ui.dp(this, 10), 0);
+        stat.setLayoutParams(new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView label = Ui.text(this, title, 12, Ui.MUTED, Typeface.NORMAL);
+        label.setIncludeFontPadding(false);
+        stat.addView(label);
+        TextView valueView = Ui.text(this, value, 19, color, Typeface.BOLD);
+        valueView.setSingleLine(true);
+        valueView.setEllipsize(TextUtils.TruncateAt.END);
+        if (value.length() > 13) {
+            valueView.setTextSize(12);
+        } else if (value.length() > 10) {
+            valueView.setTextSize(14);
+        } else if (value.length() > 8) {
+            valueView.setTextSize(16);
+        }
+        stat.addView(valueView);
+        return stat;
+    }
+
+    private View statDivider() {
+        View divider = new View(this);
+        divider.setBackgroundColor(Ui.BORDER);
+        divider.setLayoutParams(new LinearLayout.LayoutParams(
+                Ui.dp(this, 1), Ui.dp(this, 38)));
+        return divider;
+    }
+
+    private LinearLayout fixedHoldingRow(UserFundHolding holding, int index) {
+        LinearLayout row = tableRow(rowBackground(index));
+        row.setClickable(true);
+        row.setOnClickListener(v -> openHolding(holding));
+        row.addView(tableCell(shortFundName(holding.fundName)
+                        + "\n" + amount(holding.holdingAmount),
+                132, Ui.BLUE, Typeface.BOLD, Gravity.START));
+        return row;
+    }
+
+    private LinearLayout metricsHoldingRow(UserFundHolding holding, int index) {
+        LinearLayout row = tableRow(rowBackground(index));
+        row.setClickable(true);
+        row.setOnClickListener(v -> openHolding(holding));
+        Double daily = holding.estimatedDailyProfit != null
+                ? holding.estimatedDailyProfit : holding.todayProfit;
+        row.addView(tableCell(amount(daily), 92,
+                amountsHidden ? Ui.MUTED : signedColor(daily), Typeface.NORMAL, Gravity.END));
+        row.addView(tableCell(Ui.value(holding.fundType), 76,
+                Ui.TEXT, Typeface.NORMAL, Gravity.CENTER));
+        row.addView(tableCell(amount(holding.holdingProfit) + "\n"
+                        + percent(holding.holdingReturnRate),
+                116, amountsHidden ? Ui.MUTED : signedColor(holding.holdingProfit),
+                Typeface.NORMAL, Gravity.END));
+        return row;
+    }
+
+    private void openHolding(UserFundHolding holding) {
+        Intent intent = new Intent(this, PortfolioHoldingDetailActivity.class);
+        intent.putExtra("holding", holding);
+        startActivity(intent);
+    }
+
+    private int rowBackground(int index) {
+        return index % 2 == 0 ? Color.WHITE : Color.rgb(249, 250, 251);
     }
 
     private LinearLayout importActions() {
@@ -350,26 +502,6 @@ public class PortfolioHoldingActivity extends Activity {
         return cell;
     }
 
-    private LinearLayout holdingRow(UserFundHolding holding, int index) {
-        LinearLayout row = tableRow(index % 2 == 0 ? Color.WHITE : Color.rgb(249, 250, 251));
-        row.setClickable(true);
-        row.setOnClickListener(v -> {
-            Intent intent = new Intent(this, PortfolioHoldingDetailActivity.class);
-            intent.putExtra("holding", holding);
-            startActivity(intent);
-        });
-        row.addView(tableCell(shortFundName(holding.fundName)
-                        + "\n" + money(holding.holdingAmount),
-                132, Ui.BLUE, Typeface.BOLD, Gravity.START));
-        Double daily = holding.estimatedDailyProfit != null
-                ? holding.estimatedDailyProfit : holding.todayProfit;
-        row.addView(tableCell(money(daily), 92, signedColor(daily), Typeface.NORMAL, Gravity.END));
-        row.addView(tableCell(Ui.value(holding.fundType), 76, Ui.TEXT, Typeface.NORMAL, Gravity.CENTER));
-        row.addView(tableCell(money(holding.holdingProfit) + "\n" + percent(holding.holdingReturnRate),
-                116, signedColor(holding.holdingProfit), Typeface.NORMAL, Gravity.END));
-        return row;
-    }
-
     private LinearLayout tableRow(int backgroundColor) {
         LinearLayout row = new LinearLayout(this);
         row.setOrientation(LinearLayout.HORIZONTAL);
@@ -387,6 +519,13 @@ public class PortfolioHoldingActivity extends Activity {
         cell.setLayoutParams(new LinearLayout.LayoutParams(
                 Ui.dp(this, widthDp), Ui.dp(this, 54)));
         return cell;
+    }
+
+    private String amount(Double value) {
+        if (value == null) {
+            return "-";
+        }
+        return amountsHidden ? "****" : money(value);
     }
 
     private String money(Double value) {
